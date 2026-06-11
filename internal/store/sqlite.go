@@ -1,0 +1,176 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+const schema = `
+CREATE TABLE IF NOT EXISTS players (
+	name          TEXT PRIMARY KEY,
+	first_seen    INTEGER NOT NULL,
+	last_seen     INTEGER NOT NULL,
+	visit_count   INTEGER NOT NULL DEFAULT 1,
+	areas_visited TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS guestbook (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL,
+	message    TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS events (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL,
+	type       TEXT NOT NULL,
+	detail     TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL
+);
+`
+
+type sqliteStore struct {
+	mu sync.Mutex
+	db *sql.DB
+}
+
+func openSQLite(path string) (*sqliteStore, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create data dir: %w", err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+	// modernc.org/sqlite + concurrent writers don't mix; serialize here.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable WAL: %w", err)
+	}
+	if _, err := db.Exec(schema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create schema: %w", err)
+	}
+	return &sqliteStore{db: db}, nil
+}
+
+func (s *sqliteStore) RecordVisit(name string) VisitInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().Unix()
+
+	var prevLast, visits int64
+	err := s.db.QueryRow(`SELECT last_seen, visit_count FROM players WHERE name = ?`, name).
+		Scan(&prevLast, &visits)
+	switch {
+	case err == sql.ErrNoRows:
+		if _, err := s.db.Exec(
+			`INSERT INTO players (name, first_seen, last_seen, visit_count, areas_visited)
+			 VALUES (?, ?, ?, 1, '[]')`, name, now, now); err != nil {
+			log.Printf("store: record visit: %v", err)
+		}
+		return VisitInfo{VisitCount: 1, FirstVisit: true}
+	case err != nil:
+		log.Printf("store: record visit: %v", err)
+		return VisitInfo{VisitCount: 1, FirstVisit: true}
+	}
+
+	if _, err := s.db.Exec(
+		`UPDATE players SET last_seen = ?, visit_count = visit_count + 1 WHERE name = ?`,
+		now, name); err != nil {
+		log.Printf("store: record visit: %v", err)
+	}
+	return VisitInfo{
+		VisitCount: int(visits) + 1,
+		LastSeen:   time.Unix(prevLast, 0),
+	}
+}
+
+func (s *sqliteStore) RecordDisconnect(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`UPDATE players SET last_seen = ? WHERE name = ?`,
+		time.Now().Unix(), name); err != nil {
+		log.Printf("store: record disconnect: %v", err)
+	}
+}
+
+func (s *sqliteStore) RecordAreaVisit(name, area string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var raw string
+	if err := s.db.QueryRow(`SELECT areas_visited FROM players WHERE name = ?`, name).
+		Scan(&raw); err != nil {
+		return // player row missing or unreadable; not worth fighting
+	}
+	var areas []string
+	_ = json.Unmarshal([]byte(raw), &areas)
+	for _, a := range areas {
+		if a == area {
+			return
+		}
+	}
+	areas = append(areas, area)
+	buf, _ := json.Marshal(areas)
+	if _, err := s.db.Exec(`UPDATE players SET areas_visited = ? WHERE name = ?`,
+		string(buf), name); err != nil {
+		log.Printf("store: record area visit: %v", err)
+	}
+}
+
+func (s *sqliteStore) LogEvent(name, typ, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO events (name, type, detail, created_at) VALUES (?, ?, ?, ?)`,
+		name, typ, detail, time.Now().Unix()); err != nil {
+		log.Printf("store: log event: %v", err)
+	}
+}
+
+func (s *sqliteStore) SignGuestbook(name, message string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO guestbook (name, message, created_at) VALUES (?, ?, ?)`,
+		name, message, time.Now().Unix())
+	if err != nil {
+		log.Printf("store: sign guestbook: %v", err)
+	}
+	return err
+}
+
+func (s *sqliteStore) GuestbookEntries(n int) []GuestbookEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(
+		`SELECT name, message, created_at FROM guestbook ORDER BY id DESC LIMIT ?`, n)
+	if err != nil {
+		log.Printf("store: guestbook entries: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	var out []GuestbookEntry
+	for rows.Next() {
+		var e GuestbookEntry
+		var ts int64
+		if err := rows.Scan(&e.Name, &e.Message, &ts); err != nil {
+			continue
+		}
+		e.CreatedAt = time.Unix(ts, 0)
+		out = append(out, e)
+	}
+	return out
+}
+
+func (s *sqliteStore) Close() error {
+	return s.db.Close()
+}
