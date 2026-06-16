@@ -15,18 +15,18 @@
 //	go run ./cmd/pixeldemo -proto kitty   # or sixel, or auto
 //	go run ./cmd/pixeldemo -probe         # report capabilities + cell size
 //
-// Flags: -scale (px/tile), -w/-h (viewport tiles), -frames, -fps, -seed,
-// -still, -refresh (frames between full repaints), and -motion (pan = camera
-// scrolls, worst-case full-frame churn; walk = camera still, one avatar walks
-// while tiles animate). Each run reports the naive full-frame cost vs what the
-// delta loop actually sent.
+// Defaults are the config we'd actually ship: auto-detected protocol, viewport
+// auto-fit to the window, flat shading (compresses), delta on. Flags: -scale
+// (px/tile), -w/-h (viewport tiles, 0 = auto-fit), -frames, -fps, -seed,
+// -still, -smooth (pretty but heavy), -res WxH (kitty-only fixed resolution),
+// -refresh (frames between full repaints), -motion (pan = camera scrolls,
+// worst-case churn; walk = camera still, one avatar walks). Each run reports
+// the naive full-frame cost vs what the delta loop actually sent.
 package main
 
 import (
 	"bufio"
 	"bytes"
-	"compress/zlib"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"image"
@@ -42,6 +42,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -49,14 +50,14 @@ import (
 func main() {
 	proto := flag.String("proto", "auto", "image protocol: kitty | sixel | auto")
 	scale := flag.Int("scale", 12, "pixels per tile (sprite pixel = scale/2)")
-	vw := flag.Int("w", 64, "viewport width in tiles")
-	vh := flag.Int("h", 32, "viewport height in tiles")
+	vw := flag.Int("w", 0, "viewport width in tiles (0 = auto-fit the terminal)")
+	vh := flag.Int("h", 0, "viewport height in tiles (0 = auto-fit the terminal)")
 	frames := flag.Int("frames", 60, "number of frames to render")
 	fps := flag.Int("fps", 12, "target frames per second")
 	seed := flag.Uint64("seed", 1, "worldgen seed")
 	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls) | walk (camera still, one avatar walks)")
 	refresh := flag.Int("refresh", 48, "frames between full repaints (bounds kitty placement memory)")
-	smooth := flag.Bool("smooth", true, "bilinear terrain + vignette (pretty but ~15x more bytes); false = flat tiles (compresses)")
+	smooth := flag.Bool("smooth", false, "bilinear terrain + vignette (pretty but ~15x more bytes); default flat tiles compress far better")
 	res := flag.String("res", "", "fixed internal render resolution WxH (e.g. 480x270); empty = native tiles×scale. kitty scales it to fill the window")
 	still := flag.Bool("still", false, "render a single frame and exit")
 	probe := flag.Bool("probe", false, "report terminal graphics support + cell size and exit")
@@ -87,9 +88,9 @@ func main() {
 	var encode func(*image.RGBA) []byte
 	switch chosen {
 	case "kitty":
-		encode = func(im *image.RGBA) []byte { return encodeKitty(im, 0, 0) }
+		encode = func(im *image.RGBA) []byte { return pixel.EncodeKitty(im, 0, 0) }
 	case "sixel":
-		encode = encodeSixel
+		encode = func(im *image.RGBA) []byte { return pixel.EncodeSixel(im, *smooth) }
 	default:
 		fmt.Fprintf(os.Stderr, "unknown proto %q\n", chosen)
 		os.Exit(1)
@@ -98,6 +99,18 @@ func main() {
 	if *still {
 		*frames = 1
 		*motion = "still"
+	}
+
+	// Auto-fit the viewport to the window: fill cols×(rows-1) cells (one row
+	// spare so sixel never scrolls off the bottom) given the probed cell size.
+	if *vw <= 0 || *vh <= 0 {
+		aw, ah := autoViewport(*scale, caps.cellW, caps.cellH)
+		if *vw <= 0 {
+			*vw = aw
+		}
+		if *vh <= 0 {
+			*vh = ah
+		}
 	}
 
 	// Fixed internal resolution: render native, then box-downscale to a constant
@@ -166,9 +179,9 @@ func main() {
 		t1 := time.Now()
 		var full []byte // baseline + used on full frames
 		if chosen == "kitty" {
-			full = encodeKitty(img, cols, rows)
+			full = pixel.EncodeKitty(img, cols, rows)
 		} else {
-			full = encodeSixel(img)
+			full = pixel.EncodeSixel(img, *smooth)
 		}
 		t2 := time.Now()
 		rasterNS += t1.Sub(t0).Nanoseconds()
@@ -178,15 +191,15 @@ func main() {
 		doFull := f == 0 || !deltaOK || (*refresh > 0 && f%*refresh == 0)
 		dirty := 1.0
 		if !doFull {
-			r, changed := dirtyRect(prev, img.Pix, w, h)
+			r, changed := pixel.DirtyRect(prev, img.Pix, w, h)
 			switch {
 			case !changed:
 				dirty = 0 // static: send nothing
 			case float64(r.Dx()*r.Dy()) > 0.5*float64(w*h):
 				doFull = true // mostly changed: a full frame is cheaper than the overhead
 			default:
-				sr := snapToCells(r, caps.cellW, caps.cellH, w, h)
-				sub := encode(crop(img, sr))
+				sr := pixel.SnapToCells(r, caps.cellW, caps.cellH, w, h)
+				sub := encode(pixel.Crop(img, sr))
 				emit(out, sub, sr.Min.X/caps.cellW, sr.Min.Y/caps.cellH)
 				sentBytes += len(sub)
 				dirty = float64(sr.Dx()*sr.Dy()) / float64(w*h)
@@ -232,6 +245,25 @@ func main() {
 	})
 }
 
+// autoViewport sizes the tile viewport to fill the terminal: image pixels =
+// cols×cellW by (rows-1)×cellH, divided by scale into tiles. Falls back to a
+// sane default when the size or cell size is unknown (e.g. no TTY).
+func autoViewport(scale, cellW, cellH int) (w, h int) {
+	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || cols <= 0 || rows <= 0 || cellW <= 0 || cellH <= 0 || scale <= 0 {
+		return 64, 32
+	}
+	w = cols * cellW / scale
+	h = (rows - 1) * cellH / scale
+	if w < 8 {
+		w = 8
+	}
+	if h < 8 {
+		h = 8
+	}
+	return w, h
+}
+
 func panStep(walk bool) int {
 	if walk {
 		return 0
@@ -246,57 +278,6 @@ func emit(out *bufio.Writer, payload []byte, col, row int) {
 	fmt.Fprintf(out, "\x1b[%d;%dH", row+1, col+1)
 	out.Write(payload)
 	out.WriteString("\x1b8")
-}
-
-// snapToCells expands a pixel rect outward to the text-cell grid so a kitty/
-// sixel sub-image placed at the cell aligns exactly with the dirty region.
-func snapToCells(r image.Rectangle, cw, ch, w, h int) image.Rectangle {
-	x0 := (r.Min.X / cw) * cw
-	y0 := (r.Min.Y / ch) * ch
-	x1 := minInt(((r.Max.X+cw-1)/cw)*cw, w)
-	y1 := minInt(((r.Max.Y+ch-1)/ch)*ch, h)
-	return image.Rect(x0, y0, x1, y1)
-}
-
-// dirtyRect returns the bounding box of pixels that differ between two RGBA
-// buffers of the same w×h, and whether anything changed.
-func dirtyRect(prev, cur []byte, w, h int) (image.Rectangle, bool) {
-	minX, minY, maxX, maxY := w, h, -1, -1
-	for y := 0; y < h; y++ {
-		base := y * w * 4
-		for x := 0; x < w; x++ {
-			o := base + x*4
-			if prev[o] != cur[o] || prev[o+1] != cur[o+1] || prev[o+2] != cur[o+2] || prev[o+3] != cur[o+3] {
-				if x < minX {
-					minX = x
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if y > maxY {
-					maxY = y
-				}
-			}
-		}
-	}
-	if maxX < 0 {
-		return image.Rectangle{}, false
-	}
-	return image.Rect(minX, minY, maxX+1, maxY+1), true
-}
-
-// crop copies a rectangle out of img into a new tightly-packed RGBA.
-func crop(img *image.RGBA, r image.Rectangle) *image.RGBA {
-	out := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
-	for y := 0; y < r.Dy(); y++ {
-		so := img.PixOffset(r.Min.X, r.Min.Y+y)
-		do := out.PixOffset(0, y)
-		copy(out.Pix[do:do+r.Dx()*4], img.Pix[so:so+r.Dx()*4])
-	}
-	return out
 }
 
 // wildsWindow generates a width×height window of the overworld centered on
@@ -350,49 +331,6 @@ func demoPlayers(seed uint64) []world.Player {
 	return out
 }
 
-// --- kitty graphics protocol -------------------------------------------------
-
-// encodeKitty transmits the image as RGBA (f=32), zlib-compressed (o=z),
-// base64'd and chunked at 4096 bytes per APC escape, displayed at the cursor
-// without moving it (a=T, C=1). zlib is the difference between ~170 KB and a
-// few KB for flat terrain, the only fair way to weigh kitty against sixel.
-//
-// When cols/rows > 0 the image is display-scaled to fill that many text cells
-// (c=,r=) — the basis for a fixed internal render resolution: transmit a small
-// constant buffer and let kitty stretch it to the window, so bytes/frame no
-// longer grow with terminal size.
-func encodeKitty(img *image.RGBA, cols, rows int) []byte {
-	var zb bytes.Buffer
-	zw := zlib.NewWriter(&zb)
-	zw.Write(img.Pix)
-	zw.Close()
-
-	b64 := base64.StdEncoding.EncodeToString(zb.Bytes())
-	bounds := img.Bounds()
-	var buf bytes.Buffer
-	const chunk = 4096
-	first := true
-	for len(b64) > 0 {
-		n := minInt(chunk, len(b64))
-		part := b64[:n]
-		b64 = b64[n:]
-		more := 0
-		if len(b64) > 0 {
-			more = 1
-		}
-		buf.WriteString("\x1b_G")
-		if first {
-			fmt.Fprintf(&buf, "f=32,o=z,s=%d,v=%d,a=T,C=1,", bounds.Dx(), bounds.Dy())
-			if cols > 0 && rows > 0 {
-				fmt.Fprintf(&buf, "c=%d,r=%d,", cols, rows)
-			}
-			first = false
-		}
-		fmt.Fprintf(&buf, "m=%d;%s\x1b\\", more, part)
-	}
-	return buf.Bytes()
-}
-
 // downscale area-averages src into a new outW×outH RGBA (a supersampling box
 // filter): the fixed-resolution buffer we actually transmit.
 func downscale(src *image.RGBA, outW, outH int) *image.RGBA {
@@ -422,100 +360,6 @@ func downscale(src *image.RGBA, outW, outH int) *image.RGBA {
 		}
 	}
 	return out
-}
-
-// --- sixel -------------------------------------------------------------------
-
-var bayer4 = [4][4]int{
-	{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5},
-}
-
-// encodeSixel quantizes to a 6×6×6 (216) color cube with ordered dithering to
-// soften gradient banding, then emits sixel bands. Cheap and dependency-free.
-func encodeSixel(img *image.RGBA) []byte {
-	w, h := img.Bounds().Dx(), img.Bounds().Dy()
-	idx := make([]uint8, w*h)
-	used := make([]bool, 216)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			o := img.PixOffset(x, y)
-			p := q6(img.Pix[o], x, y)*36 + q6(img.Pix[o+1], x, y)*6 + q6(img.Pix[o+2], x, y)
-			idx[y*w+x] = uint8(p)
-			used[p] = true
-		}
-	}
-
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "\x1bPq\"1;1;%d;%d", w, h)
-	for p := 0; p < 216; p++ {
-		if !used[p] {
-			continue
-		}
-		fmt.Fprintf(&buf, "#%d;2;%d;%d;%d", p, ((p/36)%6)*20, ((p/6)%6)*20, (p%6)*20)
-	}
-
-	for band := 0; band < h; band += 6 {
-		rows := minInt(6, h-band)
-		present := map[uint8]bool{}
-		for r := 0; r < rows; r++ {
-			base := (band + r) * w
-			for x := 0; x < w; x++ {
-				present[idx[base+x]] = true
-			}
-		}
-		for c := range present {
-			fmt.Fprintf(&buf, "#%d", c)
-			var prev byte
-			var run int
-			flush := func() {
-				if run == 0 {
-					return
-				}
-				if run > 3 {
-					fmt.Fprintf(&buf, "!%d", run)
-					buf.WriteByte(prev)
-				} else {
-					for i := 0; i < run; i++ {
-						buf.WriteByte(prev)
-					}
-				}
-			}
-			for x := 0; x < w; x++ {
-				var bits byte
-				for r := 0; r < rows; r++ {
-					if idx[(band+r)*w+x] == c {
-						bits |= 1 << uint(r)
-					}
-				}
-				ch := byte('?') + bits
-				if ch == prev {
-					run++
-				} else {
-					flush()
-					prev, run = ch, 1
-				}
-			}
-			flush()
-			buf.WriteByte('$')
-		}
-		buf.WriteByte('-')
-	}
-	buf.WriteString("\x1b\\")
-	return buf.Bytes()
-}
-
-// q6 maps a channel to a 0..5 level with ordered (Bayer) dithering.
-func q6(v byte, x, y int) int {
-	t := float64(v) / 255 * 5
-	thr := float64(bayer4[y&3][x&3])/16 - 0.5
-	lvl := int(t + thr + 0.5)
-	if lvl < 0 {
-		return 0
-	}
-	if lvl > 5 {
-		return 5
-	}
-	return lvl
 }
 
 // --- capability detection ----------------------------------------------------

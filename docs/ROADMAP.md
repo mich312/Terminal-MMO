@@ -86,6 +86,10 @@ Direction agreed with the team. Decisions locked:
 
 ## Parked polish
 
+- Real-pixel renderer (kitty graphics / sixel): prototyped and measured — see
+  [`docs/pixel-renderer.md`](pixel-renderer.md). Verdict: keep half-blocks as the
+  baseline; a sixel-first, flat + delta, event-driven `/hd` mode is the only
+  shippable shape, as an opt-in with half-block fallback.
 - Particles / weather layer.
 - Directional facing for avatars (sprite mirrors with movement).
 - Mark landmarks on the minimap distinctly.

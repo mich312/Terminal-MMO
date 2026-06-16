@@ -22,6 +22,10 @@ import (
 // worldSeed is fixed so the Wilds are identical for everyone.
 const worldSeed uint64 = 0xD0117_C0FFEE_5742
 
+// Seed is the fixed overworld seed, exported so the experimental HD pixel
+// renderer generates exactly the same Wilds as this area.
+const Seed = worldSeed
+
 func init() {
 	game.Register("wilds", "The Wilds", func(ctx *game.Ctx) game.Area {
 		return &area{ctx: ctx, gen: worldgen.New(worldSeed)}

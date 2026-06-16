@@ -29,6 +29,21 @@ ssh -p 2222 markus@localhost
   log. Created with schema on first run; delete it to start fresh. If the
   file is unwritable the game logs a warning and plays on without memory.
 
+### HD mode (experimental real-pixel renderer)
+
+On a sixel-capable terminal (e.g. Windows Terminal 1.22+) you can walk the Wilds
+rendered as actual pixels instead of half-block glyphs:
+
+```sh
+ssh -t -p 2222 you@localhost hd
+```
+
+WASD to move (Shift to run), `q` to quit. It shares the live world, so you and
+ordinary players see each other. It bypasses bubbletea and streams sixel with
+delta updates (only the changed region each frame). Background and rationale:
+[`docs/pixel-renderer.md`](docs/pixel-renderer.md). The standalone
+`cmd/pixeldemo` harness measures look/bandwidth without a server.
+
 ### Controls
 
 | Key | Action |
