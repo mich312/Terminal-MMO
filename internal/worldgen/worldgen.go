@@ -83,10 +83,14 @@ func (g *Generator) At(x, y int) Cell {
 				Walkable: true, Object: true, Portal: lm.Portal}
 		}
 	}
-	// Forced grassy clearings around each landmark keep the plaza walkable.
+	// Forced grassy clearings around each landmark keep the plaza walkable —
+	// no blocking props (houses) so the entrance stays clear.
 	for _, lm := range Landmarks {
 		if abs(x-lm.X) <= lm.Clear && abs(y-lm.Y) <= lm.Clear {
-			return grassCell(g, x, y)
+			if c := grassCell(g, x, y); c.Walkable {
+				return c
+			}
+			return Cell{Biome: Grass, Glyph: '·', Color: "#5FA86B", Walkable: true}
 		}
 	}
 

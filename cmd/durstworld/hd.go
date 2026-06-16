@@ -113,20 +113,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	out.WriteString("\x1b[2J\x1b[?25l")
 	defer func() { out.WriteString("\x1b[?25h\x1b[0m\r\n"); out.Flush() }()
 
-	keys := make(chan byte, 256)
-	go func() {
-		b := make([]byte, 64)
-		for {
-			n, err := s.Read(b)
-			for i := 0; i < n; i++ {
-				keys <- b[i]
-			}
-			if err != nil {
-				close(keys)
-				return
-			}
-		}
-	}()
+	// Input runs on its own goroutine, emitting movement intents. Rendering is
+	// driven only by the ticker (below), so a slow frame can never block input.
+	intents := make(chan string, 32)
+	go readIntents(s, intents)
 
 	var (
 		prev       []byte
@@ -135,6 +125,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 		sent       int
 		framesSent int
 		start      = time.Now()
+		toast      string
+		toastUntil time.Time
 	)
 
 	draw := func() {
@@ -173,6 +165,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 			out.WriteString("\x1b8")
 			sent += len(full)
 		}
+		if toast != "" && time.Now().Before(toastUntil) {
+			out.WriteString("\x1b7")
+			fmt.Fprintf(out, "\x1b[%d;1H\x1b[2K\x1b[1;97;44m %s \x1b[0m", win.Height, toast)
+			out.WriteString("\x1b8")
+		}
 		out.Flush()
 
 		prev = append(prev[:0], img.Pix...)
@@ -194,52 +191,100 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	draw()
 	ticker := time.NewTicker(time.Second / hdFPS)
 	defer ticker.Stop()
-	// Minimal escape-sequence parser: ESC [ (or O) <params> <final>. Arrow keys
-	// are A/B/C/D; a ";2" parameter means Shift is held → run.
-	esc := 0
-	var csi []byte
 	for {
 		select {
-		case b, ok := <-keys:
-			if !ok {
-				return
+		case win = <-winCh:
+			prev = nil // size changed → force a full repaint next tick
+			out.WriteString("\x1b[2J")
+		case <-ticker.C:
+			// Coalesce input: apply only the most recent movement this tick, so a
+			// held key advances one step per frame and stops the instant it is
+			// released (terminals send no key-up, so we must not queue repeats).
+			move := ""
+			for draining := true; draining; {
+				select {
+				case k, ok := <-intents:
+					if !ok || k == "quit" {
+						hud()
+						return
+					}
+					move = k
+				default:
+					draining = false
+				}
 			}
-			var key string
+			if move != "" && hdMove(gen, &px, &py, move) {
+				w.Move(name, px, py)
+				if dest, ok := hdPortalUnder(gen, px, py); ok {
+					toast = "◈ " + game.DisplayName(dest) + " — open it from the classic client (HD renders the Wilds only)"
+					toastUntil = time.Now().Add(4 * time.Second)
+				}
+			}
+			frame++ // advance tile/portal animation
+			draw()
+		}
+	}
+}
+
+// readIntents parses raw terminal input into movement intents (or "quit") and
+// sends them on out, dropping when the buffer is full so held-key repeats can't
+// pile up. Arrow keys are CSI/SS3 escapes; ";2" means Shift (run).
+func readIntents(s ssh.Session, out chan<- string) {
+	b := make([]byte, 64)
+	esc := 0
+	var csi []byte
+	emit := func(k string) {
+		if k == "" {
+			return
+		}
+		select {
+		case out <- k:
+		default:
+		}
+	}
+	for {
+		n, err := s.Read(b)
+		for i := 0; i < n; i++ {
+			c := b[i]
 			switch {
-			case esc == 0 && b == 0x1b:
+			case esc == 0 && c == 0x1b:
 				esc = 1
 			case esc == 1:
-				if b == '[' || b == 'O' {
+				if c == '[' || c == 'O' {
 					esc, csi = 2, csi[:0]
 				} else {
 					esc = 0
 				}
 			case esc == 2:
-				if (b >= 'A' && b <= 'Z') || b == '~' {
+				if (c >= 'A' && c <= 'Z') || c == '~' {
 					esc = 0
-					key = csiKey(string(csi), b)
+					emit(csiKey(string(csi), c))
 				} else {
-					csi = append(csi, b)
+					csi = append(csi, c)
 				}
-			case b == 'q' || b == 'Q' || b == 3: // q or Ctrl-C
-				hud()
-				return
+			case c == 'q' || c == 'Q' || c == 3:
+				emit("quit")
 			default:
-				key = string(b)
+				emit(string(c))
 			}
-			if key != "" && hdMove(gen, &px, &py, key) {
-				w.Move(name, px, py)
-				draw()
-			}
-		case win = <-winCh:
-			prev = nil // size changed → force a full repaint
-			out.WriteString("\x1b[2J")
-			draw()
-		case <-ticker.C:
-			frame++ // advance tile animation and reflect other players' movement
-			draw()
+		}
+		if err != nil {
+			close(out)
+			return
 		}
 	}
+}
+
+// hdPortalUnder reports the portal destination under the player's footprint.
+func hdPortalUnder(gen *worldgen.Generator, x, y int) (string, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			if c := gen.At(x+dx, y+dy); c.Portal != "" {
+				return c.Portal, true
+			}
+		}
+	}
+	return "", false
 }
 
 // hdMove walks the footprint per the shared movement mapping (WASD/arrows, YUBN
