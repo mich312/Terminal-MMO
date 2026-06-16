@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.8.0
 	github.com/lucasb-eyer/go-colorful v1.4.0
 	github.com/muesli/termenv v0.16.0
+	golang.org/x/term v0.31.0
 	modernc.org/sqlite v1.52.0
 )
 
