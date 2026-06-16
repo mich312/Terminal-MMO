@@ -96,14 +96,13 @@ var propArt = map[TileProp][]string{
 		".PppP.",
 		"......",
 	},
-	// PropStructure is drawn by a separate multi-tile pass (buildingArt), not here.
+	// PropHouse / PropPortal are drawn by a separate multi-tile pass, not here.
 }
 
-// buildingArt is a 2-wide × 3-tall landmark structure (12×18 art-pixels): a
-// pitched roof (p), walls (P) with windows (L), a stone base (D), and a glowing
-// animated portal doorway (@). Drawn by the HD renderer's structure pass,
-// centered on the landmark tile with the doorway at the bottom.
-var buildingArt = []string{
+// houseArt is a 2-wide × 3-tall decorative building (12×18 art-pixels): pitched
+// roof (p), walls (P) with windows (L), a solid wooden door and stone base (D).
+// A house — not a portal.
+var houseArt = []string{
 	"....pppp....",
 	"...pppppp...",
 	"..pppppppp..",
@@ -114,14 +113,32 @@ var buildingArt = []string{
 	"PPLLPPPPLLPP",
 	"PPLLPPPPLLPP",
 	"PPPPPPPPPPPP",
-	"PPPP@@@@PPPP",
-	"PPP@@@@@@PPP",
-	"PPP@@@@@@PPP",
-	"PPP@@@@@@PPP",
-	"PPP@@@@@@PPP",
-	"PPP@@@@@@PPP",
+	"PPPPDDDDPPPP",
+	"PPPDDDDDDPPP",
+	"PPPDDDDDDPPP",
+	"PPPDDDDDDPPP",
+	"PPPDDDDDDPPP",
+	"PPPDDDDDDPPP",
 	"PPPPPPPPPPPP",
 	"DDDDDDDDDDDD",
+}
+
+// portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in
+// the destination's color enclosing a swirling energy field (@) that animates.
+// A portal — not a house.
+var portalArt = []string{
+	"...RRRRRR...",
+	"..R@@@@@@R..",
+	".R@@@@@@@@R.",
+	".R@@@@@@@@R.",
+	"R@@@@@@@@@@R",
+	"R@@@@@@@@@@R",
+	"R@@@@@@@@@@R",
+	"R@@@@@@@@@@R",
+	".R@@@@@@@@R.",
+	".R@@@@@@@@R.",
+	"..R@@@@@@R..",
+	"...RRRRRR...",
 }
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').

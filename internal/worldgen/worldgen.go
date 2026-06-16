@@ -123,13 +123,15 @@ func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 func grassCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Grass, Glyph: '·', Color: "#5FA86B", Walkable: true}
 	switch r := g.prop(x, y); {
-	case r < 0.05:
+	case r < 0.006: // a rare homestead — blocks movement
+		c.Glyph, c.Color, c.Walkable = 'H', houseColor(g.prop2(x, y)), false
+	case r < 0.056:
 		c.Glyph, c.Color = '*', flowerColor(g.prop2(x, y)) // flower (varied)
-	case r < 0.08:
+	case r < 0.086:
 		c.Glyph, c.Color = 'o', "#3E8F57" // bush
-	case r < 0.10:
+	case r < 0.106:
 		c.Glyph, c.Color = '°', "#9AA0A8" // small rock
-	case r < 0.20:
+	case r < 0.206:
 		c.Glyph, c.Color = ',', "#4F9460" // tuft
 	}
 	return c
@@ -160,6 +162,11 @@ func hillCell(g *Generator, x, y int) Cell {
 // flowerColor and treeColor add deterministic variety from a second hash field.
 func flowerColor(r float64) string {
 	cols := []string{"#FF6B6B", "#FFC861", "#FF8FB1", "#F2F2F2", "#C792EA", "#A0C7FF"}
+	return cols[int(r*float64(len(cols)))%len(cols)]
+}
+
+func houseColor(r float64) string {
+	cols := []string{"#C9A66B", "#B5835A", "#D9C089", "#A88B6A"}
 	return cols[int(r*float64(len(cols)))%len(cols)]
 }
 

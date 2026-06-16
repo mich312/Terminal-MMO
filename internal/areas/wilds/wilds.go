@@ -161,8 +161,9 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
 	if c.Object {
-		// Landmark portals become little buildings in their own color.
-		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropStructure, c.Color, groundColor(worldgen.Grass), game.TexGrass
+		// Landmark area-entrances are animated portal gates, color-coded to the
+		// destination — distinct from decorative houses.
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPortal, c.Color, groundColor(worldgen.Grass), game.TexGrass
 		return t
 	}
 	switch c.Glyph {
@@ -176,6 +177,8 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropStump, c.Color, groundColor(c.Biome)
 	case '°': // small rock
 		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
+	case 'H': // a homestead — decorative house (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
 	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)

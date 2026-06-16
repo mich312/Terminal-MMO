@@ -44,7 +44,8 @@ const (
 	PropBush
 	PropRock
 	PropStump
-	PropStructure
+	PropHouse  // decorative multi-tile building
+	PropPortal // animated area-entrance gate
 )
 
 // Tile is one cell of a parsed map.

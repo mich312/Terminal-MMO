@@ -110,12 +110,15 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame)
 			}
 		}
-		// Multi-tile structures (landmark buildings) are drawn over the terrain so
-		// they can overhang upward, with an animated portal doorway.
+		// Multi-tile structures (houses, animated portals) are drawn over the
+		// terrain so they can overhang upward.
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
-				if props[vy][vx] == PropStructure {
-					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame)
+				switch props[vy][vx] {
+				case PropHouse:
+					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, houseArt)
+				case PropPortal:
+					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, portalArt)
 				}
 			}
 		}
@@ -293,30 +296,32 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 	}
 }
 
-// drawStructure renders a 2×3-tile landmark building centered on tile (vx,vy),
-// bottom-aligned so the doorway sits on the tile, overhanging upward. Walls take
-// the landmark color; the doorway is an animated portal.
-func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int) {
+// drawStructure renders a multi-tile sprite (house or portal) centered on tile
+// (vx,vy), bottom-aligned so its base sits on the tile and it overhangs upward.
+// 'R'/'P' take the structure color; '@' is the animated portal swirl.
+func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int, art []string) {
 	apx := scale / tileArtN // art-pixel size, matching the avatar's
 	if apx < 1 {
 		apx = 1
 	}
-	bw := len(buildingArt[0])
-	left := vx*scale + scale/2 - (bw*apx)/2
-	top := (vy+1)*scale - len(buildingArt)*apx
+	left := vx*scale + scale/2 - (len(art[0])*apx)/2
+	top := (vy+1)*scale - len(art)*apx
 
-	wall := colorfulToRGBA(col)
+	body := colorfulToRGBA(col)
 	roof := colorfulToRGBA(col.BlendLab(shadowColor, 0.38).Clamped())
 	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.45).Clamped())
 	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.6).Clamped())
+	ring := colorfulToRGBA(col.BlendLab(spriteWhite, 0.2).Clamped())
 
-	for ay, row := range buildingArt {
+	for ay, row := range art {
 		for ax := 0; ax < len(row); ax++ {
 			var c color.RGBA
 			ok := true
 			switch row[ax] {
 			case 'P':
-				c = wall
+				c = body
+			case 'R':
+				c = ring
 			case 'p':
 				c = roof
 			case 'L':
