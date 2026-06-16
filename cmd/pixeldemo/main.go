@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 	"os/signal"
 	"strconv"
@@ -56,6 +57,7 @@ func main() {
 	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls) | walk (camera still, one avatar walks)")
 	refresh := flag.Int("refresh", 48, "frames between full repaints (bounds kitty placement memory)")
 	smooth := flag.Bool("smooth", true, "bilinear terrain + vignette (pretty but ~15x more bytes); false = flat tiles (compresses)")
+	res := flag.String("res", "", "fixed internal render resolution WxH (e.g. 480x270); empty = native tiles×scale. kitty scales it to fill the window")
 	still := flag.Bool("still", false, "render a single frame and exit")
 	probe := flag.Bool("probe", false, "report terminal graphics support + cell size and exit")
 	flag.Parse()
@@ -85,7 +87,7 @@ func main() {
 	var encode func(*image.RGBA) []byte
 	switch chosen {
 	case "kitty":
-		encode = encodeKitty
+		encode = func(im *image.RGBA) []byte { return encodeKitty(im, 0, 0) }
 	case "sixel":
 		encode = encodeSixel
 	default:
@@ -98,9 +100,25 @@ func main() {
 		*motion = "still"
 	}
 
-	// Delta needs to know the terminal's cell pixel size to align a dirty
-	// sub-image to the right text cell; without it we send full frames.
-	deltaOK := !*still && caps.cellW > 0 && caps.cellH > 0
+	// Fixed internal resolution: render native, then box-downscale to a constant
+	// buffer we transmit; kitty stretches it (c=,r=) to fill the window so bytes
+	// stop scaling with terminal size. Sixel can't display-scale, so it shows at
+	// the buffer's own pixel size.
+	resW, resH := 0, 0
+	if *res != "" {
+		fmt.Sscanf(*res, "%dx%d", &resW, &resH)
+	}
+	resMode := resW > 0 && resH > 0
+
+	nativeW, nativeH := *vw**scale, *vh**scale
+	cols, rows := 0, 0
+	if resMode && caps.cellW > 0 && caps.cellH > 0 {
+		cols, rows = nativeW/caps.cellW, nativeH/caps.cellH
+	}
+
+	// Delta needs the terminal's cell pixel size to align a dirty sub-image to a
+	// text cell; without it (or in fixed-res mode) we send full frames.
+	deltaOK := !*still && !resMode && caps.cellW > 0 && caps.cellH > 0
 
 	players := demoPlayers(*seed)
 	out := bufio.NewWriterSize(os.Stdout, 1<<20)
@@ -124,8 +142,11 @@ func main() {
 		started              = time.Now()
 		framePeriod          = time.Second / time.Duration(maxInt(*fps, 1))
 		prev                 []byte
-		w, h                 = *vw * *scale, *vh * *scale
+		w, h                 = nativeW, nativeH
 	)
+	if resMode {
+		w, h = resW, resH // dirty-diff / buffer dims = transmitted resolution
+	}
 
 	for f := 0; f < *frames; f++ {
 		frameStart := time.Now()
@@ -139,8 +160,16 @@ func main() {
 
 		t0 := time.Now()
 		img := game.RenderRGBA(nil, tm, players, "you", f, cam, game.Light{}, ox, oy, *scale, *smooth)
+		if resMode {
+			img = downscale(img, resW, resH)
+		}
 		t1 := time.Now()
-		full := encode(img) // baseline + used on full frames
+		var full []byte // baseline + used on full frames
+		if chosen == "kitty" {
+			full = encodeKitty(img, cols, rows)
+		} else {
+			full = encodeSixel(img)
+		}
 		t2 := time.Now()
 		rasterNS += t1.Sub(t0).Nanoseconds()
 		encodeNS += t2.Sub(t1).Nanoseconds()
@@ -191,7 +220,7 @@ func main() {
 	elapsed := time.Since(started)
 	restore()
 	report(reportData{
-		proto: chosen, motion: *motion, delta: deltaOK, smooth: *smooth,
+		proto: chosen, motion: *motion, delta: deltaOK, smooth: *smooth, fixed: resMode,
 		frames: *frames, tilesW: *vw, tilesH: *vh, scale: *scale,
 		pxW: w, pxH: h, fps: *fps,
 		rasterMS:  msPerFrame(rasterNS, *frames),
@@ -327,7 +356,12 @@ func demoPlayers(seed uint64) []world.Player {
 // base64'd and chunked at 4096 bytes per APC escape, displayed at the cursor
 // without moving it (a=T, C=1). zlib is the difference between ~170 KB and a
 // few KB for flat terrain, the only fair way to weigh kitty against sixel.
-func encodeKitty(img *image.RGBA) []byte {
+//
+// When cols/rows > 0 the image is display-scaled to fill that many text cells
+// (c=,r=) — the basis for a fixed internal render resolution: transmit a small
+// constant buffer and let kitty stretch it to the window, so bytes/frame no
+// longer grow with terminal size.
+func encodeKitty(img *image.RGBA, cols, rows int) []byte {
 	var zb bytes.Buffer
 	zw := zlib.NewWriter(&zb)
 	zw.Write(img.Pix)
@@ -349,11 +383,45 @@ func encodeKitty(img *image.RGBA) []byte {
 		buf.WriteString("\x1b_G")
 		if first {
 			fmt.Fprintf(&buf, "f=32,o=z,s=%d,v=%d,a=T,C=1,", bounds.Dx(), bounds.Dy())
+			if cols > 0 && rows > 0 {
+				fmt.Fprintf(&buf, "c=%d,r=%d,", cols, rows)
+			}
 			first = false
 		}
 		fmt.Fprintf(&buf, "m=%d;%s\x1b\\", more, part)
 	}
 	return buf.Bytes()
+}
+
+// downscale area-averages src into a new outW×outH RGBA (a supersampling box
+// filter): the fixed-resolution buffer we actually transmit.
+func downscale(src *image.RGBA, outW, outH int) *image.RGBA {
+	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
+	out := image.NewRGBA(image.Rect(0, 0, outW, outH))
+	for oy := 0; oy < outH; oy++ {
+		sy0, sy1 := oy*sh/outH, (oy+1)*sh/outH
+		if sy1 <= sy0 {
+			sy1 = sy0 + 1
+		}
+		for ox := 0; ox < outW; ox++ {
+			sx0, sx1 := ox*sw/outW, (ox+1)*sw/outW
+			if sx1 <= sx0 {
+				sx1 = sx0 + 1
+			}
+			var r, g, b, n int
+			for yy := sy0; yy < sy1; yy++ {
+				for xx := sx0; xx < sx1; xx++ {
+					o := src.PixOffset(xx, yy)
+					r += int(src.Pix[o])
+					g += int(src.Pix[o+1])
+					b += int(src.Pix[o+2])
+					n++
+				}
+			}
+			out.SetRGBA(ox, oy, color.RGBA{uint8(r / n), uint8(g / n), uint8(b / n), 255})
+		}
+	}
+	return out
 }
 
 // --- sixel -------------------------------------------------------------------
@@ -559,7 +627,7 @@ func envKitty() bool {
 
 type reportData struct {
 	proto, motion                 string
-	delta, smooth                 bool
+	delta, smooth, fixed          bool
 	frames, tilesW, tilesH, scale int
 	pxW, pxH, fps                 int
 	rasterMS, encodeMS            float64
@@ -579,6 +647,9 @@ func report(d reportData) {
 	look := "flat tiles"
 	if d.smooth {
 		look = "smooth (bilinear+vignette)"
+	}
+	if d.fixed {
+		look += " · fixed-res"
 	}
 	fmt.Fprintf(os.Stderr, `
 ─── pixeldemo: %s (%s motion, %s) ───────────────
