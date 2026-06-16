@@ -36,13 +36,18 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 
 	grid := buildGrid(th, tm, cam, light, frame)
 	cols := make([][]colorful.Color, cam.H)
+	texs := make([][]TileTex, cam.H)
 	for y := 0; y < cam.H; y++ {
 		cols[y] = make([]colorful.Color, cam.W)
+		texs[y] = make([]TileTex, cam.W)
 		for x := 0; x < cam.W; x++ {
 			if c := grid[y][x]; c.blank {
 				cols[y][x] = shadowColor
 			} else {
 				cols[y][x] = c.fg
+			}
+			if tx, ty := cam.X+x, cam.Y+y; ty >= 0 && ty < tm.H && tx >= 0 && tx < tm.W {
+				texs[y][x] = tm.Tiles[ty][tx].Tex
 			}
 		}
 	}
@@ -76,39 +81,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			}
 		}
 	} else {
-		// Crisp pixel-art terrain: solid tile interiors, ordered-dithered biome
-		// boundaries (stippled, not blurred), plus a little per-tile grain so
-		// flat areas have texture. All sharp — every pixel is one tile's color.
-		band := scale / 4
-		if band < 1 {
-			band = 1
-		}
-		for py := 0; py < imgH; py++ {
-			vy, iy := py/scale, py%scale
-			for px := 0; px < imgW; px++ {
-				vx, ix := px/scale, px%scale
-				cx, cy := vx, vy
-				if ix < band && vx > 0 {
-					if ditherThresh(px, py) < edgeWeight(band-ix, band) {
-						cx = vx - 1
-					}
-				} else if ix >= scale-band && vx < cam.W-1 {
-					if ditherThresh(px, py) < edgeWeight(ix-(scale-band)+1, band) {
-						cx = vx + 1
-					}
-				}
-				if iy < band && vy > 0 {
-					if ditherThresh(px+5, py+2) < edgeWeight(band-iy, band) {
-						cy = vy - 1
-					}
-				} else if iy >= scale-band && vy < cam.H-1 {
-					if ditherThresh(px+5, py+2) < edgeWeight(iy-(scale-band)+1, band) {
-						cy = vy + 1
-					}
-				}
-				c := cols[cy][cx]
-				g := 1 + 0.06*(hashNoise(originX+cx, originY+cy, ix/2, iy/2)*2-1)
-				setPixel(img, px, py, c.R*g, c.G*g, c.B*g)
+		// Pixel-perfect tilemap, old-RPG style: each tile is a solid base color
+		// with a few clean, biome-specific accent pixels (grass blades, water
+		// ripples, sand speckles…). Hard tile edges — no blur, no all-over grain.
+		for vy := 0; vy < cam.H; vy++ {
+			for vx := 0; vx < cam.W; vx++ {
+				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
+					texs[vy][vx], originX+vx, originY+vy, frame)
 			}
 		}
 	}
@@ -235,30 +214,74 @@ func drawChevron(img *image.RGBA, cx, baseY, spx int) {
 	}
 }
 
-// bayer8 is the ordered-dither threshold matrix (values 0..63).
-var bayer8 = [8][8]int{
-	{0, 32, 8, 40, 2, 34, 10, 42},
-	{48, 16, 56, 24, 50, 18, 58, 26},
-	{12, 44, 4, 36, 14, 46, 6, 38},
-	{60, 28, 52, 20, 62, 30, 54, 22},
-	{3, 35, 11, 43, 1, 33, 9, 41},
-	{51, 19, 59, 27, 49, 17, 57, 25},
-	{15, 47, 7, 39, 13, 45, 5, 37},
-	{63, 31, 55, 23, 61, 29, 53, 21},
+// paintTile fills one tile with its base color, then stamps a few clean
+// biome-specific accent pixels — the old-RPG tilemap look. Accent positions are
+// hashed from the tile's world coords so they're stable as the camera scrolls;
+// water ripples animate with the frame.
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, wx, wy, frame int) {
+	fillRect(img, ox, oy, scale, scale, colorfulToRGBA(base))
+	if tex == TexFlat || scale < 3 {
+		return
+	}
+	light := colorfulToRGBA(base.BlendLab(spriteWhite, 0.16).Clamped())
+	dark := colorfulToRGBA(base.BlendLab(shadowColor, 0.20).Clamped())
+	hp := func(salt int) (int, int) {
+		return ox + int(hashNoise(wx, wy, salt)*float64(scale-1)),
+			oy + int(hashNoise(wx, wy, salt+97)*float64(scale-1))
+	}
+	switch tex {
+	case TexGrass:
+		for i := 0; i < 2; i++ { // little blades
+			x, y := hp(i * 5)
+			setRGBAClip(img, x, y, dark)
+			setRGBAClip(img, x, y-1, dark)
+		}
+		x, y := hp(40)
+		setRGBAClip(img, x, y, light)
+	case TexSand:
+		for i := 0; i < 3; i++ {
+			x, y := hp(i * 3)
+			setRGBAClip(img, x, y, dark)
+		}
+	case TexDirt:
+		x, y := hp(1) // pebble
+		setRGBAClip(img, x, y, light)
+		setRGBAClip(img, x+1, y, light)
+		x2, y2 := hp(8)
+		setRGBAClip(img, x2, y2, dark)
+	case TexForest:
+		x, y := hp(2) // dappled light through the canopy
+		for _, d := range [][2]int{{0, 0}, {1, 0}, {0, 1}} {
+			setRGBAClip(img, x+d[0], y+d[1], light)
+		}
+	case TexRock:
+		x, y := hp(1) // a small chip + crack, not a full hatch
+		setRGBAClip(img, x, y, dark)
+		setRGBAClip(img, x+1, y+1, dark)
+		x2, y2 := hp(9)
+		setRGBAClip(img, x2, y2, light)
+	case TexWater:
+		for iy := 0; iy < scale; iy++ { // moving ripple highlights
+			if (iy+wx+frame/3)%4 != 0 {
+				continue
+			}
+			for ix := 0; ix < scale; ix++ {
+				if (ix+wy*2+frame/3)%6 < 2 {
+					setRGBAClip(img, ox+ix, oy+iy, light)
+				}
+			}
+		}
+	}
 }
 
-func ditherThresh(px, py int) float64 {
-	return (float64(bayer8[py&7][px&7]) + 0.5) / 64
-}
-
-// edgeWeight is the probability of dithering toward a neighbor tile: strongest
-// at the very boundary, fading to zero at the inner edge of the dither band.
-func edgeWeight(d, band int) float64 {
-	return float64(d) / float64(band+1) * 0.55
+func setRGBAClip(img *image.RGBA, x, y int, c color.RGBA) {
+	if _, _, _, ok := getPixel(img, x, y); ok {
+		img.SetRGBA(x, y, c)
+	}
 }
 
 // hashNoise is a cheap deterministic [0,1) value from a few ints (FNV-ish), for
-// stable per-tile pixel grain.
+// stable per-tile accent placement.
 func hashNoise(vals ...int) float64 {
 	var h uint32 = 2166136261
 	for _, v := range vals {

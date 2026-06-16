@@ -16,6 +16,21 @@ const (
 	TileObject // interactable (guestbook, presenter spot)
 )
 
+// TileTex selects a pixel-art surface texture for the HD renderer (clean,
+// biome-specific accent pixels over the tile's base color). TexFlat is a plain
+// solid tile — the default for indoor/hand-built maps.
+type TileTex uint8
+
+const (
+	TexFlat TileTex = iota
+	TexGrass
+	TexSand
+	TexWater
+	TexDirt
+	TexForest
+	TexRock
+)
+
 // Tile is one cell of a parsed map.
 type Tile struct {
 	Kind     TileKind
@@ -26,6 +41,7 @@ type Tile struct {
 	Object   string    // object id, for TileObject
 	Anim     *TileAnim // optional animation
 	Color    string    // optional base color (hex); overrides the kind palette
+	Tex      TileTex   // HD surface texture
 }
 
 // TileAnim makes a tile come alive: its glyph cycles through Frames and its

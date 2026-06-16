@@ -151,11 +151,29 @@ func cellToTile(c worldgen.Cell) game.Tile {
 	case !c.Walkable:
 		kind = game.TileDecor
 	}
-	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal}
+	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal, Tex: texForBiome(c.Biome)}
 	if c.AnimA != "" && c.AnimB != "" {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
 	return t
+}
+
+// texForBiome maps an overworld biome to an HD surface texture.
+func texForBiome(b worldgen.Biome) game.TileTex {
+	switch b {
+	case worldgen.Grass:
+		return game.TexGrass
+	case worldgen.Sand:
+		return game.TexSand
+	case worldgen.Water, worldgen.Deep:
+		return game.TexWater
+	case worldgen.Forest:
+		return game.TexForest
+	case worldgen.Hill, worldgen.Mountain:
+		return game.TexRock
+	default:
+		return game.TexFlat
+	}
 }
 
 // minimap renders a coarse overview of the surrounding terrain (one cell per
