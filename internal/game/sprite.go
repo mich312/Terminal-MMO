@@ -10,24 +10,15 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// avatarBitmap is the player sprite at half-block (square) pixel resolution:
-// 6 pixels wide × 6 tall → 6 cells wide × 3 cells tall, sized to sit close to
-// the 2×2 footprint rather than loom over it. A friendly, rounded, Claude-
-// inspired critter: shaded top (L) and bottom (D), two eyes (E) with body on
-// either side so they stay distinct when scaled, and a small mouth (m). '.' is
-// transparent so the map shows through.
-var avatarBitmap = []string{
-	".LLLL.",
-	"LBBBBL",
-	"BEBBEB",
-	"BBBBBB",
-	"BBmmBB",
-	".DDDD.",
-}
+// Sprite bitmaps live in avatar.go (AvatarBitmap), shared by both renderers.
+// They are 6×6 pixels → 6 cells wide × 3 cells tall in the half-block renderer,
+// sized to sit close to the 2×2 footprint rather than loom over it.
 
 var (
 	spriteWhite = mustHex("#F5F7FA")
 	spriteBlack = mustHex("#0E1116")
+	hatMain     = mustHex("#FFD166") // accessory colors (H / h)
+	hatShade    = mustHex("#C9962E")
 )
 
 // playerColor resolves a player's avatar color to RGB. Avatar colors are hex
@@ -50,8 +41,11 @@ func playerColor(c lipgloss.Color) colorful.Color {
 // centered over it and bottom-aligned, overhanging upward and sideways.
 func stampSprite(grid [][]rcell, th *ui.Theme, p world.Player, isSelf bool, frame, fc, fr int) {
 	body := playerColor(p.Color)
-	cellsW := len(avatarBitmap[0])
-	cellsH := len(avatarBitmap) / 2
+	// The half-block grid can't show the full-res sprite; downsample it to keep
+	// the glyph avatar ~2 tiles (6 px wide × 6 px tall → 6 cells × 3 cells).
+	bmp := downsampleBitmap(AvatarBitmap(p.Style, p.Accessory, p.Facing, AvatarWalkFrame(p.LastMoved, frame)), 6, 6)
+	cellsW := len(bmp[0])
+	cellsH := len(bmp) / 2
 
 	left := fc + PlayerW/2 - cellsW/2
 	bottom := fr + PlayerH - 1
@@ -63,8 +57,8 @@ func stampSprite(grid [][]rcell, th *ui.Theme, p world.Player, isSelf bool, fram
 	}
 
 	for cr := 0; cr < cellsH; cr++ {
-		topRow := []rune(avatarBitmap[2*cr])
-		botRow := []rune(avatarBitmap[2*cr+1])
+		topRow := []rune(bmp[2*cr])
+		botRow := []rune(bmp[2*cr+1])
 		for cc := 0; cc < cellsW; cc++ {
 			tc, topOp := spritePixel(topRow[cc], body, isSelf)
 			bc, botOp := spritePixel(botRow[cc], body, isSelf)
@@ -114,9 +108,38 @@ func spritePixel(code rune, body colorful.Color, isSelf bool) (colorful.Color, b
 		return b.BlendLab(spriteBlack, 0.55).Clamped(), true
 	case 'W':
 		return spriteWhite, true
+	case 'H':
+		return hatMain, true
+	case 'h':
+		return hatShade, true
 	default:
 		return colorful.Color{}, false
 	}
+}
+
+// downsampleBitmap nearest-samples a sprite down to at most maxW×maxH (keeping
+// an even height for half-block pairing). Sprites already within bounds are
+// returned unchanged.
+func downsampleBitmap(rows []string, maxW, maxH int) []string {
+	h := len(rows)
+	w := len([]rune(rows[0]))
+	if w <= maxW && h <= maxH {
+		return rows
+	}
+	nw, nh := min(w, maxW), min(h, maxH)
+	if nh%2 == 1 {
+		nh--
+	}
+	out := make([]string, nh)
+	for y := 0; y < nh; y++ {
+		src := []rune(rows[y*h/nh])
+		o := make([]rune, nw)
+		for x := 0; x < nw; x++ {
+			o[x] = src[x*w/nw]
+		}
+		out[y] = string(o)
+	}
+	return out
 }
 
 func nameInitial(name string) rune {

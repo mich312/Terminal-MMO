@@ -42,6 +42,7 @@ var (
 
 // avatarColors are 8 readable truecolor hues for player glyphs.
 var avatarColors = []lipgloss.Color{
+	"#D97757", // claude clay
 	"#FF6B6B", // coral
 	"#7BD88F", // green
 	"#FFC861", // amber

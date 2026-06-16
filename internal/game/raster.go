@@ -91,13 +91,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		}
 	}
 
-	stampSpritesRGBA(img, players, self, scale, originX, originY)
+	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
 	return img
 }
 
 // stampSpritesRGBA draws every player's avatar, oldest movers first and self
 // last, mirroring the glyph renderer's ordering.
-func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, scale, originX, originY int) {
+func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, frame, scale, originX, originY int) {
 	sorted := make([]world.Player, len(players))
 	copy(sorted, players)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -110,25 +110,24 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, scal
 		return sorted[i].LastMoved.Before(sorted[j].LastMoved)
 	})
 	for _, p := range sorted {
-		blitAvatar(img, p, p.Name == self, scale, p.X-originX, p.Y-originY)
+		blitAvatar(img, p, p.Name == self, frame, scale, p.X-originX, p.Y-originY)
 	}
 }
 
-// blitAvatar draws one player: a soft contact shadow, then the bitmap upscaled
-// with bilinear alpha for rounded, anti-aliased edges, and a small chevron
-// above your own head. (fc,fr) is the footprint top-left in camera cells; the
-// sprite is centered horizontally and bottom-aligned on the footprint.
-func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, scale, fc, fr int) {
+// blitAvatar draws one player as crisp pixel art: a soft contact shadow, then
+// the sprite scaled by an integer factor (sharp, nearest-neighbor — no blur)
+// and a small chevron above your own head. (fc,fr) is the footprint top-left in
+// camera cells; the sprite is centered horizontally and bottom-aligned.
+func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, fr int) {
 	body := playerColor(p.Color)
-	spr := buildSpriteRGBA(body, isSelf)
-	bmpW, bmpH := spr.Bounds().Dx(), spr.Bounds().Dy()
-	// Size the avatar to ~2 tiles tall so it sits within its 2×2 footprint
-	// instead of overhanging; width follows the bitmap's aspect.
-	spx := (PlayerH * scale) / bmpH
-	if spx < 1 {
-		spx = 1
+	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, AvatarWalkFrame(p.LastMoved, frame))
+	bw, bh := len([]rune(bmp[0])), len(bmp)
+	// Integer pixel size keeps edges sharp; aim for ~2 tiles tall.
+	k := (PlayerH * scale) / bh
+	if k < 1 {
+		k = 1
 	}
-	destW, destH := bmpW*spx, bmpH*spx
+	destW, destH := bw*k, bh*k
 
 	centerX := (fc + PlayerW/2) * scale
 	bottomEdge := (fr + PlayerH) * scale
@@ -136,90 +135,34 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, scale, fc, fr int)
 	top := bottomEdge - destH
 
 	// soft elliptical contact shadow at the feet
-	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(spx)*0.6,
-		float64(destW)*0.46, float64(spx)*1.2)
+	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
+		float64(destW)*0.42, float64(k)*1.3)
 
-	drawScaledSprite(img, spr, left, top, destW, destH)
-
-	if isSelf {
-		drawChevron(img, centerX, top-spx-spx/2, spx)
-	}
-}
-
-// buildSpriteRGBA renders the avatar bitmap to a 6×8 RGBA: opaque pixels carry
-// their shaded body color (alpha 255), transparent ones are zero — which, with
-// alpha 0/1, doubles as a premultiplied buffer for clean bilinear edges.
-func buildSpriteRGBA(body colorful.Color, isSelf bool) *image.RGBA {
-	w, h := len(avatarBitmap[0]), len(avatarBitmap)
-	spr := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		runes := []rune(avatarBitmap[y])
-		for x := 0; x < w; x++ {
-			col, opaque := spritePixel(runes[x], body, isSelf)
+	for sy := 0; sy < bh; sy++ {
+		runes := []rune(bmp[sy])
+		for sx := 0; sx < bw && sx < len(runes); sx++ {
+			col, opaque := spritePixel(runes[sx], body, isSelf)
 			if !opaque {
 				continue
 			}
-			spr.SetRGBA(x, y, colorfulToRGBA(col))
+			fillRect(img, left+sx*k, top+sy*k, k, k, colorfulToRGBA(col))
 		}
 	}
-	return spr
+
+	if isSelf {
+		drawChevron(img, centerX, top-k-k/2, k)
+	}
 }
 
-// drawScaledSprite upscales a premultiplied RGBA into img with bilinear
-// sampling and alpha compositing, so the avatar's edges are smooth.
-func drawScaledSprite(img *image.RGBA, spr *image.RGBA, dx, dy, destW, destH int) {
-	sw, sh := spr.Bounds().Dx(), spr.Bounds().Dy()
-	for j := 0; j < destH; j++ {
-		sv := (float64(j)+0.5)/float64(destH)*float64(sh) - 0.5
-		for i := 0; i < destW; i++ {
-			su := (float64(i)+0.5)/float64(destW)*float64(sw) - 0.5
-			r, g, b, a := sampleSpritePM(spr, su, sv)
-			if a <= 0.004 {
-				continue
+// fillRect paints a w×h block of one color, clipped to the image bounds.
+func fillRect(img *image.RGBA, x0, y0, w, h int, c color.RGBA) {
+	for y := y0; y < y0+h; y++ {
+		for x := x0; x < x0+w; x++ {
+			if _, _, _, ok := getPixel(img, x, y); ok {
+				img.SetRGBA(x, y, c)
 			}
-			px, py := dx+i, dy+j
-			or, og, ob, ok := getPixel(img, px, py)
-			if !ok {
-				continue
-			}
-			setPixel8(img, px, py,
-				r+float64(or)*(1-a),
-				g+float64(og)*(1-a),
-				b+float64(ob)*(1-a))
 		}
 	}
-}
-
-// sampleSpritePM bilinearly samples a premultiplied sprite, returning
-// premultiplied r,g,b in 0..255 and coverage a in 0..1.
-func sampleSpritePM(spr *image.RGBA, u, v float64) (r, g, b, a float64) {
-	w, h := spr.Bounds().Dx(), spr.Bounds().Dy()
-	x0 := clampi(int(math.Floor(u)), 0, w-1)
-	x1 := clampi(x0+1, 0, w-1)
-	y0 := clampi(int(math.Floor(v)), 0, h-1)
-	y1 := clampi(y0+1, 0, h-1)
-	tx := u - math.Floor(u)
-	ty := v - math.Floor(v)
-	if tx < 0 {
-		tx = 0
-	}
-	if ty < 0 {
-		ty = 0
-	}
-	r00, g00, b00, a00 := texel(spr, x0, y0)
-	r10, g10, b10, a10 := texel(spr, x1, y0)
-	r01, g01, b01, a01 := texel(spr, x0, y1)
-	r11, g11, b11, a11 := texel(spr, x1, y1)
-	r = bilerp(r00, r10, r01, r11, tx, ty)
-	g = bilerp(g00, g10, g01, g11, tx, ty)
-	b = bilerp(b00, b10, b01, b11, tx, ty)
-	a = bilerp(a00, a10, a01, a11, tx, ty)
-	return
-}
-
-func texel(spr *image.RGBA, x, y int) (r, g, b, a float64) {
-	o := spr.PixOffset(x, y)
-	return float64(spr.Pix[o]), float64(spr.Pix[o+1]), float64(spr.Pix[o+2]), float64(spr.Pix[o+3]) / 255
 }
 
 // drawShadow darkens an elliptical patch toward the ground color, softly.
