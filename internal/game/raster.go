@@ -76,17 +76,39 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			}
 		}
 	} else {
-		for vy := 0; vy < cam.H; vy++ {
-			for vx := 0; vx < cam.W; vx++ {
-				c := cols[vy][vx].Clamped()
-				rc := colorfulToRGBA(c)
-				for dy := 0; dy < scale; dy++ {
-					row := img.Pix[img.PixOffset(vx*scale, vy*scale+dy):]
-					for dx := 0; dx < scale; dx++ {
-						o := dx * 4
-						row[o], row[o+1], row[o+2], row[o+3] = rc.R, rc.G, rc.B, 255
+		// Crisp pixel-art terrain: solid tile interiors, ordered-dithered biome
+		// boundaries (stippled, not blurred), plus a little per-tile grain so
+		// flat areas have texture. All sharp — every pixel is one tile's color.
+		band := scale / 4
+		if band < 1 {
+			band = 1
+		}
+		for py := 0; py < imgH; py++ {
+			vy, iy := py/scale, py%scale
+			for px := 0; px < imgW; px++ {
+				vx, ix := px/scale, px%scale
+				cx, cy := vx, vy
+				if ix < band && vx > 0 {
+					if ditherThresh(px, py) < edgeWeight(band-ix, band) {
+						cx = vx - 1
+					}
+				} else if ix >= scale-band && vx < cam.W-1 {
+					if ditherThresh(px, py) < edgeWeight(ix-(scale-band)+1, band) {
+						cx = vx + 1
 					}
 				}
+				if iy < band && vy > 0 {
+					if ditherThresh(px+5, py+2) < edgeWeight(band-iy, band) {
+						cy = vy - 1
+					}
+				} else if iy >= scale-band && vy < cam.H-1 {
+					if ditherThresh(px+5, py+2) < edgeWeight(iy-(scale-band)+1, band) {
+						cy = vy + 1
+					}
+				}
+				c := cols[cy][cx]
+				g := 1 + 0.06*(hashNoise(originX+cx, originY+cy, ix/2, iy/2)*2-1)
+				setPixel(img, px, py, c.R*g, c.G*g, c.B*g)
 			}
 		}
 	}
@@ -211,6 +233,41 @@ func drawChevron(img *image.RGBA, cx, baseY, spx int) {
 			}
 		}
 	}
+}
+
+// bayer8 is the ordered-dither threshold matrix (values 0..63).
+var bayer8 = [8][8]int{
+	{0, 32, 8, 40, 2, 34, 10, 42},
+	{48, 16, 56, 24, 50, 18, 58, 26},
+	{12, 44, 4, 36, 14, 46, 6, 38},
+	{60, 28, 52, 20, 62, 30, 54, 22},
+	{3, 35, 11, 43, 1, 33, 9, 41},
+	{51, 19, 59, 27, 49, 17, 57, 25},
+	{15, 47, 7, 39, 13, 45, 5, 37},
+	{63, 31, 55, 23, 61, 29, 53, 21},
+}
+
+func ditherThresh(px, py int) float64 {
+	return (float64(bayer8[py&7][px&7]) + 0.5) / 64
+}
+
+// edgeWeight is the probability of dithering toward a neighbor tile: strongest
+// at the very boundary, fading to zero at the inner edge of the dither band.
+func edgeWeight(d, band int) float64 {
+	return float64(d) / float64(band+1) * 0.55
+}
+
+// hashNoise is a cheap deterministic [0,1) value from a few ints (FNV-ish), for
+// stable per-tile pixel grain.
+func hashNoise(vals ...int) float64 {
+	var h uint32 = 2166136261
+	for _, v := range vals {
+		h = (h ^ uint32(v)) * 16777619
+	}
+	h ^= h >> 13
+	h *= 2654435761
+	h ^= h >> 16
+	return float64(h&0xffff) / 65536
 }
 
 func bilerp(c00, c10, c01, c11, tx, ty float64) float64 {

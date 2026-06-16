@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -193,7 +194,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	draw()
 	ticker := time.NewTicker(time.Second / hdFPS)
 	defer ticker.Stop()
-	esc := 0 // tiny parser for arrow-key escapes: ESC [ (or O) then A/B/C/D
+	// Minimal escape-sequence parser: ESC [ (or O) <params> <final>. Arrow keys
+	// are A/B/C/D; a ";2" parameter means Shift is held → run.
+	esc := 0
+	var csi []byte
 	for {
 		select {
 		case b, ok := <-keys:
@@ -206,13 +210,17 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 				esc = 1
 			case esc == 1:
 				if b == '[' || b == 'O' {
-					esc = 2
+					esc, csi = 2, csi[:0]
 				} else {
 					esc = 0
 				}
 			case esc == 2:
-				esc = 0
-				key = arrowKey(b)
+				if (b >= 'A' && b <= 'Z') || b == '~' {
+					esc = 0
+					key = csiKey(string(csi), b)
+				} else {
+					csi = append(csi, b)
+				}
 			case b == 'q' || b == 'Q' || b == 3: // q or Ctrl-C
 				hud()
 				return
@@ -251,6 +259,19 @@ func hdMove(gen *worldgen.Generator, px, py *int, key string) bool {
 		moved = true
 	}
 	return moved
+}
+
+// csiKey turns a parsed arrow escape into a MoveKey name, prefixing "shift+"
+// when the Shift modifier (parameter ";2") is present so it runs.
+func csiKey(params string, final byte) string {
+	dir := arrowKey(final)
+	if dir == "" {
+		return ""
+	}
+	if strings.Contains(params, ";2") { // Shift modifier
+		return "shift+" + dir
+	}
+	return dir
 }
 
 // arrowKey maps a CSI/SS3 final byte to the movement key names MoveKey expects.
