@@ -15,11 +15,13 @@
 //	go run ./cmd/pixeldemo -proto kitty   # or sixel, or auto
 //	go run ./cmd/pixeldemo -probe         # report capabilities + cell size
 //
-// Flags: -scale (px/tile), -w/-h (viewport tiles), -frames, -fps, -seed,
-// -still, -refresh (frames between full repaints), and -motion (pan = camera
-// scrolls, worst-case full-frame churn; walk = camera still, one avatar walks
-// while tiles animate). Each run reports the naive full-frame cost vs what the
-// delta loop actually sent.
+// Defaults are the config we'd actually ship: auto-detected protocol, viewport
+// auto-fit to the window, flat shading (compresses), delta on. Flags: -scale
+// (px/tile), -w/-h (viewport tiles, 0 = auto-fit), -frames, -fps, -seed,
+// -still, -smooth (pretty but heavy), -res WxH (kitty-only fixed resolution),
+// -refresh (frames between full repaints), -motion (pan = camera scrolls,
+// worst-case churn; walk = camera still, one avatar walks). Each run reports
+// the naive full-frame cost vs what the delta loop actually sent.
 package main
 
 import (
@@ -49,14 +51,14 @@ import (
 func main() {
 	proto := flag.String("proto", "auto", "image protocol: kitty | sixel | auto")
 	scale := flag.Int("scale", 12, "pixels per tile (sprite pixel = scale/2)")
-	vw := flag.Int("w", 64, "viewport width in tiles")
-	vh := flag.Int("h", 32, "viewport height in tiles")
+	vw := flag.Int("w", 0, "viewport width in tiles (0 = auto-fit the terminal)")
+	vh := flag.Int("h", 0, "viewport height in tiles (0 = auto-fit the terminal)")
 	frames := flag.Int("frames", 60, "number of frames to render")
 	fps := flag.Int("fps", 12, "target frames per second")
 	seed := flag.Uint64("seed", 1, "worldgen seed")
 	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls) | walk (camera still, one avatar walks)")
 	refresh := flag.Int("refresh", 48, "frames between full repaints (bounds kitty placement memory)")
-	smooth := flag.Bool("smooth", true, "bilinear terrain + vignette (pretty but ~15x more bytes); false = flat tiles (compresses)")
+	smooth := flag.Bool("smooth", false, "bilinear terrain + vignette (pretty but ~15x more bytes); default flat tiles compress far better")
 	res := flag.String("res", "", "fixed internal render resolution WxH (e.g. 480x270); empty = native tiles×scale. kitty scales it to fill the window")
 	still := flag.Bool("still", false, "render a single frame and exit")
 	probe := flag.Bool("probe", false, "report terminal graphics support + cell size and exit")
@@ -89,7 +91,7 @@ func main() {
 	case "kitty":
 		encode = func(im *image.RGBA) []byte { return encodeKitty(im, 0, 0) }
 	case "sixel":
-		encode = encodeSixel
+		encode = func(im *image.RGBA) []byte { return encodeSixel(im, *smooth) }
 	default:
 		fmt.Fprintf(os.Stderr, "unknown proto %q\n", chosen)
 		os.Exit(1)
@@ -98,6 +100,18 @@ func main() {
 	if *still {
 		*frames = 1
 		*motion = "still"
+	}
+
+	// Auto-fit the viewport to the window: fill cols×(rows-1) cells (one row
+	// spare so sixel never scrolls off the bottom) given the probed cell size.
+	if *vw <= 0 || *vh <= 0 {
+		aw, ah := autoViewport(*scale, caps.cellW, caps.cellH)
+		if *vw <= 0 {
+			*vw = aw
+		}
+		if *vh <= 0 {
+			*vh = ah
+		}
 	}
 
 	// Fixed internal resolution: render native, then box-downscale to a constant
@@ -168,7 +182,7 @@ func main() {
 		if chosen == "kitty" {
 			full = encodeKitty(img, cols, rows)
 		} else {
-			full = encodeSixel(img)
+			full = encodeSixel(img, *smooth)
 		}
 		t2 := time.Now()
 		rasterNS += t1.Sub(t0).Nanoseconds()
@@ -230,6 +244,25 @@ func main() {
 		dirtyPct:  100 * dirtySum / float64(maxInt(*frames, 1)),
 		gotFPS:    float64(*frames) / elapsed.Seconds(),
 	})
+}
+
+// autoViewport sizes the tile viewport to fill the terminal: image pixels =
+// cols×cellW by (rows-1)×cellH, divided by scale into tiles. Falls back to a
+// sane default when the size or cell size is unknown (e.g. no TTY).
+func autoViewport(scale, cellW, cellH int) (w, h int) {
+	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || cols <= 0 || rows <= 0 || cellW <= 0 || cellH <= 0 || scale <= 0 {
+		return 64, 32
+	}
+	w = cols * cellW / scale
+	h = (rows - 1) * cellH / scale
+	if w < 8 {
+		w = 8
+	}
+	if h < 8 {
+		h = 8
+	}
+	return w, h
 }
 
 func panStep(walk bool) int {
@@ -430,16 +463,19 @@ var bayer4 = [4][4]int{
 	{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5},
 }
 
-// encodeSixel quantizes to a 6×6×6 (216) color cube with ordered dithering to
-// soften gradient banding, then emits sixel bands. Cheap and dependency-free.
-func encodeSixel(img *image.RGBA) []byte {
+// encodeSixel quantizes to a 6×6×6 (216) color cube and emits sixel bands.
+// Cheap and dependency-free. dither applies ordered (Bayer) dithering to soften
+// gradient banding — essential for smooth shading, but it must stay OFF for
+// flat tiles: the per-pixel noise destroys the long runs that sixel RLE relies
+// on (it bloats a flat frame ~10×).
+func encodeSixel(img *image.RGBA, dither bool) []byte {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	idx := make([]uint8, w*h)
 	used := make([]bool, 216)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			o := img.PixOffset(x, y)
-			p := q6(img.Pix[o], x, y)*36 + q6(img.Pix[o+1], x, y)*6 + q6(img.Pix[o+2], x, y)
+			p := q6(img.Pix[o], x, y, dither)*36 + q6(img.Pix[o+1], x, y, dither)*6 + q6(img.Pix[o+2], x, y, dither)
 			idx[y*w+x] = uint8(p)
 			used[p] = true
 		}
@@ -504,11 +540,13 @@ func encodeSixel(img *image.RGBA) []byte {
 	return buf.Bytes()
 }
 
-// q6 maps a channel to a 0..5 level with ordered (Bayer) dithering.
-func q6(v byte, x, y int) int {
+// q6 maps a channel to a 0..5 level, optionally with ordered (Bayer) dithering.
+func q6(v byte, x, y int, dither bool) int {
 	t := float64(v) / 255 * 5
-	thr := float64(bayer4[y&3][x&3])/16 - 0.5
-	lvl := int(t + thr + 0.5)
+	if dither {
+		t += float64(bayer4[y&3][x&3])/16 - 0.5
+	}
+	lvl := int(t + 0.5)
 	if lvl < 0 {
 		return 0
 	}
