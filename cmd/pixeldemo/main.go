@@ -1,22 +1,25 @@
-// Command pixeldemo is a throwaway harness for the "real pixel" renderer
-// experiment: it rasterizes a slice of the Wilds with game.RenderRGBA and
-// pushes it to the terminal as a graphic — via the kitty graphics protocol or
-// sixel — instead of half-block glyphs. It exists to answer two questions
-// before we commit to the idea: what does it actually look like, and what does
-// it cost (encode time + bytes on the wire, which over SSH is the real limit)?
+// Command pixeldemo is a harness for the "real pixel" renderer experiment: it
+// rasterizes a slice of the Wilds with game.RenderRGBA and pushes it to the
+// terminal as a graphic — via the kitty graphics protocol or sixel — instead
+// of half-block glyphs. It answers two questions before we commit to the idea:
+// what does it look like, and what does it cost (encode time + bytes on the
+// wire, which over SSH is the real limit)?
 //
-// It deliberately does NOT touch bubbletea/wish: image protocols are
-// out-of-band escapes that fight bubbletea's frame diffing, so we isolate the
-// renderer here to measure it cleanly.
+// It runs an efficient delta loop: it probes the terminal's cell size, then
+// each frame transmits only the changed (dirty) region, aligned to the text
+// cell grid, and transmits nothing at all when the scene is static. A periodic
+// full refresh bounds kitty's placement memory. It deliberately does NOT touch
+// bubbletea/wish — image escapes fight bubbletea's frame diffing, so we isolate
+// the renderer here to measure it cleanly.
 //
 //	go run ./cmd/pixeldemo -proto kitty   # or sixel, or auto
-//	go run ./cmd/pixeldemo -probe         # just report terminal capabilities
+//	go run ./cmd/pixeldemo -probe         # report capabilities + cell size
 //
-// Flags: -scale (px per tile), -w/-h (viewport in tiles), -frames, -fps,
-// -seed, -still, and -motion (pan = camera scrolls, worst-case full-frame
-// churn; walk = camera still, one avatar walks while tiles animate). Each run
-// also reports a delta projection: the cost of re-sending only the dirty
-// bounding box, which is where the real bandwidth win lives.
+// Flags: -scale (px/tile), -w/-h (viewport tiles), -frames, -fps, -seed,
+// -still, -refresh (frames between full repaints), and -motion (pan = camera
+// scrolls, worst-case full-frame churn; walk = camera still, one avatar walks
+// while tiles animate). Each run reports the naive full-frame cost vs what the
+// delta loop actually sent.
 package main
 
 import (
@@ -29,6 +32,7 @@ import (
 	"image"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -49,32 +53,33 @@ func main() {
 	frames := flag.Int("frames", 60, "number of frames to render")
 	fps := flag.Int("fps", 12, "target frames per second")
 	seed := flag.Uint64("seed", 1, "worldgen seed")
-	pan := flag.Int("pan", 1, "tiles to pan the camera per frame (worst-case churn)")
-	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls, worst case) | walk (camera still, one avatar walks + tiles animate)")
+	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls) | walk (camera still, one avatar walks)")
+	refresh := flag.Int("refresh", 48, "frames between full repaints (bounds kitty placement memory)")
+	smooth := flag.Bool("smooth", true, "bilinear terrain + vignette (pretty but ~15x more bytes); false = flat tiles (compresses)")
 	still := flag.Bool("still", false, "render a single frame and exit")
-	probe := flag.Bool("probe", false, "detect terminal graphics support and exit")
+	probe := flag.Bool("probe", false, "report terminal graphics support + cell size and exit")
 	flag.Parse()
 
+	caps := probeTerminal(!*still || *probe)
 	if *probe {
-		k, s := detect()
-		fmt.Printf("kitty graphics: %v\nsixel:          %v\n", k, s)
+		fmt.Printf("kitty graphics: %v\nsixel:          %v\ncell size:      %dx%d px\n",
+			caps.kitty, caps.sixel, caps.cellW, caps.cellH)
 		return
 	}
 
 	chosen := *proto
 	if chosen == "auto" {
-		k, s := detect()
 		switch {
-		case k:
+		case caps.kitty:
 			chosen = "kitty"
-		case s:
+		case caps.sixel:
 			chosen = "sixel"
 		default:
 			fmt.Fprintln(os.Stderr, "no kitty/sixel support detected; pass -proto explicitly to force it")
 			os.Exit(1)
 		}
 		fmt.Fprintf(os.Stderr, "auto-detected: %s\n", chosen)
-		time.Sleep(600 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	var encode func(*image.RGBA) []byte
@@ -90,13 +95,15 @@ func main() {
 
 	if *still {
 		*frames = 1
-		*pan = 0
+		*motion = "still"
 	}
+
+	// Delta needs to know the terminal's cell pixel size to align a dirty
+	// sub-image to the right text cell; without it we send full frames.
+	deltaOK := !*still && caps.cellW > 0 && caps.cellH > 0
 
 	players := demoPlayers(*seed)
 	out := bufio.NewWriterSize(os.Stdout, 1<<20)
-
-	// Tidy the screen and hide the cursor; restore on exit / Ctrl-C.
 	restore := func() {
 		out.WriteString("\x1b[?25h\x1b[0m\n")
 		out.Flush()
@@ -109,24 +116,20 @@ func main() {
 	gen := worldgen.New(*seed)
 	wx, wy := worldgen.GateX, worldgen.GateY
 	walk := *motion == "walk"
-	if walk {
-		*pan = 0
-	}
 
 	var (
-		rasterNS, encodeNS     int64
-		totalBytes, deltaBytes int
-		dirtySum               float64
-		minB, maxB             = int(^uint(0) >> 1), 0
-		started                = time.Now()
-		framePeriod            = time.Second / time.Duration(maxInt(*fps, 1))
-		prev                   []byte
+		rasterNS, encodeNS   int64
+		baseBytes, sentBytes int
+		dirtySum             float64
+		started              = time.Now()
+		framePeriod          = time.Second / time.Duration(maxInt(*fps, 1))
+		prev                 []byte
+		w, h                 = *vw * *scale, *vh * *scale
 	)
 
 	for f := 0; f < *frames; f++ {
 		frameStart := time.Now()
-
-		if walk && f%3 == 0 { // step "you" east a tile to exercise sprite churn
+		if walk && f%3 == 0 { // step "you" east to exercise sprite churn
 			players[0].X++
 			players[0].LastMoved = time.Now()
 		}
@@ -135,37 +138,51 @@ func main() {
 		cam := game.Camera{X: 0, Y: 0, W: *vw, H: *vh}
 
 		t0 := time.Now()
-		img := game.RenderRGBA(nil, tm, players, "you", f, cam, game.Light{}, ox, oy, *scale)
+		img := game.RenderRGBA(nil, tm, players, "you", f, cam, game.Light{}, ox, oy, *scale, *smooth)
 		t1 := time.Now()
-		payload := encode(img)
+		full := encode(img) // baseline + used on full frames
 		t2 := time.Now()
-
-		// Delta accounting: what would it cost to re-send only the changed
-		// region? zlib/sixel give no temporal delta for free, so the saving
-		// comes from encoding just the dirty bounding box and placing it.
-		w, h := img.Bounds().Dx(), img.Bounds().Dy()
-		if prev == nil {
-			deltaBytes += len(payload) // first frame is a full send
-			dirtySum += 1
-		} else if r, ok := dirtyRect(prev, img.Pix, w, h); ok {
-			deltaBytes += len(encode(crop(img, r)))
-			dirtySum += float64(r.Dx()*r.Dy()) / float64(w*h)
-		}
-		prev = append(prev[:0], img.Pix...)
-
-		out.WriteString("\x1b[H")
-		if chosen == "kitty" {
-			out.WriteString("\x1b_Ga=d\x1b\\") // clear prior placements so frames don't pile up
-		}
-		out.Write(payload)
-		out.Flush()
-
 		rasterNS += t1.Sub(t0).Nanoseconds()
 		encodeNS += t2.Sub(t1).Nanoseconds()
-		totalBytes += len(payload)
-		minB, maxB = minInt(minB, len(payload)), maxInt(maxB, len(payload))
+		baseBytes += len(full)
 
-		wx += *pan
+		doFull := f == 0 || !deltaOK || (*refresh > 0 && f%*refresh == 0)
+		dirty := 1.0
+		if !doFull {
+			r, changed := dirtyRect(prev, img.Pix, w, h)
+			switch {
+			case !changed:
+				dirty = 0 // static: send nothing
+			case float64(r.Dx()*r.Dy()) > 0.5*float64(w*h):
+				doFull = true // mostly changed: a full frame is cheaper than the overhead
+			default:
+				sr := snapToCells(r, caps.cellW, caps.cellH, w, h)
+				sub := encode(crop(img, sr))
+				emit(out, sub, sr.Min.X/caps.cellW, sr.Min.Y/caps.cellH)
+				sentBytes += len(sub)
+				dirty = float64(sr.Dx()*sr.Dy()) / float64(w*h)
+			}
+		}
+		if doFull {
+			if chosen == "kitty" {
+				out.WriteString("\x1b7\x1b[H\x1b_Ga=d\x1b\\") // reclaim old placements
+				out.Write(full)
+				out.WriteString("\x1b8")
+			} else {
+				emit(out, full, 0, 0)
+			}
+			sentBytes += len(full)
+			dirty = 1
+		}
+		out.Flush()
+		dirtySum += dirty
+
+		if prev == nil {
+			prev = make([]byte, len(img.Pix))
+		}
+		copy(prev, img.Pix)
+
+		wx += panStep(walk)
 		if d := framePeriod - time.Since(frameStart); d > 0 && !*still {
 			time.Sleep(d)
 		}
@@ -174,28 +191,46 @@ func main() {
 	elapsed := time.Since(started)
 	restore()
 	report(reportData{
-		proto:      chosen,
-		motion:     *motion,
-		frames:     *frames,
-		tilesW:     *vw,
-		tilesH:     *vh,
-		scale:      *scale,
-		pxW:        *vw * *scale,
-		pxH:        *vh * *scale,
-		fps:        *fps,
-		rasterMS:   msPerFrame(rasterNS, *frames),
-		encodeMS:   msPerFrame(encodeNS, *frames),
-		avgBytes:   totalBytes / maxInt(*frames, 1),
-		minBytes:   minB,
-		maxBytes:   maxB,
-		deltaBytes: deltaBytes / maxInt(*frames, 1),
-		dirtyPct:   100 * dirtySum / float64(maxInt(*frames, 1)),
-		gotFPS:     float64(*frames) / elapsed.Seconds(),
+		proto: chosen, motion: *motion, delta: deltaOK, smooth: *smooth,
+		frames: *frames, tilesW: *vw, tilesH: *vh, scale: *scale,
+		pxW: w, pxH: h, fps: *fps,
+		rasterMS:  msPerFrame(rasterNS, *frames),
+		encodeMS:  msPerFrame(encodeNS, *frames),
+		baseBytes: baseBytes / maxInt(*frames, 1),
+		sentBytes: sentBytes / maxInt(*frames, 1),
+		dirtyPct:  100 * dirtySum / float64(maxInt(*frames, 1)),
+		gotFPS:    float64(*frames) / elapsed.Seconds(),
 	})
 }
 
+func panStep(walk bool) int {
+	if walk {
+		return 0
+	}
+	return 1
+}
+
+// emit positions the cursor at a text cell (1-based) and writes the image,
+// bracketed by cursor save/restore so the placement never scrolls the screen.
+func emit(out *bufio.Writer, payload []byte, col, row int) {
+	out.WriteString("\x1b7")
+	fmt.Fprintf(out, "\x1b[%d;%dH", row+1, col+1)
+	out.Write(payload)
+	out.WriteString("\x1b8")
+}
+
+// snapToCells expands a pixel rect outward to the text-cell grid so a kitty/
+// sixel sub-image placed at the cell aligns exactly with the dirty region.
+func snapToCells(r image.Rectangle, cw, ch, w, h int) image.Rectangle {
+	x0 := (r.Min.X / cw) * cw
+	y0 := (r.Min.Y / ch) * ch
+	x1 := minInt(((r.Max.X+cw-1)/cw)*cw, w)
+	y1 := minInt(((r.Max.Y+ch-1)/ch)*ch, h)
+	return image.Rect(x0, y0, x1, y1)
+}
+
 // dirtyRect returns the bounding box of pixels that differ between two RGBA
-// buffers of the same w×h, and whether anything changed at all.
+// buffers of the same w×h, and whether anything changed.
 func dirtyRect(prev, cur []byte, w, h int) (image.Rectangle, bool) {
 	minX, minY, maxX, maxY := w, h, -1, -1
 	for y := 0; y < h; y++ {
@@ -224,8 +259,7 @@ func dirtyRect(prev, cur []byte, w, h int) (image.Rectangle, bool) {
 	return image.Rect(minX, minY, maxX+1, maxY+1), true
 }
 
-// crop copies a rectangle out of img into a new tightly-packed RGBA (kitty/
-// sixel both want contiguous pixels for the sub-image).
+// crop copies a rectangle out of img into a new tightly-packed RGBA.
 func crop(img *image.RGBA, r image.Rectangle) *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
 	for y := 0; y < r.Dy(); y++ {
@@ -291,8 +325,8 @@ func demoPlayers(seed uint64) []world.Player {
 
 // encodeKitty transmits the image as RGBA (f=32), zlib-compressed (o=z),
 // base64'd and chunked at 4096 bytes per APC escape, displayed at the cursor
-// (a=T). zlib is the difference between ~170 KB and a few KB for flat terrain,
-// so it's the only fair way to weigh kitty against sixel on the wire.
+// without moving it (a=T, C=1). zlib is the difference between ~170 KB and a
+// few KB for flat terrain, the only fair way to weigh kitty against sixel.
 func encodeKitty(img *image.RGBA) []byte {
 	var zb bytes.Buffer
 	zw := zlib.NewWriter(&zb)
@@ -305,10 +339,7 @@ func encodeKitty(img *image.RGBA) []byte {
 	const chunk = 4096
 	first := true
 	for len(b64) > 0 {
-		n := chunk
-		if n > len(b64) {
-			n = len(b64)
-		}
+		n := minInt(chunk, len(b64))
 		part := b64[:n]
 		b64 = b64[n:]
 		more := 0
@@ -317,7 +348,7 @@ func encodeKitty(img *image.RGBA) []byte {
 		}
 		buf.WriteString("\x1b_G")
 		if first {
-			fmt.Fprintf(&buf, "f=32,o=z,s=%d,v=%d,a=T,", bounds.Dx(), bounds.Dy())
+			fmt.Fprintf(&buf, "f=32,o=z,s=%d,v=%d,a=T,C=1,", bounds.Dx(), bounds.Dy())
 			first = false
 		}
 		fmt.Fprintf(&buf, "m=%d;%s\x1b\\", more, part)
@@ -327,17 +358,20 @@ func encodeKitty(img *image.RGBA) []byte {
 
 // --- sixel -------------------------------------------------------------------
 
-// encodeSixel quantizes the image to a 6×6×6 (216) color cube and emits sixel
-// bands. Cheap and dependency-free; gradients will show some banding, which is
-// fine for judging the look and — more importantly — the byte cost.
+var bayer4 = [4][4]int{
+	{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5},
+}
+
+// encodeSixel quantizes to a 6×6×6 (216) color cube with ordered dithering to
+// soften gradient banding, then emits sixel bands. Cheap and dependency-free.
 func encodeSixel(img *image.RGBA) []byte {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
-	idx := make([]uint8, w*h) // palette index per pixel
+	idx := make([]uint8, w*h)
 	used := make([]bool, 216)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			o := img.PixOffset(x, y)
-			p := q6(img.Pix[o])*36 + q6(img.Pix[o+1])*6 + q6(img.Pix[o+2])
+			p := q6(img.Pix[o], x, y)*36 + q6(img.Pix[o+1], x, y)*6 + q6(img.Pix[o+2], x, y)
 			idx[y*w+x] = uint8(p)
 			used[p] = true
 		}
@@ -349,10 +383,7 @@ func encodeSixel(img *image.RGBA) []byte {
 		if !used[p] {
 			continue
 		}
-		r := ((p / 36) % 6) * 20
-		g := ((p / 6) % 6) * 20
-		b := (p % 6) * 20
-		fmt.Fprintf(&buf, "#%d;2;%d;%d;%d", p, r, g, b)
+		fmt.Fprintf(&buf, "#%d;2;%d;%d;%d", p, ((p/36)%6)*20, ((p/6)%6)*20, (p%6)*20)
 	}
 
 	for band := 0; band < h; band += 6 {
@@ -397,35 +428,56 @@ func encodeSixel(img *image.RGBA) []byte {
 				}
 			}
 			flush()
-			buf.WriteByte('$') // carriage return: overstrike band with next color
+			buf.WriteByte('$')
 		}
-		buf.WriteByte('-') // next band
+		buf.WriteByte('-')
 	}
 	buf.WriteString("\x1b\\")
 	return buf.Bytes()
 }
 
-func q6(v byte) int { return int(v) * 5 / 255 }
+// q6 maps a channel to a 0..5 level with ordered (Bayer) dithering.
+func q6(v byte, x, y int) int {
+	t := float64(v) / 255 * 5
+	thr := float64(bayer4[y&3][x&3])/16 - 0.5
+	lvl := int(t + thr + 0.5)
+	if lvl < 0 {
+		return 0
+	}
+	if lvl > 5 {
+		return 5
+	}
+	return lvl
+}
 
 // --- capability detection ----------------------------------------------------
 
-// detect probes the terminal: it asks kitty whether it understands a graphics
-// query and reads the DA1 reply for the sixel feature flag (;4). Best-effort,
-// with a short timeout; falls back to env hints if stdin isn't a TTY.
-func detect() (kitty, sixel bool) {
+type termCaps struct {
+	kitty, sixel bool
+	cellW, cellH int
+}
+
+// probeTerminal asks the terminal, in one raw-mode round-trip: whether kitty
+// graphics work (APC query → "OK"), whether sixel is advertised (DA1 ;4), and
+// the cell pixel size (CSI 16 t → CSI 6 ; h ; w t). Best-effort with a short
+// timeout; returns zeroes if stdin isn't a TTY or nothing answers.
+func probeTerminal(enabled bool) termCaps {
+	var caps termCaps
 	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
-		return envKitty(), false
+	if !enabled || !term.IsTerminal(fd) {
+		caps.kitty = envKitty()
+		return caps
 	}
 	old, err := term.MakeRaw(fd)
 	if err != nil {
-		return envKitty(), false
+		caps.kitty = envKitty()
+		return caps
 	}
 	defer term.Restore(fd, old)
 
-	os.Stdout.WriteString("\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c")
+	os.Stdout.WriteString("\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[16t\x1b[c")
 
-	ch := make(chan byte, 512)
+	ch := make(chan byte, 1024)
 	go func() {
 		b := make([]byte, 1)
 		for {
@@ -446,9 +498,8 @@ loop:
 		select {
 		case c := <-ch:
 			buf = append(buf, c)
-			// DA1 reply ends in 'c'; once seen we have everything.
 			if c == 'c' && bytes.Contains(buf, []byte("\x1b[?")) {
-				break loop
+				break loop // DA1 is the last reply we sent
 			}
 		case <-timeout:
 			break loop
@@ -456,9 +507,10 @@ loop:
 	}
 
 	s := string(buf)
-	kitty = strings.Contains(s, "\x1b_Gi=31;OK") || envKitty()
-	sixel = da1HasSixel(s)
-	return
+	caps.kitty = strings.Contains(s, "\x1b_Gi=31;OK") || envKitty()
+	caps.sixel = da1HasSixel(s)
+	caps.cellW, caps.cellH = parseCellSize(s)
+	return caps
 }
 
 func da1HasSixel(s string) bool {
@@ -478,6 +530,25 @@ func da1HasSixel(s string) bool {
 	return false
 }
 
+// parseCellSize reads a CSI 6 ; height ; width t window report into (w,h).
+func parseCellSize(s string) (w, h int) {
+	i := strings.Index(s, "\x1b[6;")
+	if i < 0 {
+		return 0, 0
+	}
+	j := strings.IndexByte(s[i:], 't')
+	if j < 0 {
+		return 0, 0
+	}
+	parts := strings.Split(s[i+4:i+j], ";")
+	if len(parts) < 2 {
+		return 0, 0
+	}
+	h, _ = strconv.Atoi(parts[0])
+	w, _ = strconv.Atoi(parts[1])
+	return w, h
+}
+
 func envKitty() bool {
 	return os.Getenv("KITTY_WINDOW_ID") != "" ||
 		os.Getenv("TERM") == "xterm-kitty" ||
@@ -488,41 +559,45 @@ func envKitty() bool {
 
 type reportData struct {
 	proto, motion                 string
+	delta, smooth                 bool
 	frames, tilesW, tilesH, scale int
 	pxW, pxH, fps                 int
 	rasterMS, encodeMS            float64
-	avgBytes, minBytes, maxBytes  int
-	deltaBytes                    int
+	baseBytes, sentBytes          int
 	dirtyPct                      float64
 	gotFPS                        float64
 }
 
 func report(d reportData) {
-	kbPerFrame := float64(d.avgBytes) / 1024
-	kbPerSec := kbPerFrame * float64(d.fps)
-	mbitPerSec := kbPerSec * 8 / 1024
-	deltaKB := float64(d.deltaBytes) / 1024
+	mbit := func(bytesPerFrame int) float64 {
+		return float64(bytesPerFrame) / 1024 * float64(d.fps) * 8 / 1024
+	}
+	deltaNote := "off (no cell size / -still)"
+	if d.delta {
+		deltaNote = fmt.Sprintf("on, %.1f%% of frame dirty", d.dirtyPct)
+	}
+	look := "flat tiles"
+	if d.smooth {
+		look = "smooth (bilinear+vignette)"
+	}
 	fmt.Fprintf(os.Stderr, `
-─── pixeldemo: %s (%s motion) ───────────────────
+─── pixeldemo: %s (%s motion, %s) ───────────────
 viewport     %d×%d tiles  →  %d×%d px  (scale %d)
 frames       %d  @  target %d fps  (achieved %.1f fps)
 rasterize    %.2f ms/frame
 encode       %.2f ms/frame
-full frame   avg %.1f KB/frame  (min %.1f, max %.1f)
-             %.0f KB/s  ≈  %.2f Mbit/s  at %d fps
-delta        %.1f%% of frame dirty  →  %.1f KB/frame
-             %.0f KB/s  ≈  %.2f Mbit/s  at %d fps
+full frame   %.1f KB  →  %.0f KB/s  ≈  %.2f Mbit/s  at %d fps
+delta        %s
+             %.1f KB/frame sent  →  %.0f KB/s  ≈  %.2f Mbit/s
 ─────────────────────────────────────────────────
 `,
-		d.proto, d.motion,
+		d.proto, d.motion, look,
 		d.tilesW, d.tilesH, d.pxW, d.pxH, d.scale,
 		d.frames, d.fps, d.gotFPS,
-		d.rasterMS,
-		d.encodeMS,
-		kbPerFrame, float64(d.minBytes)/1024, float64(d.maxBytes)/1024,
-		kbPerSec, mbitPerSec, d.fps,
-		d.dirtyPct, deltaKB,
-		deltaKB*float64(d.fps), deltaKB*float64(d.fps)*8/1024, d.fps,
+		d.rasterMS, d.encodeMS,
+		float64(d.baseBytes)/1024, float64(d.baseBytes)/1024*float64(d.fps), mbit(d.baseBytes), d.fps,
+		deltaNote,
+		float64(d.sentBytes)/1024, float64(d.sentBytes)/1024*float64(d.fps), mbit(d.sentBytes),
 	)
 }
 
