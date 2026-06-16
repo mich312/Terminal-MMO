@@ -110,6 +110,15 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame)
 			}
 		}
+		// Multi-tile structures (landmark buildings) are drawn over the terrain so
+		// they can overhang upward, with an animated portal doorway.
+		for vy := 0; vy < cam.H; vy++ {
+			for vx := 0; vx < cam.W; vx++ {
+				if props[vy][vx] == PropStructure {
+					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame)
+				}
+			}
+		}
 	}
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
@@ -282,6 +291,55 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 			}
 		})
 	}
+}
+
+// drawStructure renders a 2×3-tile landmark building centered on tile (vx,vy),
+// bottom-aligned so the doorway sits on the tile, overhanging upward. Walls take
+// the landmark color; the doorway is an animated portal.
+func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int) {
+	apx := scale / tileArtN // art-pixel size, matching the avatar's
+	if apx < 1 {
+		apx = 1
+	}
+	bw := len(buildingArt[0])
+	left := vx*scale + scale/2 - (bw*apx)/2
+	top := (vy+1)*scale - len(buildingArt)*apx
+
+	wall := colorfulToRGBA(col)
+	roof := colorfulToRGBA(col.BlendLab(shadowColor, 0.38).Clamped())
+	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.45).Clamped())
+	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.6).Clamped())
+
+	for ay, row := range buildingArt {
+		for ax := 0; ax < len(row); ax++ {
+			var c color.RGBA
+			ok := true
+			switch row[ax] {
+			case 'P':
+				c = wall
+			case 'p':
+				c = roof
+			case 'L':
+				c = win
+			case 'D':
+				c = base
+			case '@':
+				c = portalPixel(ax, ay, frame)
+			default:
+				ok = false
+			}
+			if ok {
+				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+			}
+		}
+	}
+}
+
+// portalPixel returns a swirling portal color for an art pixel at the given
+// frame — diagonal bands of the portal ramp drift to read as an active gate.
+func portalPixel(ax, ay, frame int) color.RGBA {
+	s := 0.5 + 0.5*math.Sin(float64(ax+ay)*0.7-float64(frame)*0.45)
+	return colorfulToRGBA(mustHex(string(ui.Blend(ui.HexPortalA, ui.HexPortalB, s))))
 }
 
 // blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale

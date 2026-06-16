@@ -96,15 +96,32 @@ var propArt = map[TileProp][]string{
 		".PppP.",
 		"......",
 	},
-	// A little building, walls in the landmark color with a darker roof and door.
-	PropStructure: {
-		"..PP..",
-		".pppp.",
-		"pppppp",
-		"PPPPPP",
-		"PPppPP",
-		"PPppPP",
-	},
+	// PropStructure is drawn by a separate multi-tile pass (buildingArt), not here.
+}
+
+// buildingArt is a 2-wide × 3-tall landmark structure (12×18 art-pixels): a
+// pitched roof (p), walls (P) with windows (L), a stone base (D), and a glowing
+// animated portal doorway (@). Drawn by the HD renderer's structure pass,
+// centered on the landmark tile with the doorway at the bottom.
+var buildingArt = []string{
+	"....pppp....",
+	"...pppppp...",
+	"..pppppppp..",
+	".pppppppppp.",
+	"pppppppppppp",
+	"pPPPPPPPPPPp",
+	"PPPPPPPPPPPP",
+	"PPLLPPPPLLPP",
+	"PPLLPPPPLLPP",
+	"PPPPPPPPPPPP",
+	"PPPP@@@@PPPP",
+	"PPP@@@@@@PPP",
+	"PPP@@@@@@PPP",
+	"PPP@@@@@@PPP",
+	"PPP@@@@@@PPP",
+	"PPP@@@@@@PPP",
+	"PPPPPPPPPPPP",
+	"DDDDDDDDDDDD",
 }
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').
