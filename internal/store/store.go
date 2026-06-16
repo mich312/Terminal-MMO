@@ -38,6 +38,10 @@ type Store interface {
 	SignGuestbook(name, message string) error
 	// GuestbookEntries returns the latest n entries, newest first.
 	GuestbookEntries(n int) []GuestbookEntry
+	// SaveAvatar persists a player's avatar customization.
+	SaveAvatar(name, color string, style, accessory int)
+	// LoadAvatar returns a player's saved avatar; ok is false if none stored.
+	LoadAvatar(name string) (color string, style, accessory int, ok bool)
 	Close() error
 }
 
@@ -62,4 +66,8 @@ func (noopStore) RecordAreaVisit(string, string)        {}
 func (noopStore) LogEvent(string, string, string)       {}
 func (noopStore) SignGuestbook(string, string) error    { return nil }
 func (noopStore) GuestbookEntries(int) []GuestbookEntry { return nil }
-func (noopStore) Close() error                          { return nil }
+func (noopStore) SaveAvatar(string, string, int, int)   {}
+func (noopStore) LoadAvatar(string) (string, int, int, bool) {
+	return "", 0, 0, false
+}
+func (noopStore) Close() error { return nil }

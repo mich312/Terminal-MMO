@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 
@@ -31,6 +32,19 @@ const (
 	hdRefresh = 48 // frames between full repaints
 	hdMaxTile = 140
 )
+
+// applySavedAvatar restores a player's persisted color/style/accessory after
+// they join, so customization survives reconnects.
+func applySavedAvatar(w *world.World, st store.Store, name string) {
+	color, style, accessory, ok := st.LoadAvatar(name)
+	if !ok {
+		return
+	}
+	if color != "" {
+		w.SetColor(name, lipgloss.Color(color))
+	}
+	w.SetAvatar(name, style, accessory)
+}
 
 // isHD reports whether a session asked for HD mode (an "hd" argument, e.g.
 // `ssh -t host hd`).
@@ -67,6 +81,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 
 	name, events := w.Join(s.User())
 	st.RecordVisit(name)
+	applySavedAvatar(w, st, name)
 	log.Printf("%s connected (HD/sixel)", name)
 	defer func() {
 		w.Leave(name)
