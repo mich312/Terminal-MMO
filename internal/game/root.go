@@ -93,7 +93,7 @@ func NewModel(ctx *Ctx, events <-chan world.Event, visit store.VisitInfo) *Model
 		theme:     th,
 		events:    events,
 		visit:     visit,
-		areaID:    "lobby",
+		areaID:    "wilds", // the Wilds is the spawn hub
 		chatInput: ui.NewTextInput("say: ", chatMax),
 	}
 }
@@ -527,7 +527,7 @@ func (m *Model) statusView() string {
 				parts = append(parts, m.theme.StatusHint.Render(" "+hint+" "))
 			}
 		}
-		parts = append(parts, m.theme.Status.Render("move WASD/↑↓←→ · Enter chat · Tab players · q quit"))
+		parts = append(parts, m.theme.Status.Render("WASD/↑↓←→ move · Shift run · Enter chat · /help · Tab players · q quit"))
 	}
 	bar := strings.Join(parts, m.theme.Status.Render("·"))
 	return m.theme.Bar(m.width).Render(bar)

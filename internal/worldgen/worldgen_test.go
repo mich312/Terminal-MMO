@@ -30,6 +30,23 @@ func TestGateAndSpawn(t *testing.T) {
 	}
 }
 
+// Every hub landmark must sit on a walkable portal tile in a reachable
+// clearing — these are the Wilds' doors to the hand-built areas.
+func TestLandmarkPortals(t *testing.T) {
+	g := New(1)
+	for _, lm := range Landmarks {
+		c := g.At(lm.X, lm.Y)
+		if c.Portal != lm.Portal || !c.Walkable {
+			t.Fatalf("landmark %q at (%d,%d) = %+v, want walkable portal %q",
+				lm.Name, lm.X, lm.Y, c, lm.Portal)
+		}
+		// the tile beside it must be walkable (clearing) so a body can reach it
+		if !g.Walkable(lm.X+1, lm.Y+1) {
+			t.Fatalf("clearing around %q is not walkable", lm.Name)
+		}
+	}
+}
+
 // Different seeds must yield different worlds.
 func TestSeedsDiffer(t *testing.T) {
 	a, b := New(1), New(2)

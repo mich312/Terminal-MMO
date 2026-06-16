@@ -67,7 +67,26 @@ Direction agreed with the team. Decisions locked:
   an ownership/allowlist concept first, and `/regen` needs the Wilds seed to
   become shared mutable state with safe re-spawning.
 
-## Parked polish (from Phase 1)
+## Phase 4 — Detailed avatars, Wilds hub, controls ✅
+
+- ✅ Cell-grid renderer: the map composites into a `[]rcell` grid (glyph + fg +
+  optional bg) so transparent multi-cell sprites overlay terrain correctly —
+  ANSI-string overlay couldn't do partial transparency.
+- ✅ Multi-tile players: a 2×2 collision footprint drawn as a larger
+  Claude-inspired half-block sprite (square pixels — terminal cells aren't),
+  with a "you" chevron and a name initial. Defined in `internal/game/sprite.go`.
+- ✅ The Wilds is the spawn hub. Landmark portals near the origin (`⌂` HQ, `P`
+  Presentation, `K` Kraftwerk, `D` Demo) lead to the hand-built areas; Durst HQ
+  stays enterable. Each landmark sits in a forced clearing.
+- ✅ Controls: 8-way movement (WASD/arrows + Y U B N diagonals), run on
+  Shift/uppercase (2 tiles), and a minimap toggle (`m`) in the Wilds.
+- ✅ Portal triggering reworked for multi-tile bodies: proximity-based with an
+  "armed" latch so you can't bounce back through the portal you arrived from
+  (a 2×2 body can't always stand on a wall-embedded portal tile).
+
+## Parked polish
 
 - Particles / weather layer.
-- Directional / two-cell avatars with facing.
+- Directional facing for avatars (sprite mirrors with movement).
+- Mark landmarks on the minimap distinctly.
+- Admin `/regen`, `/tp` (needs an auth/ownership concept).

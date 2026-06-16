@@ -10,9 +10,9 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// The Wilds samples a player-centered window and renders a full screen with
-// the home gate visible just north of the spawn.
-func TestWildsRendersGate(t *testing.T) {
+// The Wilds samples a player-centered window, renders a full screen, and
+// stamps the local player's avatar (with its "you" chevron) at the center.
+func TestWildsRendersPlayer(t *testing.T) {
 	w := world.New()
 	t.Cleanup(w.Close)
 	name, _ := w.Join("ada")
@@ -26,7 +26,7 @@ func TestWildsRendersGate(t *testing.T) {
 	if got := len(strings.Split(out, "\n")); got != 21 {
 		t.Fatalf("view height = %d, want 21", got)
 	}
-	if !strings.ContainsRune(out, '⌂') {
-		t.Fatal("home gate (⌂) should be visible near spawn")
+	if !strings.ContainsRune(out, '▾') {
+		t.Fatal("local player's 'you' marker (▾) should be drawn")
 	}
 }

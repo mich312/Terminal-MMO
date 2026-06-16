@@ -33,12 +33,20 @@ ssh -p 2222 markus@localhost
 
 | Key | Action |
 | --- | --- |
-| WASD / arrows | move (walk into a `◊` portal to enter it) |
+| WASD / arrows | move (walk into a `◊`/`◈` portal to enter it) |
+| Y U B N | move diagonally (↖ ↗ ↙ ↘) |
+| Shift + move | run (two tiles per step) |
+| m | toggle the minimap (in the Wilds) |
 | Enter | chat — heard within 8 tiles of where you stand |
 | e | sign the guestbook (next to the lobby reception desk) |
 | n / p | next/previous slide while standing on a `▣` presenter tile |
 | Tab | who's online |
 | q / Ctrl+C | quit (press twice) |
+
+You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near
+spawn — `⌂` Durst HQ (the lobby), `P` Presentation, `K` Kraftwerk, `D` Demo
+Center — to enter each area. Players are multi-tile half-block avatars in their
+own color, drawn over a 2×2 footprint.
 
 Minimum terminal size is 80×24.
 

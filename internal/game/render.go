@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
@@ -14,15 +13,20 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
+// PlayerW, PlayerH is a player's collision footprint in tiles. Avatars are
+// drawn as larger half-block sprites overhanging this footprint.
+const (
+	PlayerW = 2
+	PlayerH = 2
+)
+
 // Camera is the window of a (possibly larger-than-screen) map that is drawn.
-// X,Y is the top-left tile; W,H the size in tiles.
 type Camera struct {
 	X, Y, W, H int
 }
 
 // CameraOn returns a camera of size vw×vh centered on (cx,cy) and clamped so
-// it never shows past the map edges. If the map is smaller than the viewport
-// the camera collapses to the map size (callers center the result).
+// it never shows past the map edges.
 func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 	w, h := vw, vh
 	if w > tm.W {
@@ -49,45 +53,64 @@ func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 }
 
 // Light is a radial light source: tiles fade toward darkness past Radius from
-// (X,Y). A zero Radius means the scene is uniformly lit (no falloff).
+// (X,Y) in world coordinates. A zero Radius means uniform light.
 type Light struct {
 	X, Y, Radius int
 }
 
-// nightFloor caps how dark lighting drives a tile, so unlit corners read as
-// shadow rather than pure black.
 const nightFloor = 0.12
 
-// shadowColor is the color tiles fade toward in the dark.
 var shadowColor = mustHex("#05070B")
 
-// RenderMap draws a whole tilemap (no camera, uniform light). Used by the
-// small fixed areas whose maps fit on screen.
+// rcell is one composited screen cell: a glyph in fg, optionally over a bg
+// color (to pack two half-block pixels into one cell).
+type rcell struct {
+	ch    rune
+	fg    colorful.Color
+	bg    colorful.Color
+	hasBg bool
+	bold  bool
+	blank bool // nothing drawn — a plain space
+}
+
+// RenderMap draws a whole tilemap (no camera, uniform light), players on top.
 func RenderMap(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int) string {
-	return renderScene(th, tm, players, self, frame, Camera{X: 0, Y: 0, W: tm.W, H: tm.H}, Light{})
+	cam := Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
+	return renderAll(th, tm, players, self, frame, cam, Light{}, cam.X, cam.Y)
 }
 
 // RenderViewport draws a camera window of the map (no light falloff).
 func RenderViewport(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera) string {
-	return renderScene(th, tm, players, self, frame, cam, Light{})
+	return renderAll(th, tm, players, self, frame, cam, Light{}, cam.X, cam.Y)
 }
 
-// RenderLitViewport draws a camera window with a radial light — for caves and
-// machine halls that should sit in shadow beyond the player's reach.
+// RenderLitViewport draws a camera window with a radial light.
 func RenderLitViewport(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light) string {
-	return renderScene(th, tm, players, self, frame, cam, light)
+	return renderAll(th, tm, players, self, frame, cam, light, cam.X, cam.Y)
 }
 
-func renderScene(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light) string {
+// RenderWindow renders a tilemap that already is the visible window (its tile
+// (0,0) maps to world (originX,originY)). Used by the Wilds, whose window is
+// regenerated around the player each frame.
+func RenderWindow(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame, originX, originY int, light Light) string {
+	cam := Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
+	return renderAll(th, tm, players, self, frame, cam, light, originX, originY)
+}
+
+func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY int) string {
 	if th == nil {
 		th = ui.Default
 	}
 	if cam.W <= 0 || cam.H <= 0 {
 		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	}
+	grid := buildGrid(th, tm, cam, light, frame)
+	stampPlayers(grid, th, players, self, frame, originX, originY)
+	return serializeGrid(th, grid)
+}
 
-	// Day/night ambient is the same for the whole frame: pre-tint each tile
-	// kind's base color once, then only lighting varies per cell.
+// buildGrid lays the terrain into a cell grid with day/night tint and lighting.
+func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) [][]rcell {
 	ambHex, ambStr := ui.Ambient(time.Now())
 	amb := mustHex(ambHex)
 	base := map[TileKind]colorful.Color{
@@ -99,45 +122,56 @@ func renderScene(th *ui.Theme, tm *TileMap, players []world.Player, self string,
 	labelC := tint(mustHex(ui.HexText), amb, ambStr)
 	portalC := tint(portalColor(frame), amb, ambStr)
 
-	playerAt := indexPlayers(players, self)
-
-	var b strings.Builder
+	grid := make([][]rcell, cam.H)
 	for vy := 0; vy < cam.H; vy++ {
-		y := cam.Y + vy
-		if vy > 0 {
+		grid[vy] = make([]rcell, cam.W)
+		for vx := 0; vx < cam.W; vx++ {
+			x, y := cam.X+vx, cam.Y+vy
+			if y < 0 || y >= tm.H || x < 0 || x >= tm.W {
+				grid[vy][vx] = rcell{blank: true}
+				continue
+			}
+			t := tm.Tiles[y][x]
+			if t.Kind == TileVoid && t.Anim == nil {
+				grid[vy][vx] = rcell{blank: true}
+				continue
+			}
+			ch, col, bold := tileLook(t, frame, base, labelC, portalC, amb, ambStr)
+			col = applyLight(col, x, y, light)
+			grid[vy][vx] = rcell{ch: ch, fg: col, bold: bold}
+		}
+	}
+	return grid
+}
+
+func serializeGrid(th *ui.Theme, grid [][]rcell) string {
+	var b strings.Builder
+	for y, row := range grid {
+		if y > 0 {
 			b.WriteByte('\n')
 		}
-		for vx := 0; vx < cam.W; vx++ {
-			x := cam.X + vx
-			if y < 0 || y >= tm.H || x < 0 || x >= tm.W {
+		for _, c := range row {
+			if c.blank {
 				b.WriteByte(' ')
 				continue
 			}
-			if p, ok := playerAt[[2]int{x, y}]; ok {
-				b.WriteString(playerGlyph(th, p, p.Name == self))
-				continue
+			fg := lipgloss.Color(c.fg.Clamped().Hex())
+			var st lipgloss.Style
+			if c.hasBg {
+				st = th.FgBg(fg, lipgloss.Color(c.bg.Clamped().Hex()))
+			} else {
+				st = th.Fg(fg)
 			}
-
-			t := tm.Tiles[y][x]
-			ch, col, bold := tileLook(t, frame, base, labelC, portalC, amb, ambStr)
-			if t.Kind == TileVoid && t.Anim == nil {
-				b.WriteByte(' ')
-				continue
-			}
-			col = applyLight(col, x, y, light)
-			st := th.Fg(lipgloss.Color(col.Clamped().Hex()))
-			if bold {
+			if c.bold {
 				st = st.Bold(true)
 			}
-			b.WriteString(st.Render(string(ch)))
+			b.WriteString(st.Render(string(c.ch)))
 		}
 	}
 	return b.String()
 }
 
-// tileLook resolves a tile's glyph, color and weight for the given frame,
-// folding in any per-tile animation. Day/night tint is already baked into the
-// base colors; animated tiles tint their own ramp here.
+// tileLook resolves a tile's glyph, color and weight for the given frame.
 func tileLook(t Tile, frame int, base map[TileKind]colorful.Color, labelC, portalC, amb colorful.Color, ambStr float64) (rune, colorful.Color, bool) {
 	ch := t.Ch
 	if t.Anim != nil {
@@ -156,7 +190,6 @@ func tileLook(t Tile, frame int, base map[TileKind]colorful.Color, labelC, porta
 		}
 	}
 
-	// A tile's own color (biome terrain) overrides the kind palette.
 	if t.Color != "" {
 		bold := t.Kind == TileObject || t.Kind == TilePortal
 		return ch, tint(mustHex(t.Color), amb, ambStr), bold
@@ -178,8 +211,6 @@ func tileLook(t Tile, frame int, base map[TileKind]colorful.Color, labelC, porta
 	}
 }
 
-// applyLight fades a tile color toward shadow by its distance past the light's
-// radius. A zero radius leaves the color untouched.
 func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if light.Radius <= 0 {
 		return col
@@ -187,7 +218,7 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	dx := float64(x - light.X)
 	dy := float64(y - light.Y)
 	d := math.Sqrt(dx*dx + dy*dy)
-	f := 1 - d/float64(light.Radius) // 1 at the source, 0 at the edge
+	f := 1 - d/float64(light.Radius)
 	if f < nightFloor {
 		f = nightFloor
 	}
@@ -197,9 +228,9 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	return col.BlendLab(shadowColor, 1-f).Clamped()
 }
 
-// indexPlayers maps tile → player to draw, oldest movers first so recent
-// movers win a contested tile and self always draws last.
-func indexPlayers(players []world.Player, self string) map[[2]int]world.Player {
+// stampPlayers draws every visible player's sprite onto the grid; oldest
+// movers first, self last and highlighted.
+func stampPlayers(grid [][]rcell, th *ui.Theme, players []world.Player, self string, frame, originX, originY int) {
 	sorted := make([]world.Player, len(players))
 	copy(sorted, players)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -211,41 +242,18 @@ func indexPlayers(players []world.Player, self string) map[[2]int]world.Player {
 		}
 		return sorted[i].LastMoved.Before(sorted[j].LastMoved)
 	})
-	at := make(map[[2]int]world.Player, len(sorted))
 	for _, p := range sorted {
-		at[[2]int{p.X, p.Y}] = p
+		fc := p.X - originX // footprint top-left column
+		fr := p.Y - originY // footprint top-left row
+		stampSprite(grid, th, p, p.Name == self, frame, fc, fr)
 	}
-	return at
 }
 
-// portalColor shimmers the portal between its two phase colors by frame.
 func portalColor(frame int) colorful.Color {
 	s := 0.5 + 0.5*math.Sin(float64(frame)*0.6)
 	return mustHex(string(ui.Blend(ui.HexPortalA, ui.HexPortalB, s)))
 }
 
-// playerGlyph renders a player as the first letter of their name in their
-// avatar color; the local player is bold + inverse. Players are not dimmed by
-// lighting so avatars stay readable in the dark.
-func playerGlyph(th *ui.Theme, p world.Player, isSelf bool) string {
-	r := '☺'
-	for _, c := range p.Name {
-		if unicode.IsLetter(c) || unicode.IsDigit(c) {
-			r = unicode.ToUpper(c)
-			break
-		}
-	}
-	st := lipgloss.NewStyle().Bold(true).Foreground(p.Color)
-	if th != nil {
-		st = th.ChatName.Foreground(p.Color)
-	}
-	if isSelf {
-		st = st.Reverse(true)
-	}
-	return st.Render(string(r))
-}
-
-// tint blends a base color toward the ambient tint by strength.
 func tint(base, ambient colorful.Color, strength float64) colorful.Color {
 	if strength <= 0 {
 		return base

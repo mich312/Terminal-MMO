@@ -130,22 +130,26 @@ func (a *area) onPresenterTile() (room, bool) {
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	if portal, handled := a.HandleCommon(msg); handled {
-		if portal != "" {
-			return game.Transition{To: portal}, nil
-		}
-		return a, nil
-	}
-
+	// Presenter controls take priority over movement so 'n' advances the slide
+	// (it doubles as a down-right diagonal key) while standing on the spot.
 	if key, ok := msg.(tea.KeyMsg); ok {
 		if r, ok := a.onPresenterTile(); ok {
 			switch key.String() {
 			case "n":
 				a.Ctx.World.ChangeSlide("presentation", r.name, +1, slideCount, a.Ctx.Name)
+				return a, nil
 			case "p":
 				a.Ctx.World.ChangeSlide("presentation", r.name, -1, slideCount, a.Ctx.Name)
+				return a, nil
 			}
 		}
+	}
+
+	if portal, handled := a.HandleCommon(msg); handled {
+		if portal != "" {
+			return game.Transition{To: portal}, nil
+		}
+		return a, nil
 	}
 	return a, nil
 }
