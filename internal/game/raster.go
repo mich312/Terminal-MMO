@@ -110,14 +110,11 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame)
 			}
 		}
-		// Multi-tile structures (houses, animated portals) are drawn over the
-		// terrain so they can overhang upward.
+		// Portals are multi-tile animated gates drawn over the terrain so they can
+		// overhang upward. (Houses are single-tile props, drawn by paintTile.)
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
-				switch props[vy][vx] {
-				case PropHouse:
-					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, houseArt)
-				case PropPortal:
+				if props[vy][vx] == PropPortal {
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, portalArt)
 				}
 			}

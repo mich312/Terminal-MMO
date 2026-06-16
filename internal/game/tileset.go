@@ -96,31 +96,16 @@ var propArt = map[TileProp][]string{
 		".PppP.",
 		"......",
 	},
-	// PropHouse / PropPortal are drawn by a separate multi-tile pass, not here.
-}
-
-// houseArt is a 2-wide × 3-tall decorative building (12×18 art-pixels): pitched
-// roof (p), walls (P) with windows (L), a solid wooden door and stone base (D).
-// A house — not a portal.
-var houseArt = []string{
-	"....pppp....",
-	"...pppppp...",
-	"..pppppppp..",
-	".pppppppppp.",
-	"pppppppppppp",
-	"pPPPPPPPPPPp",
-	"PPPPPPPPPPPP",
-	"PPLLPPPPLLPP",
-	"PPLLPPPPLLPP",
-	"PPPPPPPPPPPP",
-	"PPPPDDDDPPPP",
-	"PPPDDDDDDPPP",
-	"PPPDDDDDDPPP",
-	"PPPDDDDDDPPP",
-	"PPPDDDDDDPPP",
-	"PPPDDDDDDPPP",
-	"PPPPPPPPPPPP",
-	"DDDDDDDDDDDD",
+	// PropHouse is a single-tile cottage: roof (p), walls (P), a dark door (p).
+	PropHouse: {
+		"..PP..",
+		".pppp.",
+		"pppppp",
+		"PPPPPP",
+		"PPppPP",
+		"PPppPP",
+	},
+	// PropPortal is drawn by the multi-tile structure pass, not here.
 }
 
 // portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in
