@@ -193,17 +193,33 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	draw()
 	ticker := time.NewTicker(time.Second / hdFPS)
 	defer ticker.Stop()
+	esc := 0 // tiny parser for arrow-key escapes: ESC [ (or O) then A/B/C/D
 	for {
 		select {
 		case b, ok := <-keys:
 			if !ok {
 				return
 			}
-			if b == 'q' || b == 'Q' || b == 3 { // q or Ctrl-C
+			var key string
+			switch {
+			case esc == 0 && b == 0x1b:
+				esc = 1
+			case esc == 1:
+				if b == '[' || b == 'O' {
+					esc = 2
+				} else {
+					esc = 0
+				}
+			case esc == 2:
+				esc = 0
+				key = arrowKey(b)
+			case b == 'q' || b == 'Q' || b == 3: // q or Ctrl-C
 				hud()
 				return
+			default:
+				key = string(b)
 			}
-			if hdMove(gen, &px, &py, b) {
+			if key != "" && hdMove(gen, &px, &py, key) {
 				w.Move(name, px, py)
 				draw()
 			}
@@ -218,27 +234,15 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	}
 }
 
-// hdMove walks the footprint one (or two, if Shift/uppercase) tiles, respecting
-// terrain. WASD only; arrow keys are multi-byte escapes we skip for the demo.
-func hdMove(gen *worldgen.Generator, px, py *int, b byte) bool {
-	dx, dy, n := 0, 0, 1
-	switch b {
-	case 'w', 'W':
-		dy = -1
-	case 's', 'S':
-		dy = 1
-	case 'a', 'A':
-		dx = -1
-	case 'd', 'D':
-		dx = 1
-	default:
+// hdMove walks the footprint per the shared movement mapping (WASD/arrows, YUBN
+// diagonals, uppercase to run), respecting terrain.
+func hdMove(gen *worldgen.Generator, px, py *int, key string) bool {
+	dx, dy, steps, ok := game.MoveKey(key)
+	if !ok {
 		return false
 	}
-	if b < 'a' { // uppercase = run
-		n = 2
-	}
 	moved := false
-	for i := 0; i < n; i++ {
+	for i := 0; i < steps; i++ {
 		nx, ny := *px+dx, *py+dy
 		if !hdFootprint(gen, nx, ny) {
 			break
@@ -247,6 +251,21 @@ func hdMove(gen *worldgen.Generator, px, py *int, b byte) bool {
 		moved = true
 	}
 	return moved
+}
+
+// arrowKey maps a CSI/SS3 final byte to the movement key names MoveKey expects.
+func arrowKey(b byte) string {
+	switch b {
+	case 'A':
+		return "up"
+	case 'B':
+		return "down"
+	case 'C':
+		return "right"
+	case 'D':
+		return "left"
+	}
+	return ""
 }
 
 func hdSpawn(gen *worldgen.Generator) (int, int) {

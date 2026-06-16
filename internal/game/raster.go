@@ -119,8 +119,9 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, fram
 // and a small chevron above your own head. (fc,fr) is the footprint top-left in
 // camera cells; the sprite is centered horizontally and bottom-aligned.
 func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, fr int) {
+	wf := AvatarWalkFrame(p.LastMoved, frame)
 	body := playerColor(p.Color)
-	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, AvatarWalkFrame(p.LastMoved, frame))
+	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, wf)
 	bw, bh := len([]rune(bmp[0])), len(bmp)
 	// Integer pixel size keeps edges sharp; aim for ~2 tiles tall.
 	k := (PlayerH * scale) / bh
@@ -134,9 +135,18 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 	left := centerX - destW/2
 	top := bottomEdge - destH
 
-	// soft elliptical contact shadow at the feet
+	// soft elliptical contact shadow at the feet (stays planted while the body
+	// bobs, so the step reads as a bounce rather than a slide)
 	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
 		float64(destW)*0.42, float64(k)*1.3)
+
+	if wf == 1 { // mid-stride: lift the body a touch
+		bob := k / 2
+		if bob < 1 {
+			bob = 1
+		}
+		top -= bob
+	}
 
 	for sy := 0; sy < bh; sy++ {
 		runes := []rune(bmp[sy])
