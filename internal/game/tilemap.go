@@ -31,6 +31,18 @@ const (
 	TexRock
 )
 
+// TileProp is a sprite drawn over the ground in the HD renderer — flowers,
+// trees, boulders — so decorations stop being solid squares.
+type TileProp uint8
+
+const (
+	PropNone TileProp = iota
+	PropFlower
+	PropTuft
+	PropTree
+	PropBoulder
+)
+
 // Tile is one cell of a parsed map.
 type Tile struct {
 	Kind     TileKind
@@ -40,8 +52,11 @@ type Tile struct {
 	Label    string    // portal display name, for status-bar hints
 	Object   string    // object id, for TileObject
 	Anim     *TileAnim // optional animation
-	Color    string    // optional base color (hex); overrides the kind palette
-	Tex      TileTex   // HD surface texture
+	Color    string    // base color (hex); the glyph renderer draws Ch in this
+	Tex      TileTex   // HD ground surface texture
+	Ground   string    // HD ground base color (hex); falls back to Color if empty
+	Prop     TileProp  // HD decoration sprite drawn over the ground
+	PropHex  string    // HD prop color (hex); falls back to Color if empty
 }
 
 // TileAnim makes a tile come alive: its glyph cycles through Frames and its

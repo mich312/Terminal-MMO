@@ -316,45 +316,11 @@ func hdWindow(gen *worldgen.Generator, ox, oy, vw, vh int) *game.TileMap {
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
 		for lx := 0; lx < vw; lx++ {
-			row[lx] = hdCellToTile(gen.At(ox+lx, oy+ly))
+			row[lx] = wilds.CellTile(gen.At(ox+lx, oy+ly))
 		}
 		tiles[ly] = row
 	}
 	return &game.TileMap{W: vw, H: vh, Tiles: tiles}
-}
-
-func hdCellToTile(c worldgen.Cell) game.Tile {
-	kind := game.TileFloor
-	switch {
-	case c.Portal != "":
-		kind = game.TilePortal
-	case c.Object:
-		kind = game.TileObject
-	case !c.Walkable:
-		kind = game.TileDecor
-	}
-	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal, Tex: hdTexForBiome(c.Biome)}
-	if c.AnimA != "" && c.AnimB != "" {
-		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
-	}
-	return t
-}
-
-func hdTexForBiome(b worldgen.Biome) game.TileTex {
-	switch b {
-	case worldgen.Grass:
-		return game.TexGrass
-	case worldgen.Sand:
-		return game.TexSand
-	case worldgen.Water, worldgen.Deep:
-		return game.TexWater
-	case worldgen.Forest:
-		return game.TexForest
-	case worldgen.Hill, worldgen.Mountain:
-		return game.TexRock
-	default:
-		return game.TexFlat
-	}
 }
 
 // hdCellSize derives the terminal's pixel cell size from the PTY window (if the

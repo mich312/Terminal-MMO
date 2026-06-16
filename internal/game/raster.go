@@ -37,17 +37,37 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	grid := buildGrid(th, tm, cam, light, frame)
 	cols := make([][]colorful.Color, cam.H)
 	texs := make([][]TileTex, cam.H)
+	props := make([][]TileProp, cam.H)
+	propCols := make([][]colorful.Color, cam.H)
 	for y := 0; y < cam.H; y++ {
 		cols[y] = make([]colorful.Color, cam.W)
 		texs[y] = make([]TileTex, cam.W)
+		props[y] = make([]TileProp, cam.W)
+		propCols[y] = make([]colorful.Color, cam.W)
 		for x := 0; x < cam.W; x++ {
 			if c := grid[y][x]; c.blank {
 				cols[y][x] = shadowColor
 			} else {
 				cols[y][x] = c.fg
 			}
-			if tx, ty := cam.X+x, cam.Y+y; ty >= 0 && ty < tm.H && tx >= 0 && tx < tm.W {
-				texs[y][x] = tm.Tiles[ty][tx].Tex
+			tx, ty := cam.X+x, cam.Y+y
+			if ty < 0 || ty >= tm.H || tx < 0 || tx >= tm.W {
+				continue
+			}
+			t := tm.Tiles[ty][tx]
+			texs[y][x] = t.Tex
+			props[y][x] = t.Prop
+			// A prop's ground is colored separately from the glyph's color so the
+			// flower-glyph stays red in the text renderer while HD draws grass.
+			if t.Ground != "" {
+				cols[y][x] = applyLight(tintedHex(t.Ground), tx, ty, light)
+			}
+			if t.Prop != PropNone {
+				ph := t.PropHex
+				if ph == "" {
+					ph = t.Color
+				}
+				propCols[y][x] = tintedHex(ph)
 			}
 		}
 	}
@@ -87,7 +107,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
-					texs[vy][vx], originX+vx, originY+vy, frame)
+					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame)
 			}
 		}
 	}
@@ -214,69 +234,68 @@ func drawChevron(img *image.RGBA, cx, baseY, spx int) {
 	}
 }
 
-// paintTile fills one tile with its base color, then stamps a few clean
-// biome-specific accent pixels — the old-RPG tilemap look. Accent positions are
-// hashed from the tile's world coords so they're stable as the camera scrolls;
-// water ripples animate with the frame.
-func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, wx, wy, frame int) {
-	fillRect(img, ox, oy, scale, scale, colorfulToRGBA(base))
-	if tex == TexFlat || scale < 3 {
-		return
-	}
-	light := colorfulToRGBA(base.BlendLab(spriteWhite, 0.16).Clamped())
-	dark := colorfulToRGBA(base.BlendLab(shadowColor, 0.20).Clamped())
-	hp := func(salt int) (int, int) {
-		return ox + int(hashNoise(wx, wy, salt)*float64(scale-1)),
-			oy + int(hashNoise(wx, wy, salt+97)*float64(scale-1))
-	}
-	switch tex {
-	case TexGrass:
-		for i := 0; i < 2; i++ { // little blades
-			x, y := hp(i * 5)
-			setRGBAClip(img, x, y, dark)
-			setRGBAClip(img, x, y-1, dark)
+// tileArtN is the authored tile resolution (6×6 art-pixels per tile).
+const tileArtN = 6
+
+// paintTile draws one tile: the ground surface sprite (a shade pattern colored
+// by base) nearest-upscaled to the on-screen tile size, then an optional prop
+// sprite over it. Sharp pixels throughout.
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int) {
+	baseRGBA := colorfulToRGBA(base)
+	variants := groundArt[tex]
+	if len(variants) == 0 { // flat / untextured
+		fillRect(img, ox, oy, scale, scale, baseRGBA)
+	} else {
+		idx := int(hashNoise(wx, wy) * float64(len(variants)))
+		if tex == TexWater {
+			idx = (frame / 4) % len(variants) // ripples animate
 		}
-		x, y := hp(40)
-		setRGBAClip(img, x, y, light)
-	case TexSand:
-		for i := 0; i < 3; i++ {
-			x, y := hp(i * 3)
-			setRGBAClip(img, x, y, dark)
-		}
-	case TexDirt:
-		x, y := hp(1) // pebble
-		setRGBAClip(img, x, y, light)
-		setRGBAClip(img, x+1, y, light)
-		x2, y2 := hp(8)
-		setRGBAClip(img, x2, y2, dark)
-	case TexForest:
-		x, y := hp(2) // dappled light through the canopy
-		for _, d := range [][2]int{{0, 0}, {1, 0}, {0, 1}} {
-			setRGBAClip(img, x+d[0], y+d[1], light)
-		}
-	case TexRock:
-		x, y := hp(1) // a small chip + crack, not a full hatch
-		setRGBAClip(img, x, y, dark)
-		setRGBAClip(img, x+1, y+1, dark)
-		x2, y2 := hp(9)
-		setRGBAClip(img, x2, y2, light)
-	case TexWater:
-		for iy := 0; iy < scale; iy++ { // moving ripple highlights
-			if (iy+wx+frame/3)%4 != 0 {
-				continue
+		art := variants[idx%len(variants)]
+		light := colorfulToRGBA(base.BlendLab(spriteWhite, 0.18).Clamped())
+		dark := colorfulToRGBA(base.BlendLab(shadowColor, 0.22).Clamped())
+		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
+			switch r {
+			case 'L':
+				return light, true
+			case 'D':
+				return dark, true
+			default:
+				return baseRGBA, true // 'B' and ' '
 			}
-			for ix := 0; ix < scale; ix++ {
-				if (ix+wy*2+frame/3)%6 < 2 {
-					setRGBAClip(img, ox+ix, oy+iy, light)
-				}
+		})
+	}
+
+	if art, ok := propArt[prop]; ok {
+		pc := colorfulToRGBA(propCol)
+		pd := colorfulToRGBA(propCol.BlendLab(shadowColor, 0.32).Clamped())
+		tr := colorfulToRGBA(trunkColor)
+		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
+			switch r {
+			case 'P':
+				return pc, true
+			case 'p':
+				return pd, true
+			case 'T':
+				return tr, true
+			default:
+				return color.RGBA{}, false // '.' transparent
 			}
-		}
+		})
 	}
 }
 
-func setRGBAClip(img *image.RGBA, x, y int, c color.RGBA) {
-	if _, _, _, ok := getPixel(img, x, y); ok {
-		img.SetRGBA(x, y, c)
+// blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale
+// tile at (ox,oy), coloring each art rune via paint; paint's second return is
+// false for transparent runes.
+func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(byte) (color.RGBA, bool)) {
+	for iy := 0; iy < scale; iy++ {
+		row := art[iy*tileArtN/scale]
+		for ix := 0; ix < scale; ix++ {
+			c, ok := paint(row[ix*tileArtN/scale])
+			if ok {
+				img.SetRGBA(ox+ix, oy+iy, c)
+			}
+		}
 	}
 }
 

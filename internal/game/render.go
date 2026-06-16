@@ -254,6 +254,14 @@ func portalColor(frame int) colorful.Color {
 	return mustHex(string(ui.Blend(ui.HexPortalA, ui.HexPortalB, s)))
 }
 
+// tintedHex applies the current time-of-day ambient tint to a hex color — used
+// by the HD renderer to color a tile's ground surface the same way buildGrid
+// tints terrain.
+func tintedHex(hex string) colorful.Color {
+	ambHex, ambStr := ui.Ambient(time.Now())
+	return tint(mustHex(hex), mustHex(ambHex), ambStr)
+}
+
 func tint(base, ambient colorful.Color, strength float64) colorful.Color {
 	if strength <= 0 {
 		return base
