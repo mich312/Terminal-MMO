@@ -29,7 +29,7 @@ var rows = []string{
 	"#..........................................................3",
 	"#....................*..................*..................#",
 	"#..........................................................#",
-	"#..........................................................#",
+	"#..........................................................5",
 	"#..........................................................#",
 	"#..........................................................#",
 	"#..........................................................#",
@@ -41,6 +41,7 @@ var legend = map[rune]game.LegendEntry{
 	'2': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "kraftwerk", Label: "Kraftwerk"},
 	'3': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "democenter", Label: "Demo Center"},
 	'4': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "arcade", Label: "Arcade"},
+	'5': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds"},
 	'g': {Kind: game.TileObject, Ch: '≡', Object: "guestbook"},
 	'-': {Kind: game.TileDecor, Ch: '▀'},
 	'=': {Kind: game.TileDecor, Ch: '▄'},
@@ -88,6 +89,8 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 		a.Enter(57, 8, 1)
 	case "arcade":
 		a.Enter(54, 14, 1)
+	case "wilds":
+		a.Enter(57, 11, 1)
 	default:
 		a.Enter(29, 13, 3)
 	}

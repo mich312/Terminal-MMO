@@ -25,6 +25,7 @@ type Tile struct {
 	Label    string    // portal display name, for status-bar hints
 	Object   string    // object id, for TileObject
 	Anim     *TileAnim // optional animation
+	Color    string    // optional base color (hex); overrides the kind palette
 }
 
 // TileAnim makes a tile come alive: its glyph cycles through Frames and its
@@ -47,6 +48,7 @@ type LegendEntry struct {
 	Label    string
 	Object   string
 	Anim     *TileAnim
+	Color    string
 }
 
 // MapText is a label drawn over the map (display only; the tiles underneath
@@ -108,6 +110,7 @@ func ParseMap(rows []string, legend map[rune]LegendEntry, texts []MapText) *Tile
 				Label:    le.Label,
 				Object:   le.Object,
 				Anim:     le.Anim,
+				Color:    le.Color,
 			}
 		}
 		tm.Tiles = append(tm.Tiles, line)

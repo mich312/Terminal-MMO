@@ -32,6 +32,7 @@ import (
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
 	_ "github.com/durst-group/durstworld/internal/areas/stub"
+	_ "github.com/durst-group/durstworld/internal/areas/wilds"
 )
 
 func main() {

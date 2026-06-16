@@ -161,10 +161,20 @@ session (tests, init globals), and the old `ui.WallStyle`-style globals are
 thin aliases to it.
 
 Maps render through a camera (`game.CameraOn` + `RenderViewport`), so a map
-may be larger than the screen — the foundation for the chunked overworld.
-`ui` also provides a half-block "pixel" layer (`Theme.HalfBlock`) and
-gradient/shimmer helpers, used by the cinematic intro that pans the camera
-from the DURST WORLD title down onto the play field.
+may be larger than the screen. Tiles can animate (`TileAnim`), carry their own
+biome color, and fade with a radial `Light`; a real-time day/night tint
+(`ui.Ambient`) washes over everything. `ui` also provides a half-block "pixel"
+layer (`Theme.HalfBlock`) and gradient/shimmer helpers, used by the cinematic
+intro that pans the camera from the DURST WORLD title onto the play field.
 
-See `docs/ROADMAP.md` for what's next (biomes & lighting, the generative
-overworld, and chat commands).
+### The Wilds (generative overworld)
+
+`internal/worldgen` is a **stateless** terrain generator: every cell is a pure
+function of `(seed, x, y)`, so the overworld is infinite and identical for
+every session on the same seed — no chunks are stored. `internal/areas/wilds`
+keeps the player's absolute world position and samples a player-centered
+window each frame, rendered through the camera. A home gate (`⌂`) at the
+origin returns to the lobby. Reach it from the lobby's `◈ The Wilds` portal.
+
+See `docs/ROADMAP.md` for what's next (particles, directional avatars, and the
+chat-command layer).

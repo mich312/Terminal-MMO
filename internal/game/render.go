@@ -156,6 +156,12 @@ func tileLook(t Tile, frame int, base map[TileKind]colorful.Color, labelC, porta
 		}
 	}
 
+	// A tile's own color (biome terrain) overrides the kind palette.
+	if t.Color != "" {
+		bold := t.Kind == TileObject || t.Kind == TilePortal
+		return ch, tint(mustHex(t.Color), amb, ambStr), bold
+	}
+
 	switch t.Kind {
 	case TilePortal:
 		return ch, portalC, true

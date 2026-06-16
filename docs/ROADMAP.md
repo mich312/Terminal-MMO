@@ -35,14 +35,23 @@ Direction agreed with the team. Decisions locked:
 - ⬜ Particles / weather layer.
 - ⬜ Directional / two-cell avatars with a drop shadow.
 
-## Phase 2 — Chunked infinite overworld
+## Phase 2 — Chunked infinite overworld ✅
 
-- `internal/worldgen`: seeded, deterministic generation (cellular-automata
-  caves, BSP rooms, blue-noise prop scatter) producing chunks on demand.
-- Generation is **shared, not per-session** — same seed → same world for
-  everyone; chunks cached so all players agree.
-- A new generated "Wilds" area reached from the lobby, rendered through the
-  camera. Admin `/regen <seed>` to reroll.
+- ✅ `internal/worldgen`: seeded, **stateless** generation — every cell is a
+  pure function of `(seed, x, y)` (multi-octave value noise for elevation &
+  moisture, hash-scatter for props). No stored chunks, so the world is
+  infinite and identical for every session on the same seed.
+- ✅ Biomes: deep/shallow water, sand, grass (flowers, tufts), forest
+  (blocking trees), hills (boulders), mountain peaks. Water flows via the
+  animated-tile system; day/night tint applies on top.
+- ✅ `internal/areas/wilds`: keeps the player's absolute world coordinates and
+  samples a player-centered window each frame, rendered through the existing
+  camera/tile path. Players share one coordinate space, so presence and
+  proximity chat just work.
+- ✅ A home gate (`⌂`) at the origin returns to the lobby, with a compass hint
+  so players are never stranded; a forced clearing guarantees a sane spawn.
+  Reached from the new lobby portal `◈ The Wilds`.
+- ⬜ Admin `/regen <seed>` to reroll (lands with Phase 3 commands).
 
 ## Phase 3 — Chat commands
 
