@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -14,6 +15,7 @@ import (
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -33,17 +35,23 @@ const (
 	hdMaxTile = 140
 )
 
-// applySavedAvatar restores a player's persisted color/style/accessory after
-// they join, so customization survives reconnects.
-func applySavedAvatar(w *world.World, st store.Store, name string) {
-	color, style, accessory, ok := st.LoadAvatar(name)
-	if !ok {
+// setupAvatar restores a player's persisted color/style/accessory, or — on a
+// first visit — rolls a random look and remembers it, so everyone spawns with a
+// distinct avatar that then stays theirs across reconnects.
+func setupAvatar(w *world.World, st store.Store, name string) {
+	if color, style, accessory, ok := st.LoadAvatar(name); ok {
+		if color != "" {
+			w.SetColor(name, lipgloss.Color(color))
+		}
+		w.SetAvatar(name, style, accessory)
 		return
 	}
-	if color != "" {
-		w.SetColor(name, lipgloss.Color(color))
-	}
+	color := ui.AvatarColorByIndex(rand.Intn(ui.NumAvatarColors()))
+	style := rand.Intn(game.NumAvatarStyles())
+	accessory := rand.Intn(game.NumAccessories())
+	w.SetColor(name, color)
 	w.SetAvatar(name, style, accessory)
+	st.SaveAvatar(name, string(color), style, accessory)
 }
 
 // isHD reports whether a session asked for HD mode (an "hd" argument, e.g.
@@ -81,7 +89,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 
 	name, events := w.Join(s.User())
 	st.RecordVisit(name)
-	applySavedAvatar(w, st, name)
+	setupAvatar(w, st, name)
 	log.Printf("%s connected (HD/sixel)", name)
 	defer func() {
 		w.Leave(name)

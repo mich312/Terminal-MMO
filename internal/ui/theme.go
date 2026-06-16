@@ -51,6 +51,19 @@ var avatarColors = []lipgloss.Color{
 	"#4FD6BE", // teal
 	"#F2E9A0", // pale yellow
 	"#A0C7FF", // light blue
+	"#FF8FB1", // pink
+	"#9B7EDE", // purple
+	"#5ED3F3", // cyan
+	"#FFB870", // tangerine
+	"#8BD450", // lime
+	"#E27396", // rose
+	"#76C7C0", // seafoam
+	"#B5838D", // mauve
+	"#F4A259", // ochre
+	"#5FA8D3", // steel blue
+	"#C0EB75", // chartreuse
+	"#FF9F1C", // marigold
+	"#E0AAFF", // lilac
 }
 
 // AvatarColor returns a deterministic color for a player name.
