@@ -52,14 +52,16 @@ func New() *World {
 func (w *World) tickLoop() {
 	t := time.NewTicker(500 * time.Millisecond)
 	defer t.Stop()
+	var frame uint64
 	for {
 		select {
 		case <-w.stop:
 			return
 		case <-t.C:
+			frame++
 			w.mu.Lock()
 			w.pulse = !w.pulse
-			ev := Event{Type: EventTick, Pulse: w.pulse}
+			ev := Event{Type: EventTick, Pulse: w.pulse, Frame: frame}
 			for _, ch := range w.subs {
 				deliver(ch, ev)
 			}

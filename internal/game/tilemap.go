@@ -21,9 +21,21 @@ type Tile struct {
 	Kind     TileKind
 	Ch       rune // display rune
 	Walkable bool
-	Portal   string // destination area id, for TilePortal
-	Label    string // portal display name, for status-bar hints
-	Object   string // object id, for TileObject
+	Portal   string    // destination area id, for TilePortal
+	Label    string    // portal display name, for status-bar hints
+	Object   string    // object id, for TileObject
+	Anim     *TileAnim // optional animation
+}
+
+// TileAnim makes a tile come alive: its glyph cycles through Frames and its
+// color shimmers between ColorA and ColorB (hex), both advanced by the global
+// animation frame. Empty Frames keeps the tile's base glyph; empty colors
+// keep the kind's base color. Speed is ticks per step (≥1; 0 means 1).
+type TileAnim struct {
+	Frames []rune
+	ColorA string
+	ColorB string
+	Speed  int
 }
 
 // LegendEntry describes how a source rune becomes a tile.
@@ -34,6 +46,7 @@ type LegendEntry struct {
 	Portal   string
 	Label    string
 	Object   string
+	Anim     *TileAnim
 }
 
 // MapText is a label drawn over the map (display only; the tiles underneath
@@ -94,6 +107,7 @@ func ParseMap(rows []string, legend map[rune]LegendEntry, texts []MapText) *Tile
 				Portal:   le.Portal,
 				Label:    le.Label,
 				Object:   le.Object,
+				Anim:     le.Anim,
 			}
 		}
 		tm.Tiles = append(tm.Tiles, line)

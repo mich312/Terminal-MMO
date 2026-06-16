@@ -17,6 +17,7 @@ type Walker struct {
 	AreaID string
 	X, Y   int
 	Pulse  bool
+	Frame  int // monotonic animation frame, advanced by world ticks
 }
 
 // Enter places the player at a spawn point (jittered within radius so
@@ -43,8 +44,9 @@ func (w *Walker) Enter(x, y, jitter int) {
 func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 	switch msg := msg.(type) {
 	case WorldEventMsg:
-		if world.Event(msg).Type == world.EventTick {
-			w.Pulse = world.Event(msg).Pulse
+		if ev := world.Event(msg); ev.Type == world.EventTick {
+			w.Pulse = ev.Pulse
+			w.Frame = int(ev.Frame)
 		}
 		return "", true
 
@@ -80,7 +82,7 @@ func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 // Used by the small fixed areas whose maps fit on screen.
 func (w *Walker) Render() string {
 	players := w.Ctx.World.PlayersInArea(w.AreaID)
-	return RenderMap(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Pulse)
+	return RenderMap(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Frame)
 }
 
 // RenderViewport draws a vw×vh camera window centered on the local player,
@@ -89,7 +91,16 @@ func (w *Walker) Render() string {
 func (w *Walker) RenderViewport(vw, vh int) string {
 	players := w.Ctx.World.PlayersInArea(w.AreaID)
 	cam := CameraOn(w.Map, w.X, w.Y, vw, vh)
-	return RenderViewport(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Pulse, cam)
+	return RenderViewport(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Frame, cam)
+}
+
+// RenderLit is RenderViewport with a radial light centered on the player, so
+// the map sits in shadow beyond radius tiles — for dim areas like Kraftwerk.
+func (w *Walker) RenderLit(vw, vh, radius int) string {
+	players := w.Ctx.World.PlayersInArea(w.AreaID)
+	cam := CameraOn(w.Map, w.X, w.Y, vw, vh)
+	light := Light{X: w.X, Y: w.Y, Radius: radius}
+	return RenderLitViewport(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Frame, cam, light)
 }
 
 // PortalHint returns the status-bar hint for a portal the player stands on

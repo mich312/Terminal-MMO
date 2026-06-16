@@ -33,5 +33,6 @@ type Event struct {
 	X, Y   int
 	Detail string // chat text, destination name, room key
 	Slide  int
-	Pulse  bool // for EventTick
+	Pulse  bool   // for EventTick
+	Frame  uint64 // monotonic tick counter, for multi-frame animation
 }

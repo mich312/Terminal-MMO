@@ -128,6 +128,16 @@ func NewTheme(r *lipgloss.Renderer) *Theme {
 	}
 }
 
+// Fg is a renderer-bound foreground style for an arbitrary color — used by
+// the map renderer, which computes per-tile colors (lighting, day/night,
+// animation) rather than picking from the fixed style set.
+func (t *Theme) Fg(c lipgloss.Color) lipgloss.Style { return t.r.NewStyle().Foreground(c) }
+
+// FgBold is Fg with bold, for objects and portals.
+func (t *Theme) FgBold(c lipgloss.Color) lipgloss.Style {
+	return t.r.NewStyle().Foreground(c).Bold(true)
+}
+
 // Wrap is a renderer-bound, width-constrained block style (no color), used to
 // pad a line to the full screen width through the session's renderer.
 func (t *Theme) Wrap(width int) lipgloss.Style { return t.r.NewStyle().Width(width) }

@@ -44,7 +44,9 @@ var legend = map[rune]game.LegendEntry{
 	'g': {Kind: game.TileObject, Ch: '≡', Object: "guestbook"},
 	'-': {Kind: game.TileDecor, Ch: '▀'},
 	'=': {Kind: game.TileDecor, Ch: '▄'},
-	'*': {Kind: game.TileDecor, Ch: '♣'},
+	// Lobby plants breathe with a soft teal→green shimmer.
+	'*': {Kind: game.TileDecor, Ch: '♣', Anim: &game.TileAnim{
+		ColorA: "#4FD6BE", ColorB: "#7BD88F", Speed: 3}},
 }
 
 var texts = []game.MapText{

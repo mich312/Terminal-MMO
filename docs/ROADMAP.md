@@ -24,10 +24,16 @@ Direction agreed with the team. Decisions locked:
 
 ## Phase 1 — Fancy graphics polish
 
-- Biome palettes + day/night tint cycle (background tint under the glyph).
-- Animated tiles (water, machines, torches) off the 2 Hz world tick.
-- Radial lighting falloff around the player; particles/weather as a layer.
-- Directional / two-cell avatars with a drop shadow.
+- ✅ Real-time day/night tint cycle (`ui.Ambient`): tiles blend toward a
+  time-of-day color; player glyphs stay full-bright. Tick now carries a
+  monotonic `Frame` for animation.
+- ✅ Animated tiles (`TileAnim`): glyph + color cycle off the frame counter.
+  Kraftwerk machines pulse, coolant flows, lamps flicker; lobby plants breathe.
+- ✅ Radial lighting (`Light` / `Walker.RenderLit`): tiles fade to shadow past
+  the player's reach. Kraftwerk is now a dim machine hall.
+- ⬜ Biome palettes (will land with the overworld).
+- ⬜ Particles / weather layer.
+- ⬜ Directional / two-cell avatars with a drop shadow.
 
 ## Phase 2 — Chunked infinite overworld
 
