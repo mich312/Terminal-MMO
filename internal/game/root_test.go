@@ -47,7 +47,8 @@ func newTestModel(t *testing.T) *Model {
 	name, events := w.Join("tester")
 	ctx := &Ctx{World: w, Store: store.Open(t.TempDir() + "/t.db"), Name: name, Theme: ui.Default}
 	m := NewModel(ctx, events, store.VisitInfo{FirstVisit: true})
-	m.Init() // builds the lobby area for the intro pan
+	m.areaID = "lobby" // the test binary only registers the lobby stub
+	m.Init()           // builds the lobby area for the intro pan
 	m.width, m.height = 100, 30
 	return m
 }

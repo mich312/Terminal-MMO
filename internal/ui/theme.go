@@ -147,13 +147,22 @@ func (t *Theme) FgBold(c lipgloss.Color) lipgloss.Style {
 	return t.r.NewStyle().Foreground(c).Bold(true)
 }
 
-// Wrap is a renderer-bound, width-constrained block style (no color), used to
-// pad a line to the full screen width through the session's renderer.
-func (t *Theme) Wrap(width int) lipgloss.Style { return t.r.NewStyle().Width(width) }
+// FgBg styles a cell with both a foreground and background color — used to
+// pack two half-block pixels (top=fg, bottom=bg) into one cell.
+func (t *Theme) FgBg(fg, bg lipgloss.Color) lipgloss.Style {
+	return t.r.NewStyle().Foreground(fg).Background(bg)
+}
+
+// Wrap is a renderer-bound, single-line block style (no color) that pads to
+// the full screen width. MaxHeight(1) clips overflow so an over-long bar can
+// never wrap and disturb the fixed layout.
+func (t *Theme) Wrap(width int) lipgloss.Style {
+	return t.r.NewStyle().Width(width).MaxHeight(1)
+}
 
 // Bar is Wrap plus the status-bar background.
 func (t *Theme) Bar(width int) lipgloss.Style {
-	return t.r.NewStyle().Width(width).Background(lipgloss.Color(HexBarBg))
+	return t.r.NewStyle().Width(width).MaxHeight(1).Background(lipgloss.Color(HexBarBg))
 }
 
 // Default is the process-wide theme for tests and init-time globals. Sessions

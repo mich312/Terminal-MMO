@@ -17,24 +17,26 @@ type Walker struct {
 	AreaID string
 	X, Y   int
 	Pulse  bool
-	Frame  int // monotonic animation frame, advanced by world ticks
+	Frame  int  // monotonic animation frame, advanced by world ticks
+	armed  bool // portal latch: false on spawn so you don't bounce straight back
 }
 
-// Enter places the player at a spawn point (jittered within radius so
-// players don't stack) and announces the area change to the world.
+// Enter places the player at a spawn point (jittered within radius so players
+// don't stack) where the whole footprint fits, and announces the area change.
 func (w *Walker) Enter(x, y, jitter int) {
-	for try := 0; try < 10; try++ {
-		dx, dy := 0, 0
+	for try := 0; try < 20; try++ {
+		cx, cy := x, y
 		if jitter > 0 {
-			dx = rand.Intn(2*jitter+1) - jitter
-			dy = rand.Intn(jitter + 1) // only downward jitter keeps spawns tidy
+			cx += rand.Intn(2*jitter+1) - jitter
+			cy += rand.Intn(jitter + 1) // only downward jitter keeps spawns tidy
 		}
-		if w.Map.Walkable(x+dx, y+dy) {
-			x, y = x+dx, y+dy
+		if footprintWalkable(w.Map.Walkable, cx, cy) {
+			x, y = cx, cy
 			break
 		}
 	}
 	w.X, w.Y = x, y
+	w.armed = false
 	w.Ctx.World.EnterArea(w.Ctx.Name, w.AreaID, x, y, DisplayName(w.AreaID))
 }
 
@@ -51,29 +53,44 @@ func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 		return "", true
 
 	case tea.KeyMsg:
-		dx, dy := 0, 0
-		switch msg.String() {
-		case "up", "w":
-			dy = -1
-		case "down", "s":
-			dy = 1
-		case "left", "a":
-			dx = -1
-		case "right", "d":
-			dx = 1
-		default:
+		dx, dy, steps, ok := MoveKey(msg.String())
+		if !ok {
 			return "", false
 		}
-		nx, ny := w.X+dx, w.Y+dy
-		if !w.Map.Walkable(nx, ny) {
-			return "", true
+		sx, sy := w.X, w.Y
+		for i := 0; i < steps; i++ {
+			nx, ny := w.X+dx, w.Y+dy
+			if !footprintWalkable(w.Map.Walkable, nx, ny) {
+				break
+			}
+			w.X, w.Y = nx, ny
 		}
-		w.X, w.Y = nx, ny
-		w.Ctx.World.Move(w.Ctx.Name, nx, ny)
-		if t := w.Map.At(nx, ny); t.Kind == TilePortal {
-			return t.Portal, true
+		if w.X != sx || w.Y != sy {
+			w.Ctx.World.Move(w.Ctx.Name, w.X, w.Y)
+		}
+		// A multi-tile body can't always stand on a wall-embedded portal tile,
+		// so triggering is by proximity. The armed latch (cleared on spawn)
+		// stops you bouncing straight back through the portal you arrived from.
+		if p, near := w.portalNear(w.X, w.Y); near {
+			if w.armed {
+				return p, true
+			}
+		} else {
+			w.armed = true
 		}
 		return "", true
+	}
+	return "", false
+}
+
+// portalNear returns a portal on or one tile around the body's footprint.
+func (w *Walker) portalNear(x, y int) (string, bool) {
+	for dy := -1; dy <= PlayerH; dy++ {
+		for dx := -1; dx <= PlayerW; dx++ {
+			if t := w.Map.At(x+dx, y+dy); t.Kind == TilePortal {
+				return t.Portal, true
+			}
+		}
 	}
 	return "", false
 }
@@ -106,8 +123,12 @@ func (w *Walker) RenderLit(vw, vh, radius int) string {
 // PortalHint returns the status-bar hint for a portal the player stands on
 // or next to, or "".
 func (w *Walker) PortalHint() string {
-	if t, ok := w.Map.PortalNear(w.X, w.Y); ok {
-		return "↪ " + t.Label + " — walk in to enter"
+	for dy := -1; dy <= PlayerH; dy++ {
+		for dx := -1; dx <= PlayerW; dx++ {
+			if t := w.Map.At(w.X+dx, w.Y+dy); t.Kind == TilePortal {
+				return "↪ " + t.Label + " — walk in to enter"
+			}
+		}
 	}
 	return ""
 }

@@ -1,23 +1,25 @@
 // Package wilds is the Wilds: Durst World's procedurally generated, infinite
-// overworld. Unlike the hand-authored areas it has no fixed map — the player
-// carries absolute world coordinates and every frame a window of terrain is
-// sampled from worldgen around them and handed to the normal tile renderer.
-// Because generation is a pure function of the seed, every session sees the
-// same world and stands on the same ground.
+// overworld and main hub. The player carries absolute world coordinates and a
+// multi-tile body; every frame a window of terrain is sampled from worldgen
+// around them and rendered through the shared tile renderer. Generation is a
+// pure function of the seed, so every session shares one world. Landmark
+// portals near the origin lead to the hand-built areas.
 package wilds
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
 
-// worldSeed is fixed so the Wilds are identical for everyone. (A later admin
-// /regen command can swap it.)
+// worldSeed is fixed so the Wilds are identical for everyone.
 const worldSeed uint64 = 0xD0117_C0FFEE_5742
 
 func init() {
@@ -27,19 +29,43 @@ func init() {
 }
 
 type area struct {
-	ctx    *game.Ctx
-	gen    *worldgen.Generator
-	wx, wy int // absolute world position of the local player
-	frame  int
+	ctx     *game.Ctx
+	gen     *worldgen.Generator
+	wx, wy  int // absolute world position (top-left of the body's footprint)
+	frame   int
+	showMap bool
 }
 
 func (a *area) Name() string { return "The Wilds" }
 
 func (a *area) Init(*world.Player) tea.Cmd {
-	// Spawn just south of the home gate, inside the guaranteed clearing.
-	a.wx, a.wy = worldgen.GateX, worldgen.GateY+1
+	a.wx, a.wy = a.spawn()
 	a.ctx.World.EnterArea(a.ctx.Name, "wilds", a.wx, a.wy, "The Wilds")
 	return nil
+}
+
+// spawn finds an open footprint near the HQ gate (but not on a portal).
+func (a *area) spawn() (int, int) {
+	for _, off := range [][2]int{{2, 2}, {-3, 2}, {2, -3}, {-3, -3}, {3, 0}, {0, 3}} {
+		x, y := worldgen.GateX+off[0], worldgen.GateY+off[1]
+		if _, isPortal := a.portalUnder(x, y); a.fits(x, y) && !isPortal {
+			return x, y
+		}
+	}
+	return worldgen.GateX + 2, worldgen.GateY + 2
+}
+
+func (a *area) fits(x, y int) bool { return footprintWalkable(a.gen, x, y) }
+
+func (a *area) portalUnder(x, y int) (string, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			if c := a.gen.At(x+dx, y+dy); c.Portal != "" {
+				return c.Portal, true
+			}
+		}
+	}
+	return "", false
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
@@ -51,41 +77,42 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
-		dx, dy := 0, 0
-		switch msg.String() {
-		case "up", "w":
-			dy = -1
-		case "down", "s":
-			dy = 1
-		case "left", "a":
-			dx = -1
-		case "right", "d":
-			dx = 1
-		default:
+		if msg.String() == "m" {
+			a.showMap = !a.showMap
 			return a, nil
 		}
-		nx, ny := a.wx+dx, a.wy+dy
-		cell := a.gen.At(nx, ny)
-		if !cell.Walkable {
+		if a.showMap {
+			a.showMap = false // any other key closes the map
+		}
+		dx, dy, steps, ok := game.MoveKey(msg.String())
+		if !ok {
 			return a, nil
 		}
-		a.wx, a.wy = nx, ny
-		a.ctx.World.Move(a.ctx.Name, nx, ny)
-		if cell.Portal != "" {
-			return game.Transition{To: cell.Portal}, nil
+		sx, sy := a.wx, a.wy
+		for i := 0; i < steps; i++ {
+			nx, ny := a.wx+dx, a.wy+dy
+			if !a.fits(nx, ny) {
+				break
+			}
+			a.wx, a.wy = nx, ny
+			if portal, ok := a.portalUnder(nx, ny); ok {
+				a.ctx.World.Move(a.ctx.Name, nx, ny)
+				return game.Transition{To: portal}, nil
+			}
+		}
+		if a.wx != sx || a.wy != sy {
+			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
 		}
 	}
 	return a, nil
 }
 
-// Hint shows a compass back to the home gate so players are never stranded.
 func (a *area) Hint() string {
-	dx := worldgen.GateX - a.wx
-	dy := worldgen.GateY - a.wy
-	if cheb(dx, dy) <= 1 {
-		return "⌂ Durst Gate — step in to return to the Lobby"
+	if name, ok := a.portalUnder(a.wx, a.wy); ok {
+		return "◈ step in to enter " + game.DisplayName(name)
 	}
-	return "⌂ Durst Gate " + bearing(dx, dy)
+	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
+	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
 }
 
 func (a *area) View(width, height int) string {
@@ -94,24 +121,20 @@ func (a *area) View(width, height int) string {
 	for ly := 0; ly < height; ly++ {
 		row := make([]game.Tile, width)
 		for lx := 0; lx < width; lx++ {
-			wx := a.wx + lx - cx
-			wy := a.wy + ly - cy
-			row[lx] = cellToTile(a.gen.At(wx, wy))
+			row[lx] = cellToTile(a.gen.At(a.wx+lx-cx, a.wy+ly-cy))
 		}
 		tiles[ly] = row
 	}
 	tm := &game.TileMap{W: width, H: height, Tiles: tiles}
+	players := a.ctx.World.PlayersInArea("wilds")
+	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, a.wx-cx, a.wy-cy, game.Light{})
 
-	// Shift everyone in the area into window-local coordinates so the shared
-	// renderer can stamp them on the sampled window.
-	var local []world.Player
-	for _, p := range a.ctx.World.PlayersInArea("wilds") {
-		lp := p
-		lp.X = p.X - a.wx + cx
-		lp.Y = p.Y - a.wy + cy
-		local = append(local, lp)
+	if a.showMap {
+		panel := a.minimap()
+		pw := lipgloss.Width(panel)
+		view = ui.Overlay(view, panel, (width-pw)/2, 1)
 	}
-	return game.RenderMap(a.ctx.Theme, tm, local, a.ctx.Name, a.frame)
+	return view
 }
 
 func cellToTile(c worldgen.Cell) game.Tile {
@@ -124,17 +147,57 @@ func cellToTile(c worldgen.Cell) game.Tile {
 	case !c.Walkable:
 		kind = game.TileDecor
 	}
-	t := game.Tile{
-		Kind:     kind,
-		Ch:       c.Glyph,
-		Walkable: c.Walkable,
-		Color:    c.Color,
-		Portal:   c.Portal,
-	}
+	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal}
 	if c.AnimA != "" && c.AnimB != "" {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
 	return t
+}
+
+// minimap renders a coarse overview of the surrounding terrain (one cell per
+// few tiles), marking the player (☺), landmarks (their glyph) and the gate.
+func (a *area) minimap() string {
+	const (
+		stride = 4
+		halfW  = 19
+		halfH  = 9
+	)
+	th := a.ctx.Theme
+	if th == nil {
+		th = ui.Default
+	}
+	var b strings.Builder
+	b.WriteString(th.PanelTitle.Render("Map — The Wilds") + "\n")
+	for ry := -halfH; ry <= halfH; ry++ {
+		for rx := -halfW; rx <= halfW; rx++ {
+			wx := a.wx + rx*stride
+			wy := a.wy + ry*stride
+			if rx == 0 && ry == 0 {
+				b.WriteString(th.Bright.Render("☺"))
+				continue
+			}
+			c := a.gen.At(wx, wy)
+			color := c.Color
+			if color == "" {
+				color = ui.HexDim
+			}
+			b.WriteString(th.Fg(lipgloss.Color(color)).Render(string(c.Glyph)))
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString(th.Dim.Render("m or move to close"))
+	return th.Panel.Render(b.String())
+}
+
+func footprintWalkable(g *worldgen.Generator, x, y int) bool {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			if !g.Walkable(x+dx, y+dy) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func bearing(dx, dy int) string {
@@ -151,18 +214,8 @@ func bearing(dx, dy int) string {
 	case dx > 0:
 		s += fmt.Sprintf("%d→", dx)
 	}
-	return s
-}
-
-func cheb(dx, dy int) int {
-	if dx < 0 {
-		dx = -dx
+	if s == "" {
+		return "(here)"
 	}
-	if dy < 0 {
-		dy = -dy
-	}
-	if dx > dy {
-		return dx
-	}
-	return dy
+	return strings.TrimSpace(s)
 }

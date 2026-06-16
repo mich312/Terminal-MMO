@@ -47,25 +47,47 @@ func New(seed uint64) *Generator { return &Generator{seed: seed} }
 // Seed reports the generator's seed (for status display / regeneration).
 func (g *Generator) Seed() uint64 { return g.seed }
 
-// GateX, GateY is the home gate: the fixed point that returns to the lobby.
-// A small clearing is forced around it so spawning and returning are always
-// possible regardless of the noise field.
+// GateX, GateY is the home gate (Durst HQ) at the world origin. The spawn
+// sits in its forced clearing.
 const (
 	GateX = 0
 	GateY = 0
 )
 
+// Landmark is a fixed portal structure in the overworld — the hub's doors to
+// the hand-built areas. A grassy clearing of radius Clear is forced around
+// each so a multi-tile body can always reach it.
+type Landmark struct {
+	X, Y   int
+	Portal string
+	Name   string
+	Glyph  rune
+	Color  string
+	Clear  int
+}
+
+// Landmarks are placed near the origin so spawning in the Wilds drops you in a
+// small plaza with doors to everywhere.
+var Landmarks = []Landmark{
+	{0, 0, "lobby", "Durst HQ", '⌂', "#7DF0FF", 4},
+	{16, 0, "presentation", "Presentation Wing", 'P', "#FFC861", 3},
+	{-16, 0, "kraftwerk", "Kraftwerk", 'K', "#56E1FF", 3},
+	{0, 12, "democenter", "Demo Center", 'D', "#C792EA", 3},
+}
+
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
 func (g *Generator) At(x, y int) Cell {
-	if x == GateX && y == GateY {
-		return Cell{
-			Biome: Grass, Glyph: '⌂', Color: "#7DF0FF",
-			Walkable: true, Object: true, Portal: "lobby",
+	for _, lm := range Landmarks {
+		if x == lm.X && y == lm.Y {
+			return Cell{Biome: Grass, Glyph: lm.Glyph, Color: lm.Color,
+				Walkable: true, Object: true, Portal: lm.Portal}
 		}
 	}
-	// A guaranteed grassy clearing around the gate so the spawn is sane.
-	if abs(x-GateX) <= 2 && abs(y-GateY) <= 2 {
-		return grassCell(g, x, y)
+	// Forced grassy clearings around each landmark keep the plaza walkable.
+	for _, lm := range Landmarks {
+		if abs(x-lm.X) <= lm.Clear && abs(y-lm.Y) <= lm.Clear {
+			return grassCell(g, x, y)
+		}
 	}
 
 	elev := g.fbm(x, y, 0x1, 0.045, 4)
