@@ -41,6 +41,10 @@ const (
 	PropTuft
 	PropTree
 	PropBoulder
+	PropBush
+	PropRock
+	PropStump
+	PropStructure
 )
 
 // Tile is one cell of a parsed map.

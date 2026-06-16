@@ -160,18 +160,27 @@ func CellTile(c worldgen.Cell) game.Tile {
 	if c.AnimA != "" && c.AnimB != "" {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
-	if !c.Object {
-		switch c.Glyph {
-		case '*': // flower on grass
-			t.Prop, t.PropHex, t.Ground = game.PropFlower, c.Color, groundColor(c.Biome)
-		case ',': // grass tuft
-			t.Prop, t.PropHex, t.Ground = game.PropTuft, "#3E7A4F", groundColor(c.Biome)
-		case '♣': // tree on forest floor
-			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
-		case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
-			if c.Biome == worldgen.Hill {
-				t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt
-			}
+	if c.Object {
+		// Landmark portals become little buildings in their own color.
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropStructure, c.Color, groundColor(worldgen.Grass), game.TexGrass
+		return t
+	}
+	switch c.Glyph {
+	case '*': // flower on grass
+		t.Prop, t.PropHex, t.Ground = game.PropFlower, c.Color, groundColor(c.Biome)
+	case ',': // grass tuft
+		t.Prop, t.PropHex, t.Ground = game.PropTuft, "#3E7A4F", groundColor(c.Biome)
+	case 'o': // bush
+		t.Prop, t.PropHex, t.Ground = game.PropBush, c.Color, groundColor(c.Biome)
+	case 'u': // tree stump
+		t.Prop, t.PropHex, t.Ground = game.PropStump, c.Color, groundColor(c.Biome)
+	case '°': // small rock
+		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
+	case '♣': // tree on forest floor
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
+	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
+		if c.Biome == worldgen.Hill {
+			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt
 		}
 	}
 	return t

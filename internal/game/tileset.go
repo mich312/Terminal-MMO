@@ -72,6 +72,39 @@ var propArt = map[TileProp][]string{
 		".pppp.",
 		"......",
 	},
+	PropBush: {
+		"..PP..",
+		".PPPPp",
+		"PPPPpp",
+		"PpPPpp",
+		".pPpp.",
+		"......",
+	},
+	PropRock: {
+		"......",
+		"......",
+		".PPp..",
+		"PPppP.",
+		".pppp.",
+		"......",
+	},
+	PropStump: {
+		"......",
+		"......",
+		".PPPP.",
+		"PpppPP",
+		".PppP.",
+		"......",
+	},
+	// A little building, walls in the landmark color with a darker roof and door.
+	PropStructure: {
+		"..PP..",
+		".pppp.",
+		"pppppp",
+		"PPPPPP",
+		"PPppPP",
+		"PPppPP",
+	},
 }
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').

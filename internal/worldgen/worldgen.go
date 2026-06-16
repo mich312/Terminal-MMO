@@ -94,12 +94,15 @@ func (g *Generator) At(x, y int) Cell {
 	moist := g.fbm(x, y, 0x9E37, 0.03, 3)
 
 	switch {
-	case elev < 0.26:
-		return Cell{Biome: Deep, Glyph: '≈', Color: "#1E3A8A",
-			AnimA: "#163073", AnimB: "#2E6BFF", Frames: []rune{'≈', '~', '≈', '≋'}}
-	case elev < 0.34:
-		return Cell{Biome: Water, Glyph: '~', Color: "#2E6BFF",
-			AnimA: "#2E6BFF", AnimB: "#56E1FF", Frames: []rune{'~', '≈', '~', '≋'}}
+	case elev < 0.24: // deep water
+		return Cell{Biome: Deep, Glyph: '≈', Color: "#163A6B",
+			AnimA: "#12305C", AnimB: "#22518F", Frames: []rune{'≈', '~', '≈', '≋'}}
+	case elev < 0.30: // open water
+		return Cell{Biome: Water, Glyph: '~', Color: "#2E6BD0",
+			AnimA: "#2E6BD0", AnimB: "#3F9AE0", Frames: []rune{'~', '≈', '~', '≋'}}
+	case elev < 0.34: // shallows
+		return Cell{Biome: Water, Glyph: '~', Color: "#5BB0E0",
+			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
 	case elev < 0.38:
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
 	case elev < 0.70:
@@ -120,34 +123,59 @@ func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 func grassCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Grass, Glyph: '·', Color: "#5FA86B", Walkable: true}
 	switch r := g.prop(x, y); {
-	case r < 0.04:
-		c.Glyph, c.Color = '*', "#FF6B6B" // flower
+	case r < 0.05:
+		c.Glyph, c.Color = '*', flowerColor(g.prop2(x, y)) // flower (varied)
 	case r < 0.08:
-		c.Glyph, c.Color = '*', "#FFC861" // flower
-	case r < 0.16:
+		c.Glyph, c.Color = 'o', "#3E8F57" // bush
+	case r < 0.10:
+		c.Glyph, c.Color = '°', "#9AA0A8" // small rock
+	case r < 0.20:
 		c.Glyph, c.Color = ',', "#4F9460" // tuft
 	}
 	return c
 }
 
 func forestCell(g *Generator, x, y int) Cell {
-	r := g.prop(x, y)
-	if r < 0.45 { // a tree — blocks movement
-		col := "#2F7D4F"
-		if r < 0.18 {
-			col = "#276B43"
-		}
-		return Cell{Biome: Forest, Glyph: '♣', Color: col}
+	switch r := g.prop(x, y); {
+	case r < 0.42: // a tree — blocks movement (color varies; some autumn)
+		return Cell{Biome: Forest, Glyph: '♣', Color: treeColor(g.prop2(x, y))}
+	case r < 0.48: // a stump
+		return Cell{Biome: Forest, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
+	case r < 0.56: // undergrowth bush
+		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
 	return Cell{Biome: Forest, Glyph: '·', Color: "#3F8A5A", Walkable: true}
 }
 
 func hillCell(g *Generator, x, y int) Cell {
-	r := g.prop(x, y)
-	if r < 0.12 { // a boulder — blocks movement
+	switch r := g.prop(x, y); {
+	case r < 0.10: // a boulder — blocks movement
 		return Cell{Biome: Hill, Glyph: '▲', Color: "#8A8170"}
+	case r < 0.18: // a small rock
+		return Cell{Biome: Hill, Glyph: '°', Color: "#9AA0A8", Walkable: true}
 	}
 	return Cell{Biome: Hill, Glyph: '∩', Color: "#9C8D67", Walkable: true}
+}
+
+// flowerColor and treeColor add deterministic variety from a second hash field.
+func flowerColor(r float64) string {
+	cols := []string{"#FF6B6B", "#FFC861", "#FF8FB1", "#F2F2F2", "#C792EA", "#A0C7FF"}
+	return cols[int(r*float64(len(cols)))%len(cols)]
+}
+
+func treeColor(r float64) string {
+	switch {
+	case r < 0.20:
+		return "#276B43" // deep green
+	case r < 0.70:
+		return "#2F7D4F" // green
+	case r < 0.82:
+		return "#C99A3A" // gold (autumn)
+	case r < 0.92:
+		return "#C2602F" // orange
+	default:
+		return "#B5482C" // red
+	}
 }
 
 // ── noise ──────────────────────────────────────────────────────────────────
@@ -197,6 +225,14 @@ const propSalt uint64 = 0x5CA77E12B10550DE
 // deterministically.
 func (g *Generator) prop(x, y int) float64 {
 	return unit(hashCoord(g.seed^propSalt, x, y))
+}
+
+// prop2 is a second independent per-cell hash, for sub-variety (which flower
+// color, whether a tree is autumn) without correlating with prop's scatter.
+const prop2Salt uint64 = 0xA17E55EDB10DEC0F
+
+func (g *Generator) prop2(x, y int) float64 {
+	return unit(hashCoord(g.seed^prop2Salt, x, y))
 }
 
 func fade(t float64) float64 { return t * t * (3 - 2*t) }
