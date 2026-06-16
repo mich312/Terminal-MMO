@@ -5,18 +5,68 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// RenderMap draws a tilemap with players on top. Players are drawn in
-// LastMoved order (most recent wins a contested tile); the local player is
-// always drawn last and highlighted.
-func RenderMap(tm *TileMap, players []world.Player, self string, pulse bool) string {
-	// glyph layer: start from tile display runes, then stamp texts & players
+// Camera is the window of a (possibly larger-than-screen) map that is drawn.
+// X,Y is the top-left tile; W,H the size in tiles. The zero Camera means
+// "draw the whole map" — used by the small fixed areas.
+type Camera struct {
+	X, Y, W, H int
+}
+
+// CameraOn returns a camera of size vw×vh centered on (cx,cy) and clamped so
+// it never shows past the map edges. If the map is smaller than the viewport
+// the camera collapses to the map size (callers center the result).
+func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
+	w, h := vw, vh
+	if w > tm.W {
+		w = tm.W
+	}
+	if h > tm.H {
+		h = tm.H
+	}
+	x := cx - w/2
+	y := cy - h/2
+	if x > tm.W-w {
+		x = tm.W - w
+	}
+	if y > tm.H-h {
+		y = tm.H - h
+	}
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	return Camera{X: x, Y: y, W: w, H: h}
+}
+
+// RenderMap draws a whole tilemap with players on top (no camera). Kept for
+// the small fixed areas whose maps fit on screen.
+func RenderMap(th *ui.Theme, tm *TileMap, players []world.Player, self string, pulse bool) string {
+	return RenderViewport(th, tm, players, self, pulse, Camera{X: 0, Y: 0, W: tm.W, H: tm.H})
+}
+
+// RenderViewport draws the camera's window of the map with players on top.
+// Players are drawn in LastMoved order (most recent wins a contested tile);
+// the local player is always drawn last and highlighted.
+func RenderViewport(th *ui.Theme, tm *TileMap, players []world.Player, self string, pulse bool, cam Camera) string {
+	if th == nil {
+		th = ui.Default
+	}
+	if cam.W <= 0 || cam.H <= 0 {
+		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
+	}
+
+	// glyph layer: tile display runes, then stamped text labels
 	type cell struct {
 		ch    rune
-		style int // index into styles below
+		style int
 	}
 	const (
 		stWall = iota
@@ -81,34 +131,40 @@ func RenderMap(tm *TileMap, players []world.Player, self string, pulse bool) str
 	}
 
 	var b strings.Builder
-	for y := 0; y < tm.H; y++ {
-		if y > 0 {
+	for vy := 0; vy < cam.H; vy++ {
+		y := cam.Y + vy
+		if vy > 0 {
 			b.WriteByte('\n')
 		}
-		for x := 0; x < tm.W; x++ {
+		for vx := 0; vx < cam.W; vx++ {
+			x := cam.X + vx
+			if y < 0 || y >= tm.H || x < 0 || x >= tm.W {
+				b.WriteByte(' ')
+				continue
+			}
 			if p, ok := playerAt[[2]int{x, y}]; ok {
-				b.WriteString(playerGlyph(p, p.Name == self))
+				b.WriteString(playerGlyph(th, p, p.Name == self))
 				continue
 			}
 			c := grid[y][x]
 			s := string(c.ch)
 			switch c.style {
 			case stWall:
-				b.WriteString(ui.WallStyle.Render(s))
+				b.WriteString(th.Wall.Render(s))
 			case stFloor:
-				b.WriteString(ui.FloorStyle.Render(s))
+				b.WriteString(th.Floor.Render(s))
 			case stDecor:
-				b.WriteString(ui.DecorStyle.Render(s))
+				b.WriteString(th.Decor.Render(s))
 			case stPortal:
 				if pulse {
-					b.WriteString(ui.PortalStyleA.Render(s))
+					b.WriteString(th.PortalA.Render(s))
 				} else {
-					b.WriteString(ui.PortalStyleB.Render(s))
+					b.WriteString(th.PortalB.Render(s))
 				}
 			case stObject:
-				b.WriteString(ui.ObjectStyle.Render(s))
+				b.WriteString(th.Object.Render(s))
 			case stLabel:
-				b.WriteString(ui.LabelStyle.Render(s))
+				b.WriteString(th.Label.Render(s))
 			default:
 				b.WriteString(s)
 			}
@@ -119,7 +175,7 @@ func RenderMap(tm *TileMap, players []world.Player, self string, pulse bool) str
 
 // playerGlyph renders a player as the first letter of their name in their
 // avatar color; the local player is bold + inverse.
-func playerGlyph(p world.Player, isSelf bool) string {
+func playerGlyph(th *ui.Theme, p world.Player, isSelf bool) string {
 	r := '☺'
 	for _, c := range p.Name {
 		if unicode.IsLetter(c) || unicode.IsDigit(c) {
@@ -127,7 +183,10 @@ func playerGlyph(p world.Player, isSelf bool) string {
 			break
 		}
 	}
-	st := ui.ChatNameStyle.Foreground(p.Color)
+	st := lipgloss.NewStyle().Bold(true).Foreground(p.Color)
+	if th != nil {
+		st = th.ChatName.Foreground(p.Color)
+	}
 	if isSelf {
 		st = st.Reverse(true)
 	}

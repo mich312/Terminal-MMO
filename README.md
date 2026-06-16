@@ -150,3 +150,21 @@ never blocks). Each session's bubbletea model pulls events with a blocking
 
 Live state is memory; SQLite is only the memory *between* visits (visit
 counts, guestbook, event log). Chat is deliberately ephemeral.
+
+### Rendering
+
+Color is truecolor-first. Each SSH session gets its own `*lipgloss.Renderer`
+(`bubbletea.MakeRenderer`) wrapped in a `ui.Theme`, threaded through
+`game.Ctx`; the renderer auto-detects the client's terminal and downsamples
+24-bit hex to 256- or 16-color as needed. `ui.Default` serves code with no
+session (tests, init globals), and the old `ui.WallStyle`-style globals are
+thin aliases to it.
+
+Maps render through a camera (`game.CameraOn` + `RenderViewport`), so a map
+may be larger than the screen — the foundation for the chunked overworld.
+`ui` also provides a half-block "pixel" layer (`Theme.HalfBlock`) and
+gradient/shimmer helpers, used by the cinematic intro that pans the camera
+from the DURST WORLD title down onto the play field.
+
+See `docs/ROADMAP.md` for what's next (biomes & lighting, the generative
+overworld, and chat commands).

@@ -76,10 +76,20 @@ func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 	return "", false
 }
 
-// RenderSelf renders the walker's map with everyone in the area on it.
+// Render draws the walker's whole map with everyone in the area on it.
+// Used by the small fixed areas whose maps fit on screen.
 func (w *Walker) Render() string {
 	players := w.Ctx.World.PlayersInArea(w.AreaID)
-	return RenderMap(w.Map, players, w.Ctx.Name, w.Pulse)
+	return RenderMap(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Pulse)
+}
+
+// RenderViewport draws a vw×vh camera window centered on the local player,
+// for maps larger than the screen (the chunked overworld). The result is at
+// most vw×vh tiles; the caller centers it when the map is smaller.
+func (w *Walker) RenderViewport(vw, vh int) string {
+	players := w.Ctx.World.PlayersInArea(w.AreaID)
+	cam := CameraOn(w.Map, w.X, w.Y, vw, vh)
+	return RenderViewport(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Pulse, cam)
 }
 
 // PortalHint returns the status-bar hint for a portal the player stands on

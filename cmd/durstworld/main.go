@@ -23,6 +23,7 @@ import (
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 
 	// areas register themselves with the game registry
@@ -93,7 +94,14 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			log.Printf("%s disconnected", name)
 		}()
 
-		ctx := &game.Ctx{World: w, Store: st, Name: name}
+		ctx := &game.Ctx{
+			World: w,
+			Store: st,
+			Name:  name,
+			// per-session renderer: auto-detects the client's terminal and
+			// downsamples truecolor → 256 → 16 as needed.
+			Theme: ui.NewTheme(bm.MakeRenderer(s)),
+		}
 		m := game.NewModel(ctx, events, visit)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}
 	}

@@ -1,40 +1,55 @@
 // Package ui holds the shared visual language of Durst World: one palette,
 // one set of lipgloss styles, a few small rendering helpers. No other
 // package defines colors.
+//
+// Color is truecolor-first: the palette is authored as 24-bit hex and each
+// SSH session renders through its own *lipgloss.Renderer (see NewTheme),
+// which auto-detects the client's terminal and downsamples to 256- or
+// 16-color as needed. Code that has no session (tests, init-time globals)
+// uses Default, bound to the process renderer.
 package ui
 
 import (
 	"hash/fnv"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
-// Palette. Restrained: grays, white, one Durst-blue accent, 8 avatar colors.
+// Palette — truecolor hex. Restrained: deep slate, near-white, the Durst
+// blue→cyan accent ramp, one warn amber, and 8 readable avatar hues.
+const (
+	HexAccent  = "#2E8BFF" // Durst blue
+	HexAccent2 = "#7DF0FF" // cyan tip of the accent ramp
+	HexBright  = "#F5F7FA" // near-white
+	HexText    = "#C2CBD6"
+	HexDim     = "#6B7480" // walls, decor
+	HexFaint   = "#333A45" // floor dots
+	HexWarn    = "#FFB454"
+	HexPortalA = "#2E8BFF" // portal pulse phase A
+	HexPortalB = "#7DF0FF" // portal pulse phase B
+	HexBarBg   = "#1B2027"
+	HexBarText = "#C2CBD6"
+	HexToast   = "#8A93A0" // join/leave one-liners
+	HexPanelBg = "#11151B"
+)
+
+// Back-compat color vars used by a few callers directly.
 var (
-	ColorAccent   = lipgloss.Color("39")  // Durst blue
-	ColorBright   = lipgloss.Color("255") // near-white
-	ColorText     = lipgloss.Color("250")
-	ColorDim      = lipgloss.Color("242") // walls, decor
-	ColorFaint    = lipgloss.Color("236") // floor dots
-	ColorWarn     = lipgloss.Color("214")
-	ColorPortalA  = lipgloss.Color("39")  // portal pulse phase A
-	ColorPortalB  = lipgloss.Color("123") // portal pulse phase B
-	ColorBarBg    = lipgloss.Color("236")
-	ColorBarText  = lipgloss.Color("252")
-	ColorToast    = lipgloss.Color("243") // join/leave one-liners
-	ColorPanelBor = lipgloss.Color("39")
+	ColorAccent = lipgloss.Color(HexAccent)
+	ColorBarBg  = lipgloss.Color(HexBarBg)
 )
 
-// avatarColors are 8 readable ANSI 256 colors for player glyphs.
+// avatarColors are 8 readable truecolor hues for player glyphs.
 var avatarColors = []lipgloss.Color{
-	"203", // coral
-	"114", // green
-	"215", // amber
-	"111", // sky
-	"176", // orchid
-	"80",  // teal
-	"229", // pale yellow
-	"153", // light blue
+	"#FF6B6B", // coral
+	"#7BD88F", // green
+	"#FFC861", // amber
+	"#6FB7FF", // sky
+	"#C792EA", // orchid
+	"#4FD6BE", // teal
+	"#F2E9A0", // pale yellow
+	"#A0C7FF", // light blue
 }
 
 // AvatarColor returns a deterministic color for a player name.
@@ -44,49 +59,131 @@ func AvatarColor(name string) lipgloss.Color {
 	return avatarColors[h.Sum32()%uint32(len(avatarColors))]
 }
 
-// Shared styles.
+// Theme is the full set of styles bound to one renderer (one SSH session, or
+// the process default). Build it with NewTheme.
+type Theme struct {
+	r *lipgloss.Renderer
+
+	Title      lipgloss.Style
+	Status     lipgloss.Style
+	StatusHint lipgloss.Style
+	Panel      lipgloss.Style
+	PanelTitle lipgloss.Style
+
+	Wall   lipgloss.Style
+	Floor  lipgloss.Style
+	Decor  lipgloss.Style
+	Object lipgloss.Style
+	Label  lipgloss.Style
+
+	PortalA lipgloss.Style
+	PortalB lipgloss.Style
+
+	ChatName lipgloss.Style
+	ChatText lipgloss.Style
+	Toast    lipgloss.Style
+
+	Dim    lipgloss.Style
+	Faint  lipgloss.Style
+	Bright lipgloss.Style
+	Accent lipgloss.Style
+	Warn   lipgloss.Style
+}
+
+// NewTheme builds the style set for a renderer. Pass bubbletea.MakeRenderer(s)
+// for a per-session, auto-detecting theme.
+func NewTheme(r *lipgloss.Renderer) *Theme {
+	s := r.NewStyle
+	return &Theme{
+		r: r,
+		Title: s().Foreground(lipgloss.Color(HexBright)).
+			Background(lipgloss.Color(HexAccent)).Bold(true).Padding(0, 2),
+		Status: s().Foreground(lipgloss.Color(HexBarText)).
+			Background(lipgloss.Color(HexBarBg)).Padding(0, 1),
+		StatusHint: s().Foreground(lipgloss.Color(HexAccent)).
+			Background(lipgloss.Color(HexBarBg)).Bold(true),
+		Panel: s().Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(HexAccent)).
+			Background(lipgloss.Color(HexPanelBg)).Padding(1, 2),
+		PanelTitle: s().Foreground(lipgloss.Color(HexAccent)).Bold(true),
+
+		Wall:   s().Foreground(lipgloss.Color(HexDim)),
+		Floor:  s().Foreground(lipgloss.Color(HexFaint)),
+		Decor:  s().Foreground(lipgloss.Color(HexDim)),
+		Object: s().Foreground(lipgloss.Color(HexAccent)).Bold(true),
+		Label:  s().Foreground(lipgloss.Color(HexText)),
+
+		PortalA: s().Foreground(lipgloss.Color(HexPortalA)).Bold(true),
+		PortalB: s().Foreground(lipgloss.Color(HexPortalB)).Bold(true),
+
+		ChatName: s().Bold(true),
+		ChatText: s().Foreground(lipgloss.Color(HexText)),
+		Toast:    s().Foreground(lipgloss.Color(HexToast)).Italic(true),
+
+		Dim:    s().Foreground(lipgloss.Color(HexDim)),
+		Faint:  s().Foreground(lipgloss.Color(HexFaint)),
+		Bright: s().Foreground(lipgloss.Color(HexBright)).Bold(true),
+		Accent: s().Foreground(lipgloss.Color(HexAccent)),
+		Warn:   s().Foreground(lipgloss.Color(HexWarn)),
+	}
+}
+
+// Wrap is a renderer-bound, width-constrained block style (no color), used to
+// pad a line to the full screen width through the session's renderer.
+func (t *Theme) Wrap(width int) lipgloss.Style { return t.r.NewStyle().Width(width) }
+
+// Bar is Wrap plus the status-bar background.
+func (t *Theme) Bar(width int) lipgloss.Style {
+	return t.r.NewStyle().Width(width).Background(lipgloss.Color(HexBarBg))
+}
+
+// Default is the process-wide theme for tests and init-time globals. Sessions
+// build their own with NewTheme(bubbletea.MakeRenderer(s)).
+var Default = NewTheme(lipgloss.DefaultRenderer())
+
+// Back-compat global styles — thin aliases to Default so existing callers
+// (areas, input widget) keep compiling. New code should prefer a session
+// Theme threaded through game.Ctx.
 var (
-	TitleStyle = lipgloss.NewStyle().
-			Foreground(ColorBright).
-			Background(ColorAccent).
-			Bold(true).
-			Padding(0, 2)
+	TitleStyle      = Default.Title
+	StatusStyle     = Default.Status
+	StatusHintStyle = Default.StatusHint
+	PanelStyle      = Default.Panel
+	PanelTitleStyle = Default.PanelTitle
 
-	StatusStyle = lipgloss.NewStyle().
-			Foreground(ColorBarText).
-			Background(ColorBarBg).
-			Padding(0, 1)
+	WallStyle   = Default.Wall
+	FloorStyle  = Default.Floor
+	DecorStyle  = Default.Decor
+	ObjectStyle = Default.Object
+	LabelStyle  = Default.Label
 
-	StatusHintStyle = lipgloss.NewStyle().
-			Foreground(ColorAccent).
-			Background(ColorBarBg).
-			Bold(true)
+	PortalStyleA = Default.PortalA
+	PortalStyleB = Default.PortalB
 
-	PanelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorPanelBor).
-			Padding(1, 2)
+	ChatNameStyle = Default.ChatName
+	ChatTextStyle = Default.ChatText
+	ToastStyle    = Default.Toast
 
-	PanelTitleStyle = lipgloss.NewStyle().
-			Foreground(ColorAccent).
-			Bold(true)
-
-	WallStyle   = lipgloss.NewStyle().Foreground(ColorDim)
-	FloorStyle  = lipgloss.NewStyle().Foreground(ColorFaint)
-	DecorStyle  = lipgloss.NewStyle().Foreground(ColorDim)
-	ObjectStyle = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
-	LabelStyle  = lipgloss.NewStyle().Foreground(ColorText)
-
-	PortalStyleA = lipgloss.NewStyle().Foreground(ColorPortalA).Bold(true)
-	PortalStyleB = lipgloss.NewStyle().Foreground(ColorPortalB).Bold(true)
-
-	ChatNameStyle = lipgloss.NewStyle().Bold(true)
-	ChatTextStyle = lipgloss.NewStyle().Foreground(ColorText)
-	ToastStyle    = lipgloss.NewStyle().Foreground(ColorToast).Italic(true)
-
-	DimStyle    = lipgloss.NewStyle().Foreground(ColorDim)
-	FaintStyle  = lipgloss.NewStyle().Foreground(ColorFaint)
-	BrightStyle = lipgloss.NewStyle().Foreground(ColorBright).Bold(true)
-	AccentStyle = lipgloss.NewStyle().Foreground(ColorAccent)
-	WarnStyle   = lipgloss.NewStyle().Foreground(ColorWarn)
+	DimStyle    = Default.Dim
+	FaintStyle  = Default.Faint
+	BrightStyle = Default.Bright
+	AccentStyle = Default.Accent
+	WarnStyle   = Default.Warn
 )
+
+// Blend mixes two hex colors in CIE-Lab space and returns a lipgloss color.
+// t=0 yields a, t=1 yields b.
+func Blend(a, b string, t float64) lipgloss.Color {
+	ca, err1 := colorful.Hex(a)
+	cb, err2 := colorful.Hex(b)
+	if err1 != nil || err2 != nil {
+		return lipgloss.Color(a)
+	}
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	return lipgloss.Color(ca.BlendLab(cb, t).Clamped().Hex())
+}

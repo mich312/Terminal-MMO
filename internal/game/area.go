@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -38,6 +39,9 @@ type Ctx struct {
 	Store store.Store
 	Name  string
 	From  string
+	// Theme is the player's per-session, auto-detecting style set. Nil-safe:
+	// rendering falls back to ui.Default when unset (e.g. in tests).
+	Theme *ui.Theme
 }
 
 // Transition is a sentinel Area: returning it from Update tells the root
