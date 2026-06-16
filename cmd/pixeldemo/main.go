@@ -13,7 +13,10 @@
 //	go run ./cmd/pixeldemo -probe         # just report terminal capabilities
 //
 // Flags: -scale (px per tile), -w/-h (viewport in tiles), -frames, -fps,
-// -seed, -pan (tiles/frame, to force worst-case full-frame churn), -still.
+// -seed, -still, and -motion (pan = camera scrolls, worst-case full-frame
+// churn; walk = camera still, one avatar walks while tiles animate). Each run
+// also reports a delta projection: the cost of re-sending only the dirty
+// bounding box, which is where the real bandwidth win lives.
 package main
 
 import (
@@ -47,6 +50,7 @@ func main() {
 	fps := flag.Int("fps", 12, "target frames per second")
 	seed := flag.Uint64("seed", 1, "worldgen seed")
 	pan := flag.Int("pan", 1, "tiles to pan the camera per frame (worst-case churn)")
+	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls, worst case) | walk (camera still, one avatar walks + tiles animate)")
 	still := flag.Bool("still", false, "render a single frame and exit")
 	probe := flag.Bool("probe", false, "detect terminal graphics support and exit")
 	flag.Parse()
@@ -104,17 +108,28 @@ func main() {
 
 	gen := worldgen.New(*seed)
 	wx, wy := worldgen.GateX, worldgen.GateY
+	walk := *motion == "walk"
+	if walk {
+		*pan = 0
+	}
 
 	var (
-		rasterNS, encodeNS int64
-		totalBytes         int
-		minB, maxB         = int(^uint(0) >> 1), 0
-		started            = time.Now()
-		framePeriod        = time.Second / time.Duration(maxInt(*fps, 1))
+		rasterNS, encodeNS     int64
+		totalBytes, deltaBytes int
+		dirtySum               float64
+		minB, maxB             = int(^uint(0) >> 1), 0
+		started                = time.Now()
+		framePeriod            = time.Second / time.Duration(maxInt(*fps, 1))
+		prev                   []byte
 	)
 
 	for f := 0; f < *frames; f++ {
 		frameStart := time.Now()
+
+		if walk && f%3 == 0 { // step "you" east a tile to exercise sprite churn
+			players[0].X++
+			players[0].LastMoved = time.Now()
+		}
 
 		tm, ox, oy := wildsWindow(gen, wx, wy, *vw, *vh)
 		cam := game.Camera{X: 0, Y: 0, W: *vw, H: *vh}
@@ -124,6 +139,19 @@ func main() {
 		t1 := time.Now()
 		payload := encode(img)
 		t2 := time.Now()
+
+		// Delta accounting: what would it cost to re-send only the changed
+		// region? zlib/sixel give no temporal delta for free, so the saving
+		// comes from encoding just the dirty bounding box and placing it.
+		w, h := img.Bounds().Dx(), img.Bounds().Dy()
+		if prev == nil {
+			deltaBytes += len(payload) // first frame is a full send
+			dirtySum += 1
+		} else if r, ok := dirtyRect(prev, img.Pix, w, h); ok {
+			deltaBytes += len(encode(crop(img, r)))
+			dirtySum += float64(r.Dx()*r.Dy()) / float64(w*h)
+		}
+		prev = append(prev[:0], img.Pix...)
 
 		out.WriteString("\x1b[H")
 		if chosen == "kitty" {
@@ -146,21 +174,66 @@ func main() {
 	elapsed := time.Since(started)
 	restore()
 	report(reportData{
-		proto:    chosen,
-		frames:   *frames,
-		tilesW:   *vw,
-		tilesH:   *vh,
-		scale:    *scale,
-		pxW:      *vw * *scale,
-		pxH:      *vh * *scale,
-		fps:      *fps,
-		rasterMS: msPerFrame(rasterNS, *frames),
-		encodeMS: msPerFrame(encodeNS, *frames),
-		avgBytes: totalBytes / maxInt(*frames, 1),
-		minBytes: minB,
-		maxBytes: maxB,
-		gotFPS:   float64(*frames) / elapsed.Seconds(),
+		proto:      chosen,
+		motion:     *motion,
+		frames:     *frames,
+		tilesW:     *vw,
+		tilesH:     *vh,
+		scale:      *scale,
+		pxW:        *vw * *scale,
+		pxH:        *vh * *scale,
+		fps:        *fps,
+		rasterMS:   msPerFrame(rasterNS, *frames),
+		encodeMS:   msPerFrame(encodeNS, *frames),
+		avgBytes:   totalBytes / maxInt(*frames, 1),
+		minBytes:   minB,
+		maxBytes:   maxB,
+		deltaBytes: deltaBytes / maxInt(*frames, 1),
+		dirtyPct:   100 * dirtySum / float64(maxInt(*frames, 1)),
+		gotFPS:     float64(*frames) / elapsed.Seconds(),
 	})
+}
+
+// dirtyRect returns the bounding box of pixels that differ between two RGBA
+// buffers of the same w×h, and whether anything changed at all.
+func dirtyRect(prev, cur []byte, w, h int) (image.Rectangle, bool) {
+	minX, minY, maxX, maxY := w, h, -1, -1
+	for y := 0; y < h; y++ {
+		base := y * w * 4
+		for x := 0; x < w; x++ {
+			o := base + x*4
+			if prev[o] != cur[o] || prev[o+1] != cur[o+1] || prev[o+2] != cur[o+2] || prev[o+3] != cur[o+3] {
+				if x < minX {
+					minX = x
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+	if maxX < 0 {
+		return image.Rectangle{}, false
+	}
+	return image.Rect(minX, minY, maxX+1, maxY+1), true
+}
+
+// crop copies a rectangle out of img into a new tightly-packed RGBA (kitty/
+// sixel both want contiguous pixels for the sub-image).
+func crop(img *image.RGBA, r image.Rectangle) *image.RGBA {
+	out := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
+	for y := 0; y < r.Dy(); y++ {
+		so := img.PixOffset(r.Min.X, r.Min.Y+y)
+		do := out.PixOffset(0, y)
+		copy(out.Pix[do:do+r.Dx()*4], img.Pix[so:so+r.Dx()*4])
+	}
+	return out
 }
 
 // wildsWindow generates a width×height window of the overworld centered on
@@ -414,11 +487,13 @@ func envKitty() bool {
 // --- reporting ---------------------------------------------------------------
 
 type reportData struct {
-	proto                         string
+	proto, motion                 string
 	frames, tilesW, tilesH, scale int
 	pxW, pxH, fps                 int
 	rasterMS, encodeMS            float64
 	avgBytes, minBytes, maxBytes  int
+	deltaBytes                    int
+	dirtyPct                      float64
 	gotFPS                        float64
 }
 
@@ -426,23 +501,28 @@ func report(d reportData) {
 	kbPerFrame := float64(d.avgBytes) / 1024
 	kbPerSec := kbPerFrame * float64(d.fps)
 	mbitPerSec := kbPerSec * 8 / 1024
+	deltaKB := float64(d.deltaBytes) / 1024
 	fmt.Fprintf(os.Stderr, `
-─── pixeldemo: %s ───────────────────────────────
+─── pixeldemo: %s (%s motion) ───────────────────
 viewport     %d×%d tiles  →  %d×%d px  (scale %d)
 frames       %d  @  target %d fps  (achieved %.1f fps)
 rasterize    %.2f ms/frame
 encode       %.2f ms/frame
-payload      avg %.1f KB/frame  (min %.1f, max %.1f)
-bandwidth    %.0f KB/s  ≈  %.2f Mbit/s  at %d fps
+full frame   avg %.1f KB/frame  (min %.1f, max %.1f)
+             %.0f KB/s  ≈  %.2f Mbit/s  at %d fps
+delta        %.1f%% of frame dirty  →  %.1f KB/frame
+             %.0f KB/s  ≈  %.2f Mbit/s  at %d fps
 ─────────────────────────────────────────────────
 `,
-		d.proto,
+		d.proto, d.motion,
 		d.tilesW, d.tilesH, d.pxW, d.pxH, d.scale,
 		d.frames, d.fps, d.gotFPS,
 		d.rasterMS,
 		d.encodeMS,
 		kbPerFrame, float64(d.minBytes)/1024, float64(d.maxBytes)/1024,
 		kbPerSec, mbitPerSec, d.fps,
+		d.dirtyPct, deltaKB,
+		deltaKB*float64(d.fps), deltaKB*float64(d.fps)*8/1024, d.fps,
 	)
 }
 
