@@ -3,6 +3,7 @@ package game
 import (
 	"unicode"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/durst-group/durstworld/internal/ui"
@@ -10,17 +11,17 @@ import (
 )
 
 // avatarBitmap is the player sprite at half-block (square) pixel resolution:
-// 6 pixels wide × 8 tall → 6 cells wide × 4 cells tall. A friendly, rounded,
-// Claude-inspired critter: shaded top (L) and bottom (D), two eyes (E) and a
-// small mouth (m). '.' is transparent so the map shows through.
+// 6 pixels wide × 6 tall → 6 cells wide × 3 cells tall, sized to sit close to
+// the 2×2 footprint rather than loom over it. A friendly, rounded, Claude-
+// inspired critter: shaded top (L) and bottom (D), two eyes (E) with body on
+// either side so they stay distinct when scaled, and a small mouth (m). '.' is
+// transparent so the map shows through.
 var avatarBitmap = []string{
 	".LLLL.",
 	"LBBBBL",
-	"BBBBBB",
 	"BEBBEB",
 	"BBBBBB",
 	"BBmmBB",
-	"LBBBBL",
 	".DDDD.",
 }
 
@@ -29,11 +30,26 @@ var (
 	spriteBlack = mustHex("#0E1116")
 )
 
+// playerColor resolves a player's avatar color to RGB. Avatar colors are hex
+// strings, so we parse them directly with colorful.Hex — unlike
+// colorful.MakeColor(lipgloss.Color), which relies on the ambient lipgloss
+// color profile and returns black when none is detected (e.g. headless, or the
+// HD renderer's server-side process). Falls back for non-hex colors.
+func playerColor(c lipgloss.Color) colorful.Color {
+	if hc, err := colorful.Hex(string(c)); err == nil {
+		return hc
+	}
+	if cf, ok := colorful.MakeColor(c); ok {
+		return cf
+	}
+	return colorful.Color{R: 0.5, G: 0.5, B: 0.5}
+}
+
 // stampSprite draws one player's avatar onto the grid. (fc,fr) is the
 // top-left grid cell of the player's PlayerW×PlayerH footprint; the sprite is
 // centered over it and bottom-aligned, overhanging upward and sideways.
 func stampSprite(grid [][]rcell, th *ui.Theme, p world.Player, isSelf bool, frame, fc, fr int) {
-	body, _ := colorful.MakeColor(p.Color)
+	body := playerColor(p.Color)
 	cellsW := len(avatarBitmap[0])
 	cellsH := len(avatarBitmap) / 2
 

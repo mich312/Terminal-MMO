@@ -21,8 +21,8 @@ import (
 // prettier but near-incompressible (every pixel differs), so it costs ~15× more
 // on the wire; flat tiles keep long runs that zlib/sixel-RLE crush. Avatars are
 // always anti-aliased over a soft contact shadow — a small, localized cost.
-// Each tile maps to a scale×scale block; an avatar pixel is scale/2, so a body
-// is ~3 tiles wide × 4 tall — the same proportions as the half-block renderer.
+// Each tile maps to a scale×scale block; the avatar is sized to ~2 tiles tall
+// so it sits within its 2×2 footprint, matching the half-block renderer.
 func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool) *image.RGBA {
 	if th == nil {
 		th = ui.Default
@@ -117,15 +117,17 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, scal
 // blitAvatar draws one player: a soft contact shadow, then the bitmap upscaled
 // with bilinear alpha for rounded, anti-aliased edges, and a small chevron
 // above your own head. (fc,fr) is the footprint top-left in camera cells; the
-// sprite is centered horizontally and bottom-aligned, overhanging upward.
+// sprite is centered horizontally and bottom-aligned on the footprint.
 func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, scale, fc, fr int) {
-	body, _ := colorful.MakeColor(p.Color)
-	spx := scale / 2
+	body := playerColor(p.Color)
+	spr := buildSpriteRGBA(body, isSelf)
+	bmpW, bmpH := spr.Bounds().Dx(), spr.Bounds().Dy()
+	// Size the avatar to ~2 tiles tall so it sits within its 2×2 footprint
+	// instead of overhanging; width follows the bitmap's aspect.
+	spx := (PlayerH * scale) / bmpH
 	if spx < 1 {
 		spx = 1
 	}
-	spr := buildSpriteRGBA(body, isSelf)
-	bmpW, bmpH := spr.Bounds().Dx(), spr.Bounds().Dy()
 	destW, destH := bmpW*spx, bmpH*spx
 
 	centerX := (fc + PlayerW/2) * scale
