@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -31,6 +35,25 @@ const (
 	hdRefresh = 48 // frames between full repaints
 	hdMaxTile = 140
 )
+
+// setupAvatar restores a player's persisted color/style/accessory, or — on a
+// first visit — rolls a random look and remembers it, so everyone spawns with a
+// distinct avatar that then stays theirs across reconnects.
+func setupAvatar(w *world.World, st store.Store, name string) {
+	if color, style, accessory, ok := st.LoadAvatar(name); ok {
+		if color != "" {
+			w.SetColor(name, lipgloss.Color(color))
+		}
+		w.SetAvatar(name, style, accessory)
+		return
+	}
+	color := ui.AvatarColorByIndex(rand.Intn(ui.NumAvatarColors()))
+	style := rand.Intn(game.NumAvatarStyles())
+	accessory := rand.Intn(game.NumAccessories())
+	w.SetColor(name, color)
+	w.SetAvatar(name, style, accessory)
+	st.SaveAvatar(name, string(color), style, accessory)
+}
 
 // isHD reports whether a session asked for HD mode (an "hd" argument, e.g.
 // `ssh -t host hd`).
@@ -67,6 +90,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 
 	name, events := w.Join(s.User())
 	st.RecordVisit(name)
+	setupAvatar(w, st, name)
 	log.Printf("%s connected (HD/sixel)", name)
 	defer func() {
 		w.Leave(name)
@@ -170,17 +194,40 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	draw()
 	ticker := time.NewTicker(time.Second / hdFPS)
 	defer ticker.Stop()
+	// Minimal escape-sequence parser: ESC [ (or O) <params> <final>. Arrow keys
+	// are A/B/C/D; a ";2" parameter means Shift is held → run.
+	esc := 0
+	var csi []byte
 	for {
 		select {
 		case b, ok := <-keys:
 			if !ok {
 				return
 			}
-			if b == 'q' || b == 'Q' || b == 3 { // q or Ctrl-C
+			var key string
+			switch {
+			case esc == 0 && b == 0x1b:
+				esc = 1
+			case esc == 1:
+				if b == '[' || b == 'O' {
+					esc, csi = 2, csi[:0]
+				} else {
+					esc = 0
+				}
+			case esc == 2:
+				if (b >= 'A' && b <= 'Z') || b == '~' {
+					esc = 0
+					key = csiKey(string(csi), b)
+				} else {
+					csi = append(csi, b)
+				}
+			case b == 'q' || b == 'Q' || b == 3: // q or Ctrl-C
 				hud()
 				return
+			default:
+				key = string(b)
 			}
-			if hdMove(gen, &px, &py, b) {
+			if key != "" && hdMove(gen, &px, &py, key) {
 				w.Move(name, px, py)
 				draw()
 			}
@@ -195,27 +242,15 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 	}
 }
 
-// hdMove walks the footprint one (or two, if Shift/uppercase) tiles, respecting
-// terrain. WASD only; arrow keys are multi-byte escapes we skip for the demo.
-func hdMove(gen *worldgen.Generator, px, py *int, b byte) bool {
-	dx, dy, n := 0, 0, 1
-	switch b {
-	case 'w', 'W':
-		dy = -1
-	case 's', 'S':
-		dy = 1
-	case 'a', 'A':
-		dx = -1
-	case 'd', 'D':
-		dx = 1
-	default:
+// hdMove walks the footprint per the shared movement mapping (WASD/arrows, YUBN
+// diagonals, uppercase to run), respecting terrain.
+func hdMove(gen *worldgen.Generator, px, py *int, key string) bool {
+	dx, dy, steps, ok := game.MoveKey(key)
+	if !ok {
 		return false
 	}
-	if b < 'a' { // uppercase = run
-		n = 2
-	}
 	moved := false
-	for i := 0; i < n; i++ {
+	for i := 0; i < steps; i++ {
 		nx, ny := *px+dx, *py+dy
 		if !hdFootprint(gen, nx, ny) {
 			break
@@ -224,6 +259,34 @@ func hdMove(gen *worldgen.Generator, px, py *int, b byte) bool {
 		moved = true
 	}
 	return moved
+}
+
+// csiKey turns a parsed arrow escape into a MoveKey name, prefixing "shift+"
+// when the Shift modifier (parameter ";2") is present so it runs.
+func csiKey(params string, final byte) string {
+	dir := arrowKey(final)
+	if dir == "" {
+		return ""
+	}
+	if strings.Contains(params, ";2") { // Shift modifier
+		return "shift+" + dir
+	}
+	return dir
+}
+
+// arrowKey maps a CSI/SS3 final byte to the movement key names MoveKey expects.
+func arrowKey(b byte) string {
+	switch b {
+	case 'A':
+		return "up"
+	case 'B':
+		return "down"
+	case 'C':
+		return "right"
+	case 'D':
+		return "left"
+	}
+	return ""
 }
 
 func hdSpawn(gen *worldgen.Generator) (int, int) {
@@ -253,28 +316,11 @@ func hdWindow(gen *worldgen.Generator, ox, oy, vw, vh int) *game.TileMap {
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
 		for lx := 0; lx < vw; lx++ {
-			row[lx] = hdCellToTile(gen.At(ox+lx, oy+ly))
+			row[lx] = wilds.CellTile(gen.At(ox+lx, oy+ly))
 		}
 		tiles[ly] = row
 	}
 	return &game.TileMap{W: vw, H: vh, Tiles: tiles}
-}
-
-func hdCellToTile(c worldgen.Cell) game.Tile {
-	kind := game.TileFloor
-	switch {
-	case c.Portal != "":
-		kind = game.TilePortal
-	case c.Object:
-		kind = game.TileObject
-	case !c.Walkable:
-		kind = game.TileDecor
-	}
-	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal}
-	if c.AnimA != "" && c.AnimB != "" {
-		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
-	}
-	return t
 }
 
 // hdCellSize derives the terminal's pixel cell size from the PTY window (if the

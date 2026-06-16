@@ -125,7 +125,7 @@ func (a *area) View(width, height int) string {
 	for ly := 0; ly < height; ly++ {
 		row := make([]game.Tile, width)
 		for lx := 0; lx < width; lx++ {
-			row[lx] = cellToTile(a.gen.At(a.wx+lx-cx, a.wy+ly-cy))
+			row[lx] = CellTile(a.gen.At(a.wx+lx-cx, a.wy+ly-cy))
 		}
 		tiles[ly] = row
 	}
@@ -141,7 +141,12 @@ func (a *area) View(width, height int) string {
 	return view
 }
 
-func cellToTile(c worldgen.Cell) game.Tile {
+// CellTile converts a generated overworld cell into a renderable tile. It is
+// the single source of truth for the Wilds, the HD renderer and the pixeldemo
+// harness. Color/Ch keep the original cell look for the glyph renderer; Tex,
+// Ground and Prop drive the HD tileset (decorations become sprites over the
+// biome ground rather than solid squares).
+func CellTile(c worldgen.Cell) game.Tile {
 	kind := game.TileFloor
 	switch {
 	case c.Portal != "":
@@ -151,11 +156,75 @@ func cellToTile(c worldgen.Cell) game.Tile {
 	case !c.Walkable:
 		kind = game.TileDecor
 	}
-	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal}
+	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal, Tex: texForBiome(c.Biome)}
 	if c.AnimA != "" && c.AnimB != "" {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
+	if c.Object {
+		// Landmark area-entrances are animated portal gates, color-coded to the
+		// destination — distinct from decorative houses.
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPortal, c.Color, groundColor(worldgen.Grass), game.TexGrass
+		return t
+	}
+	switch c.Glyph {
+	case '*': // flower on grass
+		t.Prop, t.PropHex, t.Ground = game.PropFlower, c.Color, groundColor(c.Biome)
+	case ',': // grass tuft
+		t.Prop, t.PropHex, t.Ground = game.PropTuft, "#3E7A4F", groundColor(c.Biome)
+	case 'o': // bush
+		t.Prop, t.PropHex, t.Ground = game.PropBush, c.Color, groundColor(c.Biome)
+	case 'u': // tree stump
+		t.Prop, t.PropHex, t.Ground = game.PropStump, c.Color, groundColor(c.Biome)
+	case '°': // small rock
+		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
+	case 'H': // a homestead — decorative house (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
+	case '♣': // tree on forest floor
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
+	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
+		if c.Biome == worldgen.Hill {
+			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt
+		}
+	}
 	return t
+}
+
+// texForBiome maps an overworld biome to an HD ground texture.
+func texForBiome(b worldgen.Biome) game.TileTex {
+	switch b {
+	case worldgen.Grass:
+		return game.TexGrass
+	case worldgen.Sand:
+		return game.TexSand
+	case worldgen.Water, worldgen.Deep:
+		return game.TexWater
+	case worldgen.Forest:
+		return game.TexForest
+	case worldgen.Hill:
+		return game.TexDirt
+	case worldgen.Mountain:
+		return game.TexRock
+	default:
+		return game.TexFlat
+	}
+}
+
+// groundColor is the base surface color the HD renderer paints under a prop.
+func groundColor(b worldgen.Biome) string {
+	switch b {
+	case worldgen.Grass:
+		return "#5FA86B"
+	case worldgen.Forest:
+		return "#3F8A5A"
+	case worldgen.Hill:
+		return "#9C8D67"
+	case worldgen.Sand:
+		return "#E6D6A0"
+	case worldgen.Mountain:
+		return "#9AA0A8"
+	default:
+		return ""
+	}
 }
 
 // minimap renders a coarse overview of the surrounding terrain (one cell per

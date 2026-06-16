@@ -66,6 +66,11 @@ func init() {
 			run:     cmdColor,
 		},
 		{
+			name: "avatar", aliases: []string{"av"}, usage: "/avatar [style] [hat]",
+			summary: "change your sprite style and accessory",
+			run:     cmdAvatar,
+		},
+		{
 			name: "goto", aliases: []string{"go"}, usage: "/goto <area>",
 			summary: "teleport to an area",
 			run:     cmdGoto,
@@ -215,9 +220,66 @@ func cmdColor(m *Model, args []string) tea.Cmd {
 		idx = rand.Intn(ui.NumAvatarColors())
 	}
 	if m.ctx.World.SetColor(m.ctx.Name, ui.AvatarColorByIndex(idx)) {
+		m.persistAvatar()
 		m.addSystemLine(fmt.Sprintf("avatar color set to #%d", idx))
 	}
 	return nil
+}
+
+func cmdAvatar(m *Model, args []string) tea.Cmd {
+	cur, ok := m.ctx.World.Self(m.ctx.Name)
+	if !ok {
+		return nil
+	}
+	if len(args) == 0 {
+		m.addSystemLine("styles: " + listIndexed(NumAvatarStyles(), AvatarStyleName))
+		m.addSystemLine("hats:   " + listIndexed(NumAccessories(), AccessoryName))
+		m.addSystemLine(fmt.Sprintf("you: %s + %s — usage: /avatar <style> [hat]  (also /color)",
+			AvatarStyleName(cur.Style), AccessoryName(cur.Accessory)))
+		return nil
+	}
+	style := resolveIndex(args[0], cur.Style, NumAvatarStyles(), AvatarStyleName)
+	acc := cur.Accessory
+	if len(args) > 1 {
+		acc = resolveIndex(args[1], cur.Accessory, NumAccessories(), AccessoryName)
+	}
+	if m.ctx.World.SetAvatar(m.ctx.Name, style, acc) {
+		m.persistAvatar()
+		m.addSystemLine(fmt.Sprintf("avatar: %s + %s", AvatarStyleName(style), AccessoryName(acc)))
+	}
+	return nil
+}
+
+// persistAvatar saves the player's current color/style/accessory so it survives
+// reconnects.
+func (m *Model) persistAvatar() {
+	if p, ok := m.ctx.World.Self(m.ctx.Name); ok {
+		m.ctx.Store.SaveAvatar(m.ctx.Name, string(p.Color), p.Style, p.Accessory)
+	}
+}
+
+// listIndexed renders "0:name  1:name  …" for a command's options listing.
+func listIndexed(n int, name func(int) string) string {
+	parts := make([]string, n)
+	for i := 0; i < n; i++ {
+		parts[i] = fmt.Sprintf("%d:%s", i, name(i))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// resolveIndex accepts an index or a (case-insensitive) name; unknown values
+// keep the fallback.
+func resolveIndex(arg string, fallback, n int, name func(int) string) int {
+	if i, err := strconv.Atoi(arg); err == nil && i >= 0 && i < n {
+		return i
+	}
+	la := strings.ToLower(arg)
+	for i := 0; i < n; i++ {
+		if strings.ToLower(name(i)) == la {
+			return i
+		}
+	}
+	return fallback
 }
 
 func cmdGoto(m *Model, args []string) tea.Cmd {

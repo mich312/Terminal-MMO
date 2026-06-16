@@ -59,7 +59,47 @@ func openSQLite(path string) (*sqliteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
+	// Migrations: add avatar columns to pre-existing DBs. ALTER fails harmlessly
+	// if the column already exists, so ignore those errors.
+	for _, stmt := range []string{
+		`ALTER TABLE players ADD COLUMN avatar_color TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE players ADD COLUMN avatar_style INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE players ADD COLUMN avatar_accessory INTEGER NOT NULL DEFAULT 0`,
+	} {
+		db.Exec(stmt)
+	}
 	return &sqliteStore{db: db}, nil
+}
+
+// SaveAvatar persists a player's avatar customization (upserting the row).
+func (s *sqliteStore) SaveAvatar(name, color string, style, accessory int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().Unix()
+	if _, err := s.db.Exec(
+		`INSERT INTO players (name, first_seen, last_seen, visit_count, areas_visited,
+			avatar_color, avatar_style, avatar_accessory)
+		 VALUES (?, ?, ?, 0, '[]', ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET
+			avatar_color = excluded.avatar_color,
+			avatar_style = excluded.avatar_style,
+			avatar_accessory = excluded.avatar_accessory`,
+		name, now, now, color, style, accessory); err != nil {
+		log.Printf("store: save avatar: %v", err)
+	}
+}
+
+// LoadAvatar returns a player's saved avatar customization.
+func (s *sqliteStore) LoadAvatar(name string) (color string, style, accessory int, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := s.db.QueryRow(
+		`SELECT avatar_color, avatar_style, avatar_accessory FROM players WHERE name = ?`,
+		name).Scan(&color, &style, &accessory)
+	if err != nil {
+		return "", 0, 0, false
+	}
+	return color, style, accessory, true
 }
 
 func (s *sqliteStore) RecordVisit(name string) VisitInfo {

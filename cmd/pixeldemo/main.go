@@ -41,6 +41,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 
+	"github.com/durst-group/durstworld/internal/areas/wilds"
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/world"
@@ -288,28 +289,11 @@ func wildsWindow(gen *worldgen.Generator, wx, wy, width, height int) (*game.Tile
 	for ly := 0; ly < height; ly++ {
 		row := make([]game.Tile, width)
 		for lx := 0; lx < width; lx++ {
-			row[lx] = cellToTile(gen.At(wx+lx-cx, wy+ly-cy))
+			row[lx] = wilds.CellTile(gen.At(wx+lx-cx, wy+ly-cy))
 		}
 		tiles[ly] = row
 	}
 	return &game.TileMap{W: width, H: height, Tiles: tiles}, wx - cx, wy - cy
-}
-
-func cellToTile(c worldgen.Cell) game.Tile {
-	kind := game.TileFloor
-	switch {
-	case c.Portal != "":
-		kind = game.TilePortal
-	case c.Object:
-		kind = game.TileObject
-	case !c.Walkable:
-		kind = game.TileDecor
-	}
-	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal}
-	if c.AnimA != "" && c.AnimB != "" {
-		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
-	}
-	return t
 }
 
 func demoPlayers(seed uint64) []world.Player {

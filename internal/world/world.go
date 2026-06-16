@@ -13,6 +13,44 @@ import (
 	"github.com/durst-group/durstworld/internal/ui"
 )
 
+// Dir is an 8-way facing, derived from a player's last move. DirS (facing the
+// camera) is the zero value, so a fresh player faces down.
+type Dir int
+
+const (
+	DirS Dir = iota
+	DirSE
+	DirE
+	DirNE
+	DirN
+	DirNW
+	DirW
+	DirSW
+)
+
+// Facing8 maps a movement delta to an 8-way facing. A zero delta keeps the
+// current facing (the caller skips the update).
+func Facing8(dx, dy int) Dir {
+	switch {
+	case dx > 0 && dy < 0:
+		return DirNE
+	case dx > 0 && dy > 0:
+		return DirSE
+	case dx > 0:
+		return DirE
+	case dx < 0 && dy < 0:
+		return DirNW
+	case dx < 0 && dy > 0:
+		return DirSW
+	case dx < 0:
+		return DirW
+	case dy < 0:
+		return DirN
+	default:
+		return DirS
+	}
+}
+
 // Player is a snapshot of one connected player. World methods hand out
 // copies; nobody mutates shared state outside the world's mutex.
 type Player struct {
@@ -20,6 +58,9 @@ type Player struct {
 	Area      string // area id; "" while still booting
 	X, Y      int
 	Color     lipgloss.Color
+	Facing    Dir
+	Style     int // avatar sprite style index
+	Accessory int // avatar accessory index (0 = none)
 	LastMoved time.Time
 }
 
@@ -154,6 +195,9 @@ func (w *World) Move(name string, x, y int) {
 	if !ok {
 		return
 	}
+	if dx, dy := x-p.X, y-p.Y; dx != 0 || dy != 0 {
+		p.Facing = Facing8(dx, dy)
+	}
 	p.X, p.Y = x, y
 	p.LastMoved = time.Now()
 	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area, X: x, Y: y})
@@ -224,6 +268,19 @@ func (w *World) SetColor(name string, c lipgloss.Color) bool {
 		return false
 	}
 	p.Color = c
+	return true
+}
+
+// SetAvatar changes a player's sprite style and accessory. Returns false if the
+// player is gone.
+func (w *World) SetAvatar(name string, style, accessory int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.players[name]
+	if !ok {
+		return false
+	}
+	p.Style, p.Accessory = style, accessory
 	return true
 }
 

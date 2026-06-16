@@ -89,6 +89,7 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		name, events := w.Join(s.User())
 		visit := st.RecordVisit(name)
+		setupAvatar(w, st, name)
 		log.Printf("%s connected (visit #%d)", name, visit.VisitCount)
 
 		go func() {

@@ -38,8 +38,9 @@ rendered as actual pixels instead of half-block glyphs:
 ssh -t -p 2222 you@localhost hd
 ```
 
-WASD to move (Shift to run), `q` to quit. It shares the live world, so you and
-ordinary players see each other. It bypasses bubbletea and streams sixel with
+WASD or arrow keys to move, `Y U B N` for diagonals, Shift/uppercase to run,
+`q` to quit. It shares the live world, so you and ordinary players see each
+other. It bypasses bubbletea and streams sixel with
 delta updates (only the changed region each frame). Background and rationale:
 [`docs/pixel-renderer.md`](docs/pixel-renderer.md). The standalone
 `cmd/pixeldemo` harness measures look/bandwidth without a server.

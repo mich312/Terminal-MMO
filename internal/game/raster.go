@@ -21,8 +21,8 @@ import (
 // prettier but near-incompressible (every pixel differs), so it costs ~15× more
 // on the wire; flat tiles keep long runs that zlib/sixel-RLE crush. Avatars are
 // always anti-aliased over a soft contact shadow — a small, localized cost.
-// Each tile maps to a scale×scale block; an avatar pixel is scale/2, so a body
-// is ~3 tiles wide × 4 tall — the same proportions as the half-block renderer.
+// Each tile maps to a scale×scale block; the avatar is sized to ~2 tiles tall
+// so it sits within its 2×2 footprint, matching the half-block renderer.
 func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool) *image.RGBA {
 	if th == nil {
 		th = ui.Default
@@ -36,13 +36,38 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 
 	grid := buildGrid(th, tm, cam, light, frame)
 	cols := make([][]colorful.Color, cam.H)
+	texs := make([][]TileTex, cam.H)
+	props := make([][]TileProp, cam.H)
+	propCols := make([][]colorful.Color, cam.H)
 	for y := 0; y < cam.H; y++ {
 		cols[y] = make([]colorful.Color, cam.W)
+		texs[y] = make([]TileTex, cam.W)
+		props[y] = make([]TileProp, cam.W)
+		propCols[y] = make([]colorful.Color, cam.W)
 		for x := 0; x < cam.W; x++ {
 			if c := grid[y][x]; c.blank {
 				cols[y][x] = shadowColor
 			} else {
 				cols[y][x] = c.fg
+			}
+			tx, ty := cam.X+x, cam.Y+y
+			if ty < 0 || ty >= tm.H || tx < 0 || tx >= tm.W {
+				continue
+			}
+			t := tm.Tiles[ty][tx]
+			texs[y][x] = t.Tex
+			props[y][x] = t.Prop
+			// A prop's ground is colored separately from the glyph's color so the
+			// flower-glyph stays red in the text renderer while HD draws grass.
+			if t.Ground != "" {
+				cols[y][x] = applyLight(tintedHex(t.Ground), tx, ty, light)
+			}
+			if t.Prop != PropNone {
+				ph := t.PropHex
+				if ph == "" {
+					ph = t.Color
+				}
+				propCols[y][x] = tintedHex(ph)
 			}
 		}
 	}
@@ -76,28 +101,33 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			}
 		}
 	} else {
+		// Pixel-perfect tilemap, old-RPG style: each tile is a solid base color
+		// with a few clean, biome-specific accent pixels (grass blades, water
+		// ripples, sand speckles…). Hard tile edges — no blur, no all-over grain.
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
-				c := cols[vy][vx].Clamped()
-				rc := colorfulToRGBA(c)
-				for dy := 0; dy < scale; dy++ {
-					row := img.Pix[img.PixOffset(vx*scale, vy*scale+dy):]
-					for dx := 0; dx < scale; dx++ {
-						o := dx * 4
-						row[o], row[o+1], row[o+2], row[o+3] = rc.R, rc.G, rc.B, 255
-					}
+				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
+					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame)
+			}
+		}
+		// Portals are multi-tile animated gates drawn over the terrain so they can
+		// overhang upward. (Houses are single-tile props, drawn by paintTile.)
+		for vy := 0; vy < cam.H; vy++ {
+			for vx := 0; vx < cam.W; vx++ {
+				if props[vy][vx] == PropPortal {
+					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, portalArt)
 				}
 			}
 		}
 	}
 
-	stampSpritesRGBA(img, players, self, scale, originX, originY)
+	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
 	return img
 }
 
 // stampSpritesRGBA draws every player's avatar, oldest movers first and self
 // last, mirroring the glyph renderer's ordering.
-func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, scale, originX, originY int) {
+func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, frame, scale, originX, originY int) {
 	sorted := make([]world.Player, len(players))
 	copy(sorted, players)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -110,114 +140,69 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, scal
 		return sorted[i].LastMoved.Before(sorted[j].LastMoved)
 	})
 	for _, p := range sorted {
-		blitAvatar(img, p, p.Name == self, scale, p.X-originX, p.Y-originY)
+		blitAvatar(img, p, p.Name == self, frame, scale, p.X-originX, p.Y-originY)
 	}
 }
 
-// blitAvatar draws one player: a soft contact shadow, then the bitmap upscaled
-// with bilinear alpha for rounded, anti-aliased edges, and a small chevron
-// above your own head. (fc,fr) is the footprint top-left in camera cells; the
-// sprite is centered horizontally and bottom-aligned, overhanging upward.
-func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, scale, fc, fr int) {
-	body, _ := colorful.MakeColor(p.Color)
-	spx := scale / 2
-	if spx < 1 {
-		spx = 1
+// blitAvatar draws one player as crisp pixel art: a soft contact shadow, then
+// the sprite scaled by an integer factor (sharp, nearest-neighbor — no blur)
+// and a small chevron above your own head. (fc,fr) is the footprint top-left in
+// camera cells; the sprite is centered horizontally and bottom-aligned.
+func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, fr int) {
+	wf := AvatarWalkFrame(p.LastMoved, frame)
+	body := playerColor(p.Color)
+	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, wf)
+	bw, bh := len([]rune(bmp[0])), len(bmp)
+	// Integer pixel size keeps edges sharp; aim for ~2 tiles tall.
+	k := (PlayerH * scale) / bh
+	if k < 1 {
+		k = 1
 	}
-	spr := buildSpriteRGBA(body, isSelf)
-	bmpW, bmpH := spr.Bounds().Dx(), spr.Bounds().Dy()
-	destW, destH := bmpW*spx, bmpH*spx
+	destW, destH := bw*k, bh*k
 
 	centerX := (fc + PlayerW/2) * scale
 	bottomEdge := (fr + PlayerH) * scale
 	left := centerX - destW/2
 	top := bottomEdge - destH
 
-	// soft elliptical contact shadow at the feet
-	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(spx)*0.6,
-		float64(destW)*0.46, float64(spx)*1.2)
+	// soft elliptical contact shadow at the feet (stays planted while the body
+	// bobs, so the step reads as a bounce rather than a slide)
+	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
+		float64(destW)*0.42, float64(k)*1.3)
 
-	drawScaledSprite(img, spr, left, top, destW, destH)
-
-	if isSelf {
-		drawChevron(img, centerX, top-spx-spx/2, spx)
+	if wf == 1 { // mid-stride: lift the body a touch
+		bob := k / 2
+		if bob < 1 {
+			bob = 1
+		}
+		top -= bob
 	}
-}
 
-// buildSpriteRGBA renders the avatar bitmap to a 6×8 RGBA: opaque pixels carry
-// their shaded body color (alpha 255), transparent ones are zero — which, with
-// alpha 0/1, doubles as a premultiplied buffer for clean bilinear edges.
-func buildSpriteRGBA(body colorful.Color, isSelf bool) *image.RGBA {
-	w, h := len(avatarBitmap[0]), len(avatarBitmap)
-	spr := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		runes := []rune(avatarBitmap[y])
-		for x := 0; x < w; x++ {
-			col, opaque := spritePixel(runes[x], body, isSelf)
+	for sy := 0; sy < bh; sy++ {
+		runes := []rune(bmp[sy])
+		for sx := 0; sx < bw && sx < len(runes); sx++ {
+			col, opaque := spritePixel(runes[sx], body, isSelf)
 			if !opaque {
 				continue
 			}
-			spr.SetRGBA(x, y, colorfulToRGBA(col))
+			fillRect(img, left+sx*k, top+sy*k, k, k, colorfulToRGBA(col))
 		}
 	}
-	return spr
+
+	if isSelf {
+		drawChevron(img, centerX, top-k-k/2, k)
+	}
 }
 
-// drawScaledSprite upscales a premultiplied RGBA into img with bilinear
-// sampling and alpha compositing, so the avatar's edges are smooth.
-func drawScaledSprite(img *image.RGBA, spr *image.RGBA, dx, dy, destW, destH int) {
-	sw, sh := spr.Bounds().Dx(), spr.Bounds().Dy()
-	for j := 0; j < destH; j++ {
-		sv := (float64(j)+0.5)/float64(destH)*float64(sh) - 0.5
-		for i := 0; i < destW; i++ {
-			su := (float64(i)+0.5)/float64(destW)*float64(sw) - 0.5
-			r, g, b, a := sampleSpritePM(spr, su, sv)
-			if a <= 0.004 {
-				continue
+// fillRect paints a w×h block of one color, clipped to the image bounds.
+func fillRect(img *image.RGBA, x0, y0, w, h int, c color.RGBA) {
+	for y := y0; y < y0+h; y++ {
+		for x := x0; x < x0+w; x++ {
+			if _, _, _, ok := getPixel(img, x, y); ok {
+				img.SetRGBA(x, y, c)
 			}
-			px, py := dx+i, dy+j
-			or, og, ob, ok := getPixel(img, px, py)
-			if !ok {
-				continue
-			}
-			setPixel8(img, px, py,
-				r+float64(or)*(1-a),
-				g+float64(og)*(1-a),
-				b+float64(ob)*(1-a))
 		}
 	}
-}
-
-// sampleSpritePM bilinearly samples a premultiplied sprite, returning
-// premultiplied r,g,b in 0..255 and coverage a in 0..1.
-func sampleSpritePM(spr *image.RGBA, u, v float64) (r, g, b, a float64) {
-	w, h := spr.Bounds().Dx(), spr.Bounds().Dy()
-	x0 := clampi(int(math.Floor(u)), 0, w-1)
-	x1 := clampi(x0+1, 0, w-1)
-	y0 := clampi(int(math.Floor(v)), 0, h-1)
-	y1 := clampi(y0+1, 0, h-1)
-	tx := u - math.Floor(u)
-	ty := v - math.Floor(v)
-	if tx < 0 {
-		tx = 0
-	}
-	if ty < 0 {
-		ty = 0
-	}
-	r00, g00, b00, a00 := texel(spr, x0, y0)
-	r10, g10, b10, a10 := texel(spr, x1, y0)
-	r01, g01, b01, a01 := texel(spr, x0, y1)
-	r11, g11, b11, a11 := texel(spr, x1, y1)
-	r = bilerp(r00, r10, r01, r11, tx, ty)
-	g = bilerp(g00, g10, g01, g11, tx, ty)
-	b = bilerp(b00, b10, b01, b11, tx, ty)
-	a = bilerp(a00, a10, a01, a11, tx, ty)
-	return
-}
-
-func texel(spr *image.RGBA, x, y int) (r, g, b, a float64) {
-	o := spr.PixOffset(x, y)
-	return float64(spr.Pix[o]), float64(spr.Pix[o+1]), float64(spr.Pix[o+2]), float64(spr.Pix[o+3]) / 255
 }
 
 // drawShadow darkens an elliptical patch toward the ground color, softly.
@@ -256,6 +241,135 @@ func drawChevron(img *image.RGBA, cx, baseY, spx int) {
 			}
 		}
 	}
+}
+
+// tileArtN is the authored tile resolution (6×6 art-pixels per tile).
+const tileArtN = 6
+
+// paintTile draws one tile: the ground surface sprite (a shade pattern colored
+// by base) nearest-upscaled to the on-screen tile size, then an optional prop
+// sprite over it. Sharp pixels throughout.
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int) {
+	baseRGBA := colorfulToRGBA(base)
+	variants := groundArt[tex]
+	if len(variants) == 0 { // flat / untextured
+		fillRect(img, ox, oy, scale, scale, baseRGBA)
+	} else {
+		idx := int(hashNoise(wx, wy) * float64(len(variants)))
+		if tex == TexWater {
+			idx = (frame / 4) % len(variants) // ripples animate
+		}
+		art := variants[idx%len(variants)]
+		light := colorfulToRGBA(base.BlendLab(spriteWhite, 0.18).Clamped())
+		dark := colorfulToRGBA(base.BlendLab(shadowColor, 0.22).Clamped())
+		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
+			switch r {
+			case 'L':
+				return light, true
+			case 'D':
+				return dark, true
+			default:
+				return baseRGBA, true // 'B' and ' '
+			}
+		})
+	}
+
+	if art, ok := propArt[prop]; ok {
+		pc := colorfulToRGBA(propCol)
+		pd := colorfulToRGBA(propCol.BlendLab(shadowColor, 0.32).Clamped())
+		tr := colorfulToRGBA(trunkColor)
+		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
+			switch r {
+			case 'P':
+				return pc, true
+			case 'p':
+				return pd, true
+			case 'T':
+				return tr, true
+			default:
+				return color.RGBA{}, false // '.' transparent
+			}
+		})
+	}
+}
+
+// drawStructure renders a multi-tile sprite (house or portal) centered on tile
+// (vx,vy), bottom-aligned so its base sits on the tile and it overhangs upward.
+// 'R'/'P' take the structure color; '@' is the animated portal swirl.
+func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int, art []string) {
+	apx := scale / tileArtN // art-pixel size, matching the avatar's
+	if apx < 1 {
+		apx = 1
+	}
+	left := vx*scale + scale/2 - (len(art[0])*apx)/2
+	top := (vy+1)*scale - len(art)*apx
+
+	body := colorfulToRGBA(col)
+	roof := colorfulToRGBA(col.BlendLab(shadowColor, 0.38).Clamped())
+	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.45).Clamped())
+	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.6).Clamped())
+	ring := colorfulToRGBA(col.BlendLab(spriteWhite, 0.2).Clamped())
+
+	for ay, row := range art {
+		for ax := 0; ax < len(row); ax++ {
+			var c color.RGBA
+			ok := true
+			switch row[ax] {
+			case 'P':
+				c = body
+			case 'R':
+				c = ring
+			case 'p':
+				c = roof
+			case 'L':
+				c = win
+			case 'D':
+				c = base
+			case '@':
+				c = portalPixel(ax, ay, frame)
+			default:
+				ok = false
+			}
+			if ok {
+				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+			}
+		}
+	}
+}
+
+// portalPixel returns a swirling portal color for an art pixel at the given
+// frame — diagonal bands of the portal ramp drift to read as an active gate.
+func portalPixel(ax, ay, frame int) color.RGBA {
+	s := 0.5 + 0.5*math.Sin(float64(ax+ay)*0.7-float64(frame)*0.45)
+	return colorfulToRGBA(mustHex(string(ui.Blend(ui.HexPortalA, ui.HexPortalB, s))))
+}
+
+// blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale
+// tile at (ox,oy), coloring each art rune via paint; paint's second return is
+// false for transparent runes.
+func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(byte) (color.RGBA, bool)) {
+	for iy := 0; iy < scale; iy++ {
+		row := art[iy*tileArtN/scale]
+		for ix := 0; ix < scale; ix++ {
+			c, ok := paint(row[ix*tileArtN/scale])
+			if ok {
+				img.SetRGBA(ox+ix, oy+iy, c)
+			}
+		}
+	}
+}
+
+// hashNoise is a cheap deterministic [0,1) value from a few ints (FNV-ish), for
+// stable per-tile accent placement.
+func hashNoise(vals ...int) float64 {
+	var h uint32 = 2166136261
+	for _, v := range vals {
+		h = (h ^ uint32(v)) * 16777619
+	}
+	h ^= h >> 13
+	h *= 2654435761
+	h ^= h >> 16
+	return float64(h&0xffff) / 65536
 }
 
 func bilerp(c00, c10, c01, c11, tx, ty float64) float64 {
