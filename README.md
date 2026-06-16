@@ -42,14 +42,31 @@ ssh -p 2222 markus@localhost
 
 Minimum terminal size is 80×24.
 
+### Chat commands
+
+In the chat prompt (Enter), a line starting with `/` runs a command instead of
+talking. `/help` lists them in a panel:
+
+| Command | Action |
+| --- | --- |
+| `/who` · `/where` | who's online; your area & coordinates |
+| `/me <action>` | emote to those nearby |
+| `/w <name> <message>` | private message (aliases `/whisper /tell /msg`) |
+| `/roll [NdM]` | roll dice for everyone nearby (e.g. `/roll 2d6`) |
+| `/color [0-7]` | change your avatar color |
+| `/goto <area>` | teleport to an area |
+| `/clear` · `/help` | clear your log; list commands |
+
 ## Tests
 
 ```sh
 go test ./...
 ```
 
-Covers world state (presence, proximity chat, slide sharing, non-blocking
-broadcast), map geometry, and store degradation.
+Covers world state (presence, proximity chat, emotes, whispers, color, slide
+sharing, non-blocking broadcast), map geometry, the cinematic intro, the
+terrain generator (determinism, biomes), chat-command routing, and store
+degradation.
 
 ## Deploy
 
@@ -150,3 +167,31 @@ never blocks). Each session's bubbletea model pulls events with a blocking
 
 Live state is memory; SQLite is only the memory *between* visits (visit
 counts, guestbook, event log). Chat is deliberately ephemeral.
+
+### Rendering
+
+Color is truecolor-first. Each SSH session gets its own `*lipgloss.Renderer`
+(`bubbletea.MakeRenderer`) wrapped in a `ui.Theme`, threaded through
+`game.Ctx`; the renderer auto-detects the client's terminal and downsamples
+24-bit hex to 256- or 16-color as needed. `ui.Default` serves code with no
+session (tests, init globals), and the old `ui.WallStyle`-style globals are
+thin aliases to it.
+
+Maps render through a camera (`game.CameraOn` + `RenderViewport`), so a map
+may be larger than the screen. Tiles can animate (`TileAnim`), carry their own
+biome color, and fade with a radial `Light`; a real-time day/night tint
+(`ui.Ambient`) washes over everything. `ui` also provides a half-block "pixel"
+layer (`Theme.HalfBlock`) and gradient/shimmer helpers, used by the cinematic
+intro that pans the camera from the DURST WORLD title onto the play field.
+
+### The Wilds (generative overworld)
+
+`internal/worldgen` is a **stateless** terrain generator: every cell is a pure
+function of `(seed, x, y)`, so the overworld is infinite and identical for
+every session on the same seed — no chunks are stored. `internal/areas/wilds`
+keeps the player's absolute world position and samples a player-centered
+window each frame, rendered through the camera. A home gate (`⌂`) at the
+origin returns to the lobby. Reach it from the lobby's `◈ The Wilds` portal.
+
+See `docs/ROADMAP.md` for what's next (particles, directional avatars, and the
+chat-command layer).

@@ -19,6 +19,12 @@ const (
 	// EventSlide: a presentation-room slide changed. Detail holds the room
 	// key, Slide the new index.
 	EventSlide
+	// EventEmote: a proximity emote ("/me waves"). Like EventChat — delivered
+	// only within ChatRadius in the same area. Detail holds the action text.
+	EventEmote
+	// EventWhisper: a private message. Delivered only to Target. Player is the
+	// sender, Detail the text.
+	EventWhisper
 )
 
 // ChatRadius is the Chebyshev distance within which chat is heard.
@@ -32,6 +38,8 @@ type Event struct {
 	Area   string // area id it happened in
 	X, Y   int
 	Detail string // chat text, destination name, room key
+	Target string // recipient name, for EventWhisper
 	Slide  int
-	Pulse  bool // for EventTick
+	Pulse  bool   // for EventTick
+	Frame  uint64 // monotonic tick counter, for multi-frame animation
 }

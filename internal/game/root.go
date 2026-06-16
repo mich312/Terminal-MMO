@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -19,23 +20,23 @@ const (
 
 	chatLogLines = 4
 	chatMax      = 120
+
+	// Intro cinematic timing. The title holds with an animated gradient
+	// sweep, then the camera pans straight down onto the play field.
+	introFrame = 70 * time.Millisecond
+	introHold  = 15 // frames the title screen holds (~1.0s)
+	introPan   = 16 // frames spent panning down onto the field (~1.1s)
 )
 
 type phase int
 
 const (
-	phaseBoot phase = iota
+	phaseIntro phase = iota
 	phasePlay
 	phaseTransition
 )
 
-var bootLines = []string{
-	"establishing uplink to BRIXEN HQ…",
-	"calibrating printheads… ok",
-	"warming up the lobby espresso machine… ok",
-	"loading world…",
-}
-
+// banner is the DURST WORLD wordmark, colored live during the intro.
 var banner = []string{
 	` ____  _   _ ____  ____ _____  __        _____  ____  _     ____`,
 	`|  _ \| | | |  _ \/ ___|_   _| \ \      / / _ \|  _ \| |   |  _ \`,
@@ -44,12 +45,13 @@ var banner = []string{
 	`|____/ \___/|_| \_\____/ |_|      \_/\_/  \___/|_| \_\_____|____/`,
 }
 
-type bootTickMsg struct{}
+type introTickMsg struct{}
 type shimmerTickMsg struct{}
 
 // Model is the root bubbletea model for one SSH session.
 type Model struct {
 	ctx    *Ctx
+	theme  *ui.Theme
 	events <-chan world.Event
 	visit  store.VisitInfo
 
@@ -60,8 +62,8 @@ type Model struct {
 	areaID string
 	area   Area
 
-	// boot
-	bootStep int
+	// intro cinematic
+	introStep int
 
 	// transition shimmer
 	pendingArea string
@@ -73,14 +75,22 @@ type Model struct {
 
 	// overlays / global state
 	showPlayers bool
+	showInfo    bool // generic info panel (/help, /who)
+	infoTitle   string
+	infoLines   []string
 	quitArmed   bool
 }
 
 // NewModel wires a session model. The player is already Joined to the
 // world (no area yet); visit info is already recorded.
 func NewModel(ctx *Ctx, events <-chan world.Event, visit store.VisitInfo) *Model {
+	th := ctx.Theme
+	if th == nil {
+		th = ui.Default
+	}
 	return &Model{
 		ctx:       ctx,
+		theme:     th,
 		events:    events,
 		visit:     visit,
 		areaID:    "lobby",
@@ -89,9 +99,12 @@ func NewModel(ctx *Ctx, events <-chan world.Event, visit store.VisitInfo) *Model
 }
 
 func (m *Model) Init() tea.Cmd {
+	// Build the lobby up front so the intro can pan onto the real field, but
+	// don't place/announce the player until the cinematic lands (beginPlay).
+	m.area = NewArea(m.areaID, m.ctx)
 	return tea.Batch(
 		WaitForEvent(m.events),
-		tea.Tick(220*time.Millisecond, func(time.Time) tea.Msg { return bootTickMsg{} }),
+		tea.Tick(introFrame, func(time.Time) tea.Msg { return introTickMsg{} }),
 	)
 }
 
@@ -109,15 +122,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.handleWorldEvent(world.Event(msg))
 		return m, tea.Batch(WaitForEvent(m.events), cmd)
 
-	case bootTickMsg:
-		if m.phase != phaseBoot {
+	case introTickMsg:
+		if m.phase != phaseIntro {
 			return m, nil
 		}
-		m.bootStep++
-		if m.bootStep >= len(bootLines)+3 {
-			return m, m.enterWorld()
+		m.introStep++
+		if m.introStep >= introHold+introPan {
+			return m, m.beginPlay()
 		}
-		return m, tea.Tick(220*time.Millisecond, func(time.Time) tea.Msg { return bootTickMsg{} })
+		return m, tea.Tick(introFrame, func(time.Time) tea.Msg { return introTickMsg{} })
 
 	case shimmerTickMsg:
 		if m.phase != phaseTransition {
@@ -140,10 +153,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// enterWorld finishes the boot sequence: build the lobby and drop in.
-func (m *Model) enterWorld() tea.Cmd {
+// beginPlay lands the cinematic: place the player in the (already-built)
+// lobby, announce them to the world, and start play.
+func (m *Model) beginPlay() tea.Cmd {
 	m.phase = phasePlay
-	m.area = NewArea(m.areaID, m.ctx)
+	if m.area == nil {
+		m.area = NewArea(m.areaID, m.ctx)
+	}
 	m.addToast(m.welcomeLine())
 	m.ctx.Store.RecordAreaVisit(m.ctx.Name, m.areaID)
 	m.ctx.Store.LogEvent(m.ctx.Name, "join", m.areaID)
@@ -180,8 +196,13 @@ func (m *Model) handleWorldEvent(ev world.Event) tea.Cmd {
 	case world.EventTick:
 		m.pulse = ev.Pulse
 	case world.EventChat:
-		name := ui.ChatNameStyle.Foreground(ui.AvatarColor(ev.Player)).Render(ev.Player)
-		m.addChatLine(name + ui.ChatTextStyle.Render(": "+ev.Detail))
+		name := m.theme.ChatName.Foreground(ui.AvatarColor(ev.Player)).Render(ev.Player)
+		m.addChatLine(name + m.theme.ChatText.Render(": "+ev.Detail))
+	case world.EventEmote:
+		m.addChatLine(m.theme.Accent.Render("✱ "+ev.Player+" ") + m.theme.ChatText.Italic(true).Render(ev.Detail))
+	case world.EventWhisper:
+		from := m.theme.ChatName.Foreground(ui.AvatarColor(ev.Player)).Render(ev.Player)
+		m.addChatLine(from + m.theme.Accent.Render(" whispers: ") + m.theme.ChatText.Render(ev.Detail))
 	case world.EventJoined:
 		if ev.Player != m.ctx.Name && m.area != nil {
 			m.addToast(fmt.Sprintf("· %s entered the %s ·", ev.Player, m.area.Name()))
@@ -209,7 +230,20 @@ func (m *Model) addChatLine(rendered string) {
 }
 
 func (m *Model) addToast(text string) {
-	m.addChatLine(ui.ToastStyle.Render(text))
+	m.addChatLine(m.theme.Toast.Render(text))
+}
+
+// addSystemLine adds local-only command feedback (not sent to the world).
+func (m *Model) addSystemLine(text string) {
+	m.addChatLine(m.theme.Dim.Render("» ") + m.theme.ChatText.Render(text))
+}
+
+// showInfoPanel pops a dismissable overlay with pre-rendered lines (/help,
+// /who). Any key closes it.
+func (m *Model) showInfoPanel(title string, lines []string) {
+	m.infoTitle = title
+	m.infoLines = lines
+	m.showInfo = true
 }
 
 // updateArea runs the area's Update and handles a possible transition.
@@ -251,9 +285,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.phase == phaseBoot {
-		// any key skips the boot sequence
-		return m, m.enterWorld()
+	if m.phase == phaseIntro {
+		// any key skips the cinematic straight into play
+		return m, m.beginPlay()
 	}
 	if m.phase == phaseTransition {
 		return m, nil
@@ -266,7 +300,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			text := strings.TrimSpace(m.chatInput.Value)
 			m.chatInput.Blur()
 			if text != "" {
-				m.ctx.World.Chat(m.ctx.Name, text)
+				return m, m.runChatLine(text)
 			}
 		case tea.KeyEsc:
 			m.chatInput.Blur()
@@ -279,6 +313,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// areas with an open panel (guestbook) grab everything
 	if cap, ok := m.area.(InputCapturer); ok && cap.CapturesInput() {
 		return m, m.updateArea(msg)
+	}
+
+	if m.showInfo {
+		// any key dismisses the info panel and is otherwise swallowed
+		m.showInfo = false
+		return m, nil
 	}
 
 	if m.showPlayers {
@@ -318,49 +358,80 @@ func (m *Model) View() string {
 	}
 	if m.width < MinWidth || m.height < MinHeight {
 		return ui.Center(
-			ui.WarnStyle.Render("Please enlarge your terminal")+"\n\n"+
-				ui.DimStyle.Render(fmt.Sprintf("Durst World needs at least %d×%d (you have %d×%d)",
+			m.theme.Warn.Render("Please enlarge your terminal")+"\n\n"+
+				m.theme.Dim.Render(fmt.Sprintf("Durst World needs at least %d×%d (you have %d×%d)",
 					MinWidth, MinHeight, m.width, m.height)),
 			m.width, m.height)
 	}
 
 	switch m.phase {
-	case phaseBoot:
-		return m.bootView()
+	case phaseIntro:
+		return m.introView()
 	case phaseTransition:
 		return m.shimmerView()
 	}
 	return m.playView()
 }
 
-func (m *Model) bootView() string {
-	var b strings.Builder
-	n := m.bootStep
-	if n > len(bootLines) {
-		n = len(bootLines)
-	}
-	for i := 0; i < n; i++ {
-		b.WriteString(ui.DimStyle.Render("▸ "+bootLines[i]) + "\n")
-	}
-	if m.bootStep >= len(bootLines) {
-		fade := m.bootStep - len(bootLines) // 0,1,2
-		var st lipgloss.Style
-		switch fade {
-		case 0:
-			st = ui.FaintStyle
-		case 1:
-			st = ui.DimStyle
-		default:
-			st = lipgloss.NewStyle().Foreground(ui.ColorAccent).Bold(true)
+// introView renders the cinematic: an animated DURST WORLD title that, after
+// a short hold, the camera pans straight down off — revealing the play field
+// underneath. The canvas is [title screen] stacked on [play field]; a window
+// of screen height slides from the top of the title to the top of the field.
+func (m *Model) introView() string {
+	H := m.height
+	canvas := append(padLines(m.titleScreen(), H), padLines(m.playView(), H)...)
+
+	off := 0
+	if m.introStep >= introHold {
+		p := float64(m.introStep-introHold) / float64(introPan)
+		if p > 1 {
+			p = 1
 		}
-		b.WriteString("\n")
-		for _, l := range banner {
-			b.WriteString(st.Render(l) + "\n")
+		ease := p * p * (3 - 2*p) // smoothstep
+		off = int(ease*float64(H) + 0.5)
+		if off > H {
+			off = H
 		}
-		b.WriteString("\n" + ui.LabelStyle.Render(m.welcomeLine()) + "\n")
-		b.WriteString(ui.DimStyle.Render("move WASD/arrows · Enter chat · Tab who's online · q quit"))
 	}
-	return ui.Center(b.String(), m.width, m.height)
+	return strings.Join(canvas[off:off+H], "\n")
+}
+
+// titleScreen is the full-screen DURST WORLD card: a live gradient sweep over
+// the wordmark, a tagline, an animated half-block energy bar, and a hint.
+func (m *Model) titleScreen() string {
+	phase := float64(m.introStep) * 0.08
+	big := m.theme.Shimmer(banner, ui.HexAccent, ui.HexAccent2, phase)
+
+	bw := len([]rune(banner[0]))
+	wave := buildWave(m.theme, bw, m.introStep)
+
+	tagline := m.theme.Dim.Render("a living terminal world · Durst HQ")
+	hint := m.theme.Faint.Render("press any key to enter")
+
+	body := big + "\n\n" + center(tagline, bw) + "\n" + wave + "\n\n" + center(hint, bw)
+	return ui.Center(body, m.width, m.height)
+}
+
+// buildWave draws a 2-row half-block sine bar that ripples with step — a
+// small showcase of the sub-character pixel layer.
+func buildWave(th *ui.Theme, width, step int) string {
+	const rows = 4 // 4 pixels tall → 2 text rows
+	pix := make([][]lipgloss.Color, rows)
+	for r := range pix {
+		pix[r] = make([]lipgloss.Color, width)
+		for x := range pix[r] {
+			pix[r][x] = ui.Transparent
+		}
+	}
+	for x := 0; x < width; x++ {
+		s := math.Sin(float64(x)*0.22 + float64(step)*0.35)
+		h := int((s*0.5+0.5)*float64(rows-1) + 0.5) // crest height 0..rows-1
+		for r := rows - 1; r >= rows-1-h; r-- {
+			f := float64(rows-1-r) / float64(rows-1)
+			pix[r][x] = ui.Blend(ui.HexAccent, ui.HexAccent2, f)
+		}
+	}
+	return th.HalfBlock(pix)
 }
 
 func (m *Model) shimmerView() string {
@@ -373,18 +444,18 @@ func (m *Model) shimmerView() string {
 			b.WriteByte('\n')
 		}
 		if (i+m.shimmerStep)%2 == 0 {
-			b.WriteString(ui.DimStyle.Render(row))
+			b.WriteString(m.theme.Dim.Render(row))
 		} else {
-			b.WriteString(ui.AccentStyle.Render(row))
+			b.WriteString(m.theme.Accent.Render(row))
 		}
 	}
 	return b.String()
 }
 
 func (m *Model) playView() string {
-	title := ui.TitleStyle.Render("DURST WORLD") +
-		ui.StatusStyle.Render(" "+m.area.Name())
-	titleBar := lipgloss.NewStyle().Width(m.width).Render(title)
+	title := m.theme.Title.Render("DURST WORLD") +
+		m.theme.Status.Render(" "+m.area.Name())
+	titleBar := m.theme.Wrap(m.width).Render(title)
 
 	mapHeight := m.height - 1 - chatLogLines - 1 // title, chat, status
 	areaView := m.area.View(m.width, mapHeight)
@@ -399,13 +470,30 @@ func (m *Model) playView() string {
 
 	view := titleBar + "\n" + areaBlock + "\n" + chat + "\n" + status
 
-	if m.showPlayers {
+	if m.showInfo {
+		panel := m.infoPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showPlayers {
 		panel := m.playerListPanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	}
 	return view
+}
+
+func (m *Model) infoPanel() string {
+	var rows []string
+	rows = append(rows, m.theme.PanelTitle.Render(m.infoTitle), "")
+	if len(m.infoLines) == 0 {
+		rows = append(rows, m.theme.Dim.Render("(nothing to show)"))
+	} else {
+		rows = append(rows, m.infoLines...)
+	}
+	rows = append(rows, "", m.theme.Dim.Render("any key to close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 
 func (m *Model) chatView() string {
@@ -420,48 +508,69 @@ func (m *Model) chatView() string {
 func (m *Model) statusView() string {
 	if m.chatInput.Focused() {
 		bar := " " + m.chatInput.View() +
-			ui.DimStyle.Render("   (Enter send · Esc cancel · heard within 8 tiles)")
-		return lipgloss.NewStyle().Width(m.width).Render(bar)
+			m.theme.Dim.Render("   (Enter send · Esc cancel · /help for commands)")
+		return m.theme.Wrap(m.width).Render(bar)
 	}
 
 	here := len(m.ctx.World.PlayersInArea(m.areaID))
 	online := len(m.ctx.World.AllPlayers())
 
 	parts := []string{
-		ui.StatusHintStyle.Render(" " + m.area.Name() + " "),
-		ui.StatusStyle.Render(fmt.Sprintf("%d here · %d online", here, online)),
+		m.theme.StatusHint.Render(" " + m.area.Name() + " "),
+		m.theme.Status.Render(fmt.Sprintf("%d here · %d online", here, online)),
 	}
 	if m.quitArmed {
-		parts = append(parts, ui.WarnStyle.Background(ui.ColorBarBg).Render(" Press q again to leave Durst World "))
+		parts = append(parts, m.theme.Warn.Background(ui.ColorBarBg).Render(" Press q again to leave Durst World "))
 	} else {
 		if h, ok := m.area.(Hinter); ok {
 			if hint := h.Hint(); hint != "" {
-				parts = append(parts, ui.StatusHintStyle.Render(" "+hint+" "))
+				parts = append(parts, m.theme.StatusHint.Render(" "+hint+" "))
 			}
 		}
-		parts = append(parts, ui.StatusStyle.Render("move WASD/↑↓←→ · Enter chat · Tab players · q quit"))
+		parts = append(parts, m.theme.Status.Render("move WASD/↑↓←→ · Enter chat · Tab players · q quit"))
 	}
-	bar := strings.Join(parts, ui.StatusStyle.Render("·"))
-	return lipgloss.NewStyle().Width(m.width).Background(ui.ColorBarBg).Render(bar)
+	bar := strings.Join(parts, m.theme.Status.Render("·"))
+	return m.theme.Bar(m.width).Render(bar)
 }
 
 func (m *Model) playerListPanel() string {
 	players := m.ctx.World.AllPlayers()
 	var rows []string
-	rows = append(rows, ui.PanelTitleStyle.Render(fmt.Sprintf("Online — %d", len(players))))
+	rows = append(rows, m.theme.PanelTitle.Render(fmt.Sprintf("Online — %d", len(players))))
 	rows = append(rows, "")
 	for _, p := range players {
 		area := DisplayName(p.Area)
 		if p.Area == "" {
 			area = "connecting…"
 		}
-		name := ui.ChatNameStyle.Foreground(p.Color).Render(p.Name)
+		name := m.theme.ChatName.Foreground(p.Color).Render(p.Name)
 		if p.Name == m.ctx.Name {
-			name += ui.DimStyle.Render(" (you)")
+			name += m.theme.Dim.Render(" (you)")
 		}
-		rows = append(rows, fmt.Sprintf("%s %s", name, ui.DimStyle.Render("— "+area)))
+		rows = append(rows, fmt.Sprintf("%s %s", name, m.theme.Dim.Render("— "+area)))
 	}
 	rows = append(rows, "")
-	rows = append(rows, ui.DimStyle.Render("Tab to close"))
-	return ui.PanelStyle.Render(strings.Join(rows, "\n"))
+	rows = append(rows, m.theme.Dim.Render("Tab to close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
+// padLines splits s into exactly n lines, padding with blanks or truncating.
+func padLines(s string, n int) []string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		return lines[:n]
+	}
+	for len(lines) < n {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+// center pads a single (possibly styled) line to sit centered in width w.
+func center(s string, w int) string {
+	pad := (w - lipgloss.Width(s)) / 2
+	if pad <= 0 {
+		return s
+	}
+	return strings.Repeat(" ", pad) + s
 }
