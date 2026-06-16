@@ -75,6 +75,9 @@ type Model struct {
 
 	// overlays / global state
 	showPlayers bool
+	showInfo    bool // generic info panel (/help, /who)
+	infoTitle   string
+	infoLines   []string
 	quitArmed   bool
 }
 
@@ -195,6 +198,11 @@ func (m *Model) handleWorldEvent(ev world.Event) tea.Cmd {
 	case world.EventChat:
 		name := m.theme.ChatName.Foreground(ui.AvatarColor(ev.Player)).Render(ev.Player)
 		m.addChatLine(name + m.theme.ChatText.Render(": "+ev.Detail))
+	case world.EventEmote:
+		m.addChatLine(m.theme.Accent.Render("✱ "+ev.Player+" ") + m.theme.ChatText.Italic(true).Render(ev.Detail))
+	case world.EventWhisper:
+		from := m.theme.ChatName.Foreground(ui.AvatarColor(ev.Player)).Render(ev.Player)
+		m.addChatLine(from + m.theme.Accent.Render(" whispers: ") + m.theme.ChatText.Render(ev.Detail))
 	case world.EventJoined:
 		if ev.Player != m.ctx.Name && m.area != nil {
 			m.addToast(fmt.Sprintf("· %s entered the %s ·", ev.Player, m.area.Name()))
@@ -223,6 +231,19 @@ func (m *Model) addChatLine(rendered string) {
 
 func (m *Model) addToast(text string) {
 	m.addChatLine(m.theme.Toast.Render(text))
+}
+
+// addSystemLine adds local-only command feedback (not sent to the world).
+func (m *Model) addSystemLine(text string) {
+	m.addChatLine(m.theme.Dim.Render("» ") + m.theme.ChatText.Render(text))
+}
+
+// showInfoPanel pops a dismissable overlay with pre-rendered lines (/help,
+// /who). Any key closes it.
+func (m *Model) showInfoPanel(title string, lines []string) {
+	m.infoTitle = title
+	m.infoLines = lines
+	m.showInfo = true
 }
 
 // updateArea runs the area's Update and handles a possible transition.
@@ -279,7 +300,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			text := strings.TrimSpace(m.chatInput.Value)
 			m.chatInput.Blur()
 			if text != "" {
-				m.ctx.World.Chat(m.ctx.Name, text)
+				return m, m.runChatLine(text)
 			}
 		case tea.KeyEsc:
 			m.chatInput.Blur()
@@ -292,6 +313,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// areas with an open panel (guestbook) grab everything
 	if cap, ok := m.area.(InputCapturer); ok && cap.CapturesInput() {
 		return m, m.updateArea(msg)
+	}
+
+	if m.showInfo {
+		// any key dismisses the info panel and is otherwise swallowed
+		m.showInfo = false
+		return m, nil
 	}
 
 	if m.showPlayers {
@@ -443,13 +470,30 @@ func (m *Model) playView() string {
 
 	view := titleBar + "\n" + areaBlock + "\n" + chat + "\n" + status
 
-	if m.showPlayers {
+	if m.showInfo {
+		panel := m.infoPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showPlayers {
 		panel := m.playerListPanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	}
 	return view
+}
+
+func (m *Model) infoPanel() string {
+	var rows []string
+	rows = append(rows, m.theme.PanelTitle.Render(m.infoTitle), "")
+	if len(m.infoLines) == 0 {
+		rows = append(rows, m.theme.Dim.Render("(nothing to show)"))
+	} else {
+		rows = append(rows, m.infoLines...)
+	}
+	rows = append(rows, "", m.theme.Dim.Render("any key to close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 
 func (m *Model) chatView() string {
@@ -464,7 +508,7 @@ func (m *Model) chatView() string {
 func (m *Model) statusView() string {
 	if m.chatInput.Focused() {
 		bar := " " + m.chatInput.View() +
-			m.theme.Dim.Render("   (Enter send · Esc cancel · heard within 8 tiles)")
+			m.theme.Dim.Render("   (Enter send · Esc cancel · /help for commands)")
 		return m.theme.Wrap(m.width).Render(bar)
 	}
 

@@ -168,7 +168,24 @@ func (w *World) Chat(name, text string) {
 	if !ok || sender.Area == "" {
 		return
 	}
-	ev := Event{Type: EventChat, Player: name, Area: sender.Area, X: sender.X, Y: sender.Y, Detail: text}
+	w.proximity(sender, Event{Type: EventChat, Player: name, Area: sender.Area, X: sender.X, Y: sender.Y, Detail: text})
+}
+
+// Emote delivers a "/me" action to the same audience as Chat (proximity in
+// the sender's area, including the sender).
+func (w *World) Emote(name, text string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	sender, ok := w.players[name]
+	if !ok || sender.Area == "" {
+		return
+	}
+	w.proximity(sender, Event{Type: EventEmote, Player: name, Area: sender.Area, X: sender.X, Y: sender.Y, Detail: text})
+}
+
+// proximity fans an event to every subscriber in the sender's area within
+// ChatRadius. Callers must hold w.mu.
+func (w *World) proximity(sender *Player, ev Event) {
 	for subName, ch := range w.subs {
 		p, ok := w.players[subName]
 		if !ok || p.Area != sender.Area {
@@ -178,6 +195,36 @@ func (w *World) Chat(name, text string) {
 			deliver(ch, ev)
 		}
 	}
+}
+
+// Whisper privately delivers text to one player anywhere in the world.
+// Returns false if the recipient is not online (so the caller can report it).
+// The sender is not echoed — callers show their own copy locally.
+func (w *World) Whisper(from, to, text string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, ok := w.players[from]; !ok {
+		return false
+	}
+	ch, ok := w.subs[to]
+	if !ok {
+		return false
+	}
+	deliver(ch, Event{Type: EventWhisper, Player: from, Target: to, Detail: text})
+	return true
+}
+
+// SetColor changes a player's avatar color. The new color shows on everyone's
+// next render. Returns false if the player is gone.
+func (w *World) SetColor(name string, c lipgloss.Color) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.players[name]
+	if !ok {
+		return false
+	}
+	p.Color = c
+	return true
 }
 
 // Slide returns the current slide index for a presentation room key.

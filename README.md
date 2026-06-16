@@ -42,14 +42,31 @@ ssh -p 2222 markus@localhost
 
 Minimum terminal size is 80×24.
 
+### Chat commands
+
+In the chat prompt (Enter), a line starting with `/` runs a command instead of
+talking. `/help` lists them in a panel:
+
+| Command | Action |
+| --- | --- |
+| `/who` · `/where` | who's online; your area & coordinates |
+| `/me <action>` | emote to those nearby |
+| `/w <name> <message>` | private message (aliases `/whisper /tell /msg`) |
+| `/roll [NdM]` | roll dice for everyone nearby (e.g. `/roll 2d6`) |
+| `/color [0-7]` | change your avatar color |
+| `/goto <area>` | teleport to an area |
+| `/clear` · `/help` | clear your log; list commands |
+
 ## Tests
 
 ```sh
 go test ./...
 ```
 
-Covers world state (presence, proximity chat, slide sharing, non-blocking
-broadcast), map geometry, and store degradation.
+Covers world state (presence, proximity chat, emotes, whispers, color, slide
+sharing, non-blocking broadcast), map geometry, the cinematic intro, the
+terrain generator (determinism, biomes), chat-command routing, and store
+degradation.
 
 ## Deploy
 

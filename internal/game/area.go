@@ -3,6 +3,8 @@
 package game
 
 import (
+	"sort"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/durst-group/durstworld/internal/store"
@@ -66,6 +68,22 @@ var (
 func Register(id, display string, f Factory) {
 	registry[id] = f
 	displayNames[id] = display
+}
+
+// AreaRegistered reports whether an area id has a factory.
+func AreaRegistered(id string) bool {
+	_, ok := registry[id]
+	return ok
+}
+
+// RegisteredAreas returns all registered area ids, sorted, for /goto and help.
+func RegisteredAreas() []string {
+	out := make([]string, 0, len(registry))
+	for id := range registry {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // DisplayName resolves an area id to its human name.

@@ -59,6 +59,15 @@ func AvatarColor(name string) lipgloss.Color {
 	return avatarColors[h.Sum32()%uint32(len(avatarColors))]
 }
 
+// NumAvatarColors is how many avatar colors exist (for /color).
+func NumAvatarColors() int { return len(avatarColors) }
+
+// AvatarColorByIndex returns the i-th avatar color, wrapping out-of-range i.
+func AvatarColorByIndex(i int) lipgloss.Color {
+	n := len(avatarColors)
+	return avatarColors[((i%n)+n)%n]
+}
+
 // Theme is the full set of styles bound to one renderer (one SSH session, or
 // the process default). Build it with NewTheme.
 type Theme struct {

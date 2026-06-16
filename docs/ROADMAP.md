@@ -53,10 +53,21 @@ Direction agreed with the team. Decisions locked:
   Reached from the new lobby portal `◈ The Wilds`.
 - ⬜ Admin `/regen <seed>` to reroll (lands with Phase 3 commands).
 
-## Phase 3 — Chat commands
+## Phase 3 — Chat commands ✅
 
-- Command registry + parser: chat starting with `/` routes to a handler
-  instead of `World.Chat`.
-- Core: `/help`, `/who`, `/where`, `/me`, `/w <name>`, `/goto <area>`,
-  `/roll`, `/color`. Admin: `/regen`, `/tp`.
-- New world methods: `Whisper` (one subscriber) and `Announce` (global).
+- ✅ Command registry + parser (`internal/game/commands.go`): chat starting
+  with `/` routes to a handler instead of `World.Chat`. Aliases supported.
+- ✅ Core commands: `/help [cmd]`, `/who`, `/where`, `/me`, `/w` (aliases
+  `/whisper /tell /msg`), `/roll [NdM]`, `/color [0-7]`, `/goto <area>`,
+  `/clear`. Multi-line output (`/help`, `/who`) uses a dismissable info panel.
+- ✅ New world primitives: `Emote` (proximity), `Whisper` (one recipient,
+  sender echoes locally), `SetColor`.
+- ⬜ Admin `/regen <seed>` and `/tp`: deferred — the game has no auth (the SSH
+  username is the identity, no password), so there's no admin gate yet. Needs
+  an ownership/allowlist concept first, and `/regen` needs the Wilds seed to
+  become shared mutable state with safe re-spawning.
+
+## Parked polish (from Phase 1)
+
+- Particles / weather layer.
+- Directional / two-cell avatars with facing.
