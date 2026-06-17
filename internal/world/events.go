@@ -16,8 +16,8 @@ const (
 	// EventChat: proximity chat. Delivered only to players within
 	// ChatRadius (Chebyshev) of the sender, in the same area.
 	EventChat
-	// EventSlide: a presentation-room slide changed. Detail holds the room
-	// key, Slide the new index.
+	// EventSlide: a presentation deck's shared slide changed. Detail holds the
+	// deck id, Slide the new index.
 	EventSlide
 	// EventEmote: a proximity emote ("/me waves"). Like EventChat — delivered
 	// only within ChatRadius in the same area. Detail holds the action text.
@@ -25,6 +25,9 @@ const (
 	// EventWhisper: a private message. Delivered only to Target. Player is the
 	// sender, Detail the text.
 	EventWhisper
+	// EventDeck: a presentation deck was created or edited, so the Presentation
+	// Wing should rebuild its stages. Detail holds the deck id.
+	EventDeck
 )
 
 // ChatRadius is the Chebyshev distance within which chat is heard.

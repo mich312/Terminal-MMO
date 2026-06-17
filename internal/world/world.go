@@ -68,21 +68,22 @@ const eventBuffer = 64
 
 // World is the single shared instance behind all sessions.
 type World struct {
-	mu       sync.Mutex
-	players  map[string]*Player
-	subs     map[string]chan Event
-	slides   map[string]int // room key → slide index, persists while server runs
-	guestSeq int
-	pulse    bool
-	stop     chan struct{}
-	stopOnce sync.Once
+	mu        sync.Mutex
+	players   map[string]*Player
+	subs      map[string]chan Event
+	decks     map[string]*Deck // player-authored presentation decks
+	deckOrder []string         // deck ids in creation order
+	deckSeq   int
+	guestSeq  int
+	pulse     bool
+	stop      chan struct{}
+	stopOnce  sync.Once
 }
 
 func New() *World {
 	w := &World{
 		players: make(map[string]*Player),
 		subs:    make(map[string]chan Event),
-		slides:  make(map[string]int),
 		stop:    make(chan struct{}),
 	}
 	go w.tickLoop()
@@ -282,30 +283,6 @@ func (w *World) SetAvatar(name string, style, accessory int) bool {
 	}
 	p.Style, p.Accessory = style, accessory
 	return true
-}
-
-// Slide returns the current slide index for a presentation room key.
-func (w *World) Slide(roomKey string) int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.slides[roomKey]
-}
-
-// ChangeSlide moves a room's slide index by delta, clamped to [0, max-1],
-// and broadcasts the change to the area. Returns the new index.
-func (w *World) ChangeSlide(area, roomKey string, delta, max int, by string) int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	idx := w.slides[roomKey] + delta
-	if idx < 0 {
-		idx = 0
-	}
-	if idx > max-1 {
-		idx = max - 1
-	}
-	w.slides[roomKey] = idx
-	w.broadcastToArea(area, Event{Type: EventSlide, Player: by, Area: area, Detail: roomKey, Slide: idx})
-	return idx
 }
 
 // PlayersInArea returns snapshots of everyone in an area.

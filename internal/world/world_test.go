@@ -118,25 +118,6 @@ func hasChat(evs []Event) bool {
 	return false
 }
 
-func TestSlidesAreSharedAndClamped(t *testing.T) {
-	w := New()
-	defer w.Close()
-
-	if got := w.ChangeSlide("presentation", "AURORA", -1, 3, "anna"); got != 0 {
-		t.Errorf("clamp low: got %d", got)
-	}
-	w.ChangeSlide("presentation", "AURORA", +1, 3, "anna")
-	if got := w.ChangeSlide("presentation", "AURORA", +1, 3, "anna"); got != 2 {
-		t.Errorf("expected slide 2, got %d", got)
-	}
-	if got := w.ChangeSlide("presentation", "AURORA", +1, 3, "anna"); got != 2 {
-		t.Errorf("clamp high: got %d", got)
-	}
-	if got := w.Slide("AURORA"); got != 2 {
-		t.Errorf("slide should persist, got %d", got)
-	}
-}
-
 func TestEventChannelNeverBlocks(t *testing.T) {
 	w := New()
 	defer w.Close()

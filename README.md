@@ -54,8 +54,8 @@ delta updates (only the changed region each frame). Background and rationale:
 | Shift + move | run (two tiles per step) |
 | m | toggle the minimap (in the Wilds) |
 | Enter | chat — heard within 8 tiles of where you stand |
-| e | sign the guestbook (next to the lobby reception desk) |
-| n / p | next/previous slide while standing on a `▣` presenter tile |
+| e | sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
+| n / p | next/previous slide while presenting from your lectern |
 | Tab | who's online |
 | q / Ctrl+C | quit (press twice) |
 
@@ -63,6 +63,15 @@ You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near
 spawn — `⌂` Durst HQ (the lobby), `P` Presentation, `K` Kraftwerk, `D` Demo
 Center — to enter each area. Players are multi-tile half-block avatars in their
 own color, drawn over a 2×2 footprint.
+
+### Presentation Wing
+
+The Presentation Wing is a concourse of stages that grows as people add talks.
+Walk to the `＋` booth and press `e` to author a **markdown deck** in world
+(type or paste it; `---` separates slides) — it becomes a new stage with a big
+screen. Everyone standing in a stage sees the same slide; the deck's owner
+drives it with `n`/`p` from the `▟` lectern and can re-edit with `e`. Decks are
+live, in-memory state — they're gone when the server restarts.
 
 Minimum terminal size is 80×24.
 
@@ -176,7 +185,7 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
 Optional extras: implement `game.Hinter` for a contextual status-bar hint,
 `game.InputCapturer` to grab all keys while a panel is open, and use
 `world.World` for any shared state that everyone in the area must agree on
-(the Presentation Wing's slide indices are the worked example).
+(the Presentation Wing's player-authored decks are the worked example).
 
 ## Architecture
 

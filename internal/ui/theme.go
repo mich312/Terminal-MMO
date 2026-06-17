@@ -179,6 +179,15 @@ func (t *Theme) Bar(width int) lipgloss.Style {
 	return t.r.NewStyle().Width(width).MaxHeight(1).Background(lipgloss.Color(HexBarBg))
 }
 
+// Screen is a presentation "big screen": a rounded accent border with padding
+// and no fill, so a rendered markdown slide reads cleanly over the scene.
+func (t *Theme) Screen() lipgloss.Style {
+	return t.r.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(HexAccent)).
+		Padding(1, 2)
+}
+
 // Default is the process-wide theme for tests and init-time globals. Sessions
 // build their own with NewTheme(bubbletea.MakeRenderer(s)).
 var Default = NewTheme(lipgloss.DefaultRenderer())
