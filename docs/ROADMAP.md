@@ -86,10 +86,11 @@ Direction agreed with the team. Decisions locked:
 
 ## Parked polish
 
-- Real-pixel renderer (kitty graphics / sixel): prototyped and measured — see
-  [`docs/pixel-renderer.md`](pixel-renderer.md). Verdict: keep half-blocks as the
-  baseline; a sixel-first, flat + delta, event-driven `/hd` mode is the only
-  shippable shape, as an opt-in with half-block fallback.
+- ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**
+  renderer — a plain `ssh` serves HD (sixel/kitty, auto-detected from TERM),
+  `ssh -t … glyph` opts back into the half-block client. Flat + delta,
+  event-driven, with the half-block renderer as the fallback. Background and
+  measurements: [`docs/pixel-renderer.md`](pixel-renderer.md).
 - Particles / weather layer.
 - Directional facing for avatars (sprite mirrors with movement).
 - Mark landmarks on the minimap distinctly.
