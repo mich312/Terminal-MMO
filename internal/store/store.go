@@ -57,6 +57,14 @@ type Store interface {
 	LoadDecks() []DeckRecord
 	// DeleteDeck removes a persisted deck by id.
 	DeleteDeck(id string)
+	// SavePosition upserts where a player stands in an area (e.g. the Wilds).
+	SavePosition(name, area string, x, y int)
+	// LoadPosition returns a player's saved position in an area; ok is false if none.
+	LoadPosition(name, area string) (x, y int, ok bool)
+	// SaveDiscovery upserts one 8×8 fog-of-war chunk as a 64-bit cell mask.
+	SaveDiscovery(name string, cx, cy int, mask uint64)
+	// LoadDiscovery returns a player's discovered chunks keyed by chunk coord.
+	LoadDiscovery(name string) map[[2]int]uint64
 	Close() error
 }
 
@@ -88,4 +96,8 @@ func (noopStore) LoadAvatar(string) (string, int, int, bool) {
 func (noopStore) SaveDeck(string, string, string, string, int64) {}
 func (noopStore) LoadDecks() []DeckRecord                        { return nil }
 func (noopStore) DeleteDeck(string)                              {}
+func (noopStore) SavePosition(string, string, int, int)          {}
+func (noopStore) LoadPosition(string, string) (int, int, bool)   { return 0, 0, false }
+func (noopStore) SaveDiscovery(string, int, int, uint64)         {}
+func (noopStore) LoadDiscovery(string) map[[2]int]uint64         { return nil }
 func (noopStore) Close() error                                   { return nil }

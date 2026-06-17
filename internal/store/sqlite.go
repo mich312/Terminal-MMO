@@ -41,6 +41,20 @@ CREATE TABLE IF NOT EXISTS decks (
 	source     TEXT NOT NULL,
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS positions (
+	name TEXT NOT NULL,
+	area TEXT NOT NULL,
+	x    INTEGER NOT NULL,
+	y    INTEGER NOT NULL,
+	PRIMARY KEY (name, area)
+);
+CREATE TABLE IF NOT EXISTS discovery (
+	name TEXT NOT NULL,
+	cx   INTEGER NOT NULL,
+	cy   INTEGER NOT NULL,
+	mask INTEGER NOT NULL,
+	PRIMARY KEY (name, cx, cy)
+);
 `
 
 type sqliteStore struct {
@@ -94,6 +108,62 @@ func (s *sqliteStore) SaveAvatar(name, color string, style, accessory int) {
 		name, now, now, color, style, accessory); err != nil {
 		log.Printf("store: save avatar: %v", err)
 	}
+}
+
+// SavePosition upserts a player's position within an area.
+func (s *sqliteStore) SavePosition(name, area string, x, y int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO positions (name, area, x, y) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(name, area) DO UPDATE SET x = excluded.x, y = excluded.y`,
+		name, area, x, y); err != nil {
+		log.Printf("store: save position: %v", err)
+	}
+}
+
+// LoadPosition returns a player's saved position within an area.
+func (s *sqliteStore) LoadPosition(name, area string) (x, y int, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.db.QueryRow(
+		`SELECT x, y FROM positions WHERE name = ? AND area = ?`, name, area).Scan(&x, &y); err != nil {
+		return 0, 0, false
+	}
+	return x, y, true
+}
+
+// SaveDiscovery upserts one fog-of-war chunk. mask is a 64-bit cell bitmap; it
+// round-trips through SQLite's signed INTEGER as the same 64 bits.
+func (s *sqliteStore) SaveDiscovery(name string, cx, cy int, mask uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO discovery (name, cx, cy, mask) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(name, cx, cy) DO UPDATE SET mask = excluded.mask`,
+		name, cx, cy, int64(mask)); err != nil {
+		log.Printf("store: save discovery: %v", err)
+	}
+}
+
+// LoadDiscovery returns every discovered chunk for a player.
+func (s *sqliteStore) LoadDiscovery(name string) map[[2]int]uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT cx, cy, mask FROM discovery WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[[2]int]uint64{}
+	for rows.Next() {
+		var cx, cy int
+		var mask int64
+		if err := rows.Scan(&cx, &cy, &mask); err == nil {
+			out[[2]int{cx, cy}] = uint64(mask)
+		}
+	}
+	return out
 }
 
 // LoadAvatar returns a player's saved avatar customization.

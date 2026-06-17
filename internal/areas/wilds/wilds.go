@@ -28,17 +28,24 @@ const Seed = worldSeed
 
 func init() {
 	game.Register("wilds", "The Wilds", func(ctx *game.Ctx) game.Area {
-		return &area{ctx: ctx, gen: worldgen.New(worldSeed), discovered: map[[2]int]bool{}}
+		return &area{ctx: ctx, gen: worldgen.New(worldSeed),
+			discovered: map[[2]int]uint64{}, dirty: map[[2]int]bool{}}
 	})
 }
 
 // Discovery: the overworld starts hidden and is revealed as the player walks.
 // sightR is the brightly-lit circle around the player; discoverR (a touch
 // wider) is the radius committed to memory, so explored ground stays visible —
-// dimmed — once you move on. Discovery is per-visit (in-memory for the session).
+// dimmed — once you move on.
+//
+// Memory is stored as a sparse grid of chunkN×chunkN cells, each chunk packed
+// into a uint64 bitmask — so a fully-explored chunk costs 8 bytes while a
+// frontier chunk still keeps exact per-tile bits. Chunks persist to the store,
+// so the map (and the player's position) survive disconnects and re-entry.
 const (
 	sightR    = 7
 	discoverR = 9
+	chunkN    = 8 // cells per chunk side; 8×8 = 64 = one uint64 mask
 )
 
 type area struct {
@@ -47,33 +54,79 @@ type area struct {
 	wx, wy     int // absolute world position (top-left of the body's footprint)
 	frame      int
 	showMap    bool
-	discovered map[[2]int]bool // world cells the player has uncovered this visit
+	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
+	dirty      map[[2]int]bool   // chunks changed since the last persist
 }
 
 func (a *area) Name() string { return "The Wilds" }
 
 func (a *area) Init(*world.Player) tea.Cmd {
-	a.wx, a.wy = a.spawn()
+	a.discovered = a.ctx.Store.LoadDiscovery(a.ctx.Name)
+	if a.discovered == nil {
+		a.discovered = map[[2]int]uint64{}
+	}
+	a.dirty = map[[2]int]bool{}
+	a.wx, a.wy = a.resume()
 	a.reveal()
+	a.persist()
 	a.ctx.World.EnterArea(a.ctx.Name, "wilds", a.wx, a.wy, "The Wilds")
 	return nil
 }
 
-// reveal uncovers every cell within discoverR of the player's body center,
-// committing it to the discovered set so it stays visible after the player
-// moves on. Centered on the 2×2 footprint so the circle sits under the avatar.
-func (a *area) reveal() {
-	if a.discovered == nil {
-		a.discovered = map[[2]int]bool{}
+// resume returns the saved position if it's still an open, non-portal footprint
+// (so you don't re-trigger the door you arrived through), else a fresh spawn by
+// the HQ gate.
+func (a *area) resume() (int, int) {
+	if x, y, ok := a.ctx.Store.LoadPosition(a.ctx.Name, "wilds"); ok && a.fits(x, y) {
+		if _, isPortal := a.portalUnder(x, y); !isPortal {
+			return x, y
+		}
 	}
+	return a.spawn()
+}
+
+// chunkOf splits a world cell into its chunk coordinate and bit index.
+func chunkOf(x, y int) (cx, cy int, bit uint) {
+	return x >> 3, y >> 3, uint((y&(chunkN-1))*chunkN + (x & (chunkN - 1)))
+}
+
+// seen reports whether a world cell has been discovered.
+func (a *area) seen(x, y int) bool {
+	cx, cy, bit := chunkOf(x, y)
+	return a.discovered[[2]int{cx, cy}]&(1<<bit) != 0
+}
+
+// markSeen records a cell as discovered, flagging its chunk dirty if changed.
+func (a *area) markSeen(x, y int) {
+	cx, cy, bit := chunkOf(x, y)
+	key := [2]int{cx, cy}
+	if nw := a.discovered[key] | (1 << bit); nw != a.discovered[key] {
+		a.discovered[key] = nw
+		a.dirty[key] = true
+	}
+}
+
+// reveal uncovers every cell within discoverR of the player's body center.
+// Centered on the 2×2 footprint so the circle sits under the avatar.
+func (a *area) reveal() {
 	cx, cy := a.wx+game.PlayerW/2, a.wy+game.PlayerH/2
 	for dy := -discoverR; dy <= discoverR; dy++ {
 		for dx := -discoverR; dx <= discoverR; dx++ {
 			if dx*dx+dy*dy <= discoverR*discoverR {
-				a.discovered[[2]int{cx + dx, cy + dy}] = true
+				a.markSeen(cx+dx, cy+dy)
 			}
 		}
 	}
+}
+
+// persist flushes newly-revealed chunks and the player's position to the store,
+// so the map and where-you-stand survive disconnects and re-entry.
+func (a *area) persist() {
+	for ch := range a.dirty {
+		a.ctx.Store.SaveDiscovery(a.ctx.Name, ch[0], ch[1], a.discovered[ch])
+		delete(a.dirty, ch)
+	}
+	a.ctx.Store.SavePosition(a.ctx.Name, "wilds", a.wx, a.wy)
 }
 
 // spawn finds an open footprint near the HQ gate (but not on a portal).
@@ -130,11 +183,13 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			a.reveal()
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
+				a.persist()
 				return game.Transition{To: portal}, nil
 			}
 		}
 		if a.wx != sx || a.wy != sy {
 			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
+			a.persist()
 		}
 	}
 	return a, nil
@@ -160,7 +215,7 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 		row := make([]game.Tile, vw)
 		for lx := 0; lx < vw; lx++ {
 			wx, wy := ox+lx, oy+ly
-			if a.discovered[[2]int{wx, wy}] {
+			if a.seen(wx, wy) {
 				row[lx] = CellTile(a.gen.At(wx, wy))
 			} else {
 				row[lx] = fogTile() // the unexplored world stays hidden
@@ -329,7 +384,7 @@ func (a *area) minimap() string {
 				b.WriteString(th.Bright.Render("☺"))
 				continue
 			}
-			if !a.discovered[[2]int{wx, wy}] {
+			if !a.seen(wx, wy) {
 				b.WriteByte(' ') // unexplored — the map fills in as you roam
 				continue
 			}

@@ -24,13 +24,12 @@ func TestDiscoveryStartsHiddenAndGrows(t *testing.T) {
 	self, _ := w.Self(name)
 	a.Init(&self)
 
-	if len(a.discovered) == 0 {
-		t.Fatal("spawn should reveal a starting circle")
+	if !a.seen(a.wx, a.wy) {
+		t.Fatal("the player's own cell must be discovered at spawn")
 	}
 	// A cell far from spawn must still be hidden — the world isn't all visible.
-	far := [2]int{a.wx + 50, a.wy + 50}
-	if a.discovered[far] {
-		t.Fatalf("distant cell %v should start hidden", far)
+	if a.seen(a.wx+50, a.wy+50) {
+		t.Fatal("a distant cell should start hidden")
 	}
 	// fog never blocks movement: collision reads the real generator, not the map.
 	if !fogTile().Walkable {
@@ -38,17 +37,63 @@ func TestDiscoveryStartsHiddenAndGrows(t *testing.T) {
 	}
 
 	// Walking to new ground uncovers cells that were previously fogged.
-	before := len(a.discovered)
-	prev := [2]int{a.wx + discoverR + 2, a.wy}
-	if a.discovered[prev] {
-		t.Fatalf("cell %v should be hidden before walking toward it", prev)
+	target := [2]int{a.wx + discoverR + 2, a.wy}
+	if a.seen(target[0], target[1]) {
+		t.Fatalf("cell %v should be hidden before walking toward it", target)
 	}
 	a.wx += discoverR + 2
 	a.reveal()
-	if len(a.discovered) <= before {
-		t.Fatal("moving should reveal new cells")
+	if !a.seen(a.wx, a.wy) || !a.seen(target[0], target[1]) {
+		t.Fatal("moving should reveal the new ground around the player")
 	}
-	if !a.discovered[[2]int{a.wx, a.wy}] {
-		t.Fatal("the player's own cell must always be discovered")
+}
+
+// Position and discovered map must survive leaving and re-entering the Wilds:
+// a fresh area built with the same store/name resumes both from persistence.
+func TestDiscoveryAndPositionPersist(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	st := store.Open(t.TempDir() + "/w.db")
+	ctx := &game.Ctx{World: w, Store: st, Name: name, Theme: ui.Default}
+
+	a := game.NewArea("wilds", ctx).(*area)
+	self, _ := w.Self(name)
+	a.Init(&self)
+	// Walk into open ground (not onto the gate portal) so the position sticks.
+	walk(a, "ss")
+	wantX, wantY := a.wx, a.wy
+	if _, isPortal := a.portalUnder(wantX, wantY); isPortal {
+		t.Skip("walked onto a portal; positional resume is intentionally skipped there")
+	}
+	probe := [2]int{wantX, wantY}
+
+	// A brand-new area (as if reconnecting) must resume where we left off and
+	// remember the ground we uncovered.
+	b := game.NewArea("wilds", ctx).(*area)
+	b.Init(&self)
+	if b.wx != wantX || b.wy != wantY {
+		t.Fatalf("resumed at (%d,%d), want (%d,%d)", b.wx, b.wy, wantX, wantY)
+	}
+	if !b.seen(probe[0], probe[1]) {
+		t.Fatal("discovered ground should persist across re-entry")
+	}
+}
+
+func walk(a *area, keys string) {
+	for _, r := range keys {
+		dx, dy, steps, ok := game.MoveKey(string(r))
+		if !ok {
+			continue
+		}
+		for i := 0; i < steps; i++ {
+			nx, ny := a.wx+dx, a.wy+dy
+			if !a.fits(nx, ny) {
+				break
+			}
+			a.wx, a.wy = nx, ny
+			a.reveal()
+		}
+		a.persist()
 	}
 }

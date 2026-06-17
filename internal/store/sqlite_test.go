@@ -24,6 +24,35 @@ func areasOf(t *testing.T, s *sqliteStore, name string) string {
 	return raw
 }
 
+// Position round-trips, and an absent one reports ok=false.
+func TestPositionRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if _, _, ok := s.LoadPosition("ada", "wilds"); ok {
+		t.Fatal("no position should exist yet")
+	}
+	s.SavePosition("ada", "wilds", -12, 34)
+	s.SavePosition("ada", "wilds", -12, 99) // upsert overwrites
+	x, y, ok := s.LoadPosition("ada", "wilds")
+	if !ok || x != -12 || y != 99 {
+		t.Fatalf("got (%d,%d,%v), want (-12,99,true)", x, y, ok)
+	}
+}
+
+// Discovery masks round-trip — including a full chunk (all 64 bits set), which
+// stores as a negative int64 and must come back as the same uint64 bits.
+func TestDiscoveryRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	s.SaveDiscovery("ada", 0, 0, 0xFFFFFFFFFFFFFFFF) // full chunk
+	s.SaveDiscovery("ada", -3, 5, 0x8000000000000001) // high + low bit
+	got := s.LoadDiscovery("ada")
+	if got[[2]int{0, 0}] != 0xFFFFFFFFFFFFFFFF {
+		t.Errorf("full chunk = %#x, want all bits set", got[[2]int{0, 0}])
+	}
+	if got[[2]int{-3, 5}] != 0x8000000000000001 {
+		t.Errorf("partial chunk = %#x, want 0x8000000000000001", got[[2]int{-3, 5}])
+	}
+}
+
 // RecordAreaVisit appends new areas and dedupes repeats.
 func TestRecordAreaVisitAppendsAndDedupes(t *testing.T) {
 	s := openTemp(t)

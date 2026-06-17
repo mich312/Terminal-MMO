@@ -39,8 +39,10 @@ Direction agreed with the team. Decisions locked:
   flecks, swamp mud blotches).
 - ✅ Fog-of-war discovery: the Wilds starts hidden and reveals a circle around
   the player as they walk (bright sight radius + dimmed explored memory + fog
-  beyond). Drives both the glyph and HD renderers and the minimap. Per-visit,
-  in-memory.
+  beyond). Drives both the glyph and HD renderers and the minimap. Persisted to
+  the store as 8×8 chunk bitmasks (full chunks pack to 8 bytes, frontier chunks
+  keep exact bits), alongside the player's position — so the map and where you
+  stand survive disconnects and re-entry.
 - ⬜ Particles / weather layer.
 - ⬜ Directional / two-cell avatars with a drop shadow.
 
