@@ -31,7 +31,10 @@ Direction agreed with the team. Decisions locked:
   Kraftwerk machines pulse, coolant flows, lamps flicker; lobby plants breathe.
 - ✅ Radial lighting (`Light` / `Walker.RenderLit`): tiles fade to shadow past
   the player's reach. Kraftwerk is now a dim machine hall.
-- ⬜ Biome palettes (will land with the overworld).
+- ✅ Biome palettes & climate: domain-warped elevation/moisture for organic
+  biome edges, plus a temperature field (colder with altitude) that adds
+  snowfields, snow-capped peaks and warm-dry savanna to the original
+  water/sand/grass/forest/hill/mountain set.
 - ⬜ Particles / weather layer.
 - ⬜ Directional / two-cell avatars with a drop shadow.
 

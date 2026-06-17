@@ -202,7 +202,7 @@ func CellTile(c worldgen.Cell) game.Tile {
 // texForBiome maps an overworld biome to an HD ground texture.
 func texForBiome(b worldgen.Biome) game.TileTex {
 	switch b {
-	case worldgen.Grass:
+	case worldgen.Grass, worldgen.Savanna:
 		return game.TexGrass
 	case worldgen.Sand:
 		return game.TexSand
@@ -212,7 +212,7 @@ func texForBiome(b worldgen.Biome) game.TileTex {
 		return game.TexForest
 	case worldgen.Hill, worldgen.Path:
 		return game.TexDirt
-	case worldgen.Mountain:
+	case worldgen.Mountain, worldgen.Snow:
 		return game.TexRock
 	default:
 		return game.TexFlat
@@ -234,6 +234,10 @@ func groundColor(b worldgen.Biome) string {
 		return "#9AA0A8"
 	case worldgen.Path:
 		return "#9B8B6A"
+	case worldgen.Snow:
+		return "#E8EEF5"
+	case worldgen.Savanna:
+		return "#B8A659"
 	default:
 		return ""
 	}

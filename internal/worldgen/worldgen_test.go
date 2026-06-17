@@ -118,6 +118,26 @@ func TestSpawnReachesEveryLandmark(t *testing.T) {
 	}
 }
 
+// The climate model (domain-warped elevation/moisture plus a temperature
+// field) must actually produce its richer biomes — cold Snow and warm-dry
+// Savanna — not just the original grass/forest/water set.
+func TestClimateBiomesAppear(t *testing.T) {
+	for _, seed := range []uint64{1, 42} {
+		g := New(seed)
+		seen := map[Biome]bool{}
+		for x := -200; x < 200; x += 3 {
+			for y := -200; y < 200; y += 3 {
+				seen[g.At(x, y).Biome] = true
+			}
+		}
+		for _, b := range []Biome{Snow, Savanna} {
+			if !seen[b] {
+				t.Errorf("seed %d: biome %d never appears across the sample", seed, b)
+			}
+		}
+	}
+}
+
 // Different seeds must yield different worlds.
 func TestSeedsDiffer(t *testing.T) {
 	a, b := New(1), New(2)

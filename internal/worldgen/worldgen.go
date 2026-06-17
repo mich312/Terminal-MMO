@@ -20,6 +20,8 @@ const (
 	Hill
 	Mountain
 	Path
+	Snow
+	Savanna
 )
 
 // Cell is one generated tile: how it looks, whether it blocks movement, and
@@ -97,8 +99,18 @@ func (g *Generator) At(x, y int) Cell {
 		return pathCell(g, x, y)
 	}
 
-	elev := g.fbm(x, y, 0x1, 0.045, 4)
-	moist := g.fbm(x, y, 0x9E37, 0.03, 3)
+	// Domain warping: offset the sample point by a low-frequency noise field
+	// before reading elevation/moisture, so biome edges meander organically
+	// (wavy coastlines, interlocking forests) instead of forming smooth blobs.
+	const warp = 18.0
+	wx := float64(x) + warp*(g.fbmAt(float64(x), float64(y), 0x1233A, 0.02, 2)-0.5)
+	wy := float64(y) + warp*(g.fbmAt(float64(x), float64(y), 0x77C2B, 0.02, 2)-0.5)
+
+	elev := g.fbmAt(wx, wy, 0x1, 0.045, 4)
+	moist := g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
+	// Temperature is a large-scale climate field (low frequency = broad warm/cold
+	// regions), nudged colder as elevation rises so highlands and peaks freeze.
+	temp := g.fbmAt(wx, wy, 0x7E11, 0.014, 3) - 0.30*(elev-0.5)
 
 	switch {
 	case elev < 0.24: // deep water
@@ -110,17 +122,27 @@ func (g *Generator) At(x, y int) Cell {
 	case elev < 0.34: // shallows
 		return Cell{Biome: Water, Glyph: '~', Color: "#5BB0E0",
 			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
-	case elev < 0.38:
+	case elev < 0.38: // beach
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
-	case elev < 0.70:
-		if moist > 0.52 {
+	case elev < 0.70: // lowland — climate decides forest / grassland / savanna
+		switch {
+		case moist > 0.52:
 			return forestCell(g, x, y)
+		case temp > 0.60 && moist < 0.44:
+			return savannaCell(g, x, y)
+		default:
+			return grassCell(g, x, y)
 		}
-		return grassCell(g, x, y)
-	case elev < 0.84:
+	case elev < 0.84: // highland — cold tops freeze to snow, else hills
+		if temp < 0.40 {
+			return snowCell(g, x, y)
+		}
 		return hillCell(g, x, y)
-	default:
-		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // peaks block
+	default: // peaks — snow-capped where cold, bare rock where warm
+		if temp < 0.52 {
+			return Cell{Biome: Snow, Glyph: '▲', Color: "#EAF0F7"} // snowy peak (blocks)
+		}
+		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
 	}
 }
 
@@ -154,6 +176,32 @@ func forestCell(g *Generator, x, y int) Cell {
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
 	return Cell{Biome: Forest, Glyph: '·', Color: "#3F8A5A", Walkable: true}
+}
+
+// snowCell is cold high ground: pale, mostly open, with the odd ice-glazed
+// rock. Nothing here blocks — snowfields stay crossable.
+func snowCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Snow, Glyph: '·', Color: "#E8EEF5", Walkable: true}
+	switch r := g.prop(x, y); {
+	case r < 0.05:
+		c.Glyph, c.Color = '°', "#C2CCD6" // an icy rock
+	case r < 0.14:
+		c.Glyph, c.Color = ',', "#D4DEEA" // a snow tuft / drift
+	}
+	return c
+}
+
+// savannaCell is warm, dry grassland: golden tufts and the occasional scrubby
+// bush. Kept free of blocking props so the dry plains stay open.
+func savannaCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Savanna, Glyph: '·', Color: "#B8A659", Walkable: true}
+	switch r := g.prop(x, y); {
+	case r < 0.05:
+		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
+	case r < 0.22:
+		c.Glyph, c.Color = ',', "#C9B85F" // a clump of dry grass
+	}
+	return c
 }
 
 // onPath reports whether (x,y) lies on a forced trail: a 3-wide walkable band
@@ -217,14 +265,15 @@ func treeColor(r float64) string {
 
 // ── noise ──────────────────────────────────────────────────────────────────
 
-// fbm sums octaves of value noise into [0,1]. freq is the base lattice
-// frequency; salt separates independent fields (elevation vs moisture).
-func (g *Generator) fbm(x, y int, salt uint64, freq float64, octaves int) float64 {
+// fbmAt sums octaves of value noise into [0,1] at a float coordinate (so the
+// domain-warped sample point can be fractional). freq is the base lattice
+// frequency; salt separates independent fields (elevation, moisture, temp).
+func (g *Generator) fbmAt(x, y float64, salt uint64, freq float64, octaves int) float64 {
 	var sum, norm float64
 	a := 1.0
 	f := freq
 	for i := 0; i < octaves; i++ {
-		sum += a * g.valueNoise(float64(x)*f, float64(y)*f, salt+uint64(i))
+		sum += a * g.valueNoise(x*f, y*f, salt+uint64(i))
 		norm += a
 		a *= 0.5
 		f *= 2
