@@ -115,6 +115,21 @@ Direction agreed with the team. Decisions locked:
   cycleable Style / Color / Hat fields (↑↓ pick, ←→ change), persisting each
   change. Hat cycling is limited to unlocked hats.
 
+## Phase 6 — UI in HD (the default client) ✅
+
+Rule: HD is the default renderer, so all UI is built into the pixel frame, not
+just the glyph client. HD has no glyph layer, so the interface is rasterized
+straight onto the RGBA frame with basicfont (ASCII).
+
+- ✅ HD overlay layer (`internal/game/hd_ui.go`, on `pixel.DrawPanel`/`Shade`):
+  a bottom **status/hint bar** (area + contextual hint + control legend) and
+  transient **pickup toasts** (toast moved to a wall-clock so it works without
+  the glyph tick).
+- ✅ HD **character panel** (`c`) and **inventory panel** (`i`), reachable by
+  single keys since HD has no command line; arrows navigate/edit, `q` closes.
+  The avatar customization is shared with the glyph panel
+  (`game.CycleAvatarField`) so both clients stay in sync.
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**

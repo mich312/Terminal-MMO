@@ -9,6 +9,7 @@ package wilds
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -58,7 +59,20 @@ type area struct {
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
 	toast      string            // transient pickup feedback
-	toastAt    int               // frame the toast was set
+	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
+}
+
+// toastDuration is how long a pickup message lingers.
+const toastDuration = 3 * time.Second
+
+// Toast implements game.Toaster: the current pickup message, if still fresh.
+// Both renderers poll it — the glyph View and the HD overlay.
+func (a *area) Toast() (string, bool) {
+	return a.toast, a.toast != "" && time.Now().Before(a.toastUntil)
+}
+
+func (a *area) setToast(msg string) {
+	a.toast, a.toastUntil = msg, time.Now().Add(toastDuration)
 }
 
 func (a *area) Name() string { return "The Wilds" }
@@ -273,8 +287,7 @@ func (a *area) pickUp() {
 			a.ctx.World.SetAvatar(a.ctx.Name, self.Style, h.idx)
 			a.ctx.Store.SaveAvatar(a.ctx.Name, string(self.Color), self.Style, h.idx)
 		}
-		a.toast = "＋ " + h.name + " — now worn!"
-		a.toastAt = a.frame
+		a.setToast("+ " + h.name + " (now worn!)")
 		return
 	}
 	it, x, y, ok := a.itemUnderBody()
@@ -285,8 +298,7 @@ func (a *area) pickUp() {
 	a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
 	a.ctx.Inventory[it.ID]++
 	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
-	a.toast = "＋ " + it.Name
-	a.toastAt = a.frame
+	a.setToast("+ " + it.Name)
 }
 
 // sample builds a vw×vh window of the overworld centered on the player and
@@ -355,19 +367,16 @@ func (a *area) View(width, height int) string {
 		panel := a.minimap()
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
-	} else if a.frame-a.toastAt < toastFrames && a.toast != "" {
+	} else if msg, show := a.Toast(); show {
 		th := a.ctx.Theme
 		if th == nil {
 			th = ui.Default
 		}
-		line := th.Toast.Render(a.toast)
+		line := th.Toast.Render(msg)
 		view = ui.Overlay(view, line, (width-lipgloss.Width(line))/2, 1)
 	}
 	return view
 }
-
-// toastFrames is how long a pickup toast lingers (~3s at the tick rate).
-const toastFrames = 36
 
 // CellTile converts a generated overworld cell into a renderable tile. It is
 // the single source of truth for the Wilds, shared by the glyph and HD

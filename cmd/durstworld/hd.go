@@ -45,6 +45,13 @@ const (
 	hdMaxPxH = 640
 )
 
+// HD UI panels reachable with single keys (HD has no command line).
+const (
+	hdPanelNone = iota
+	hdPanelChar
+	hdPanelInv
+)
+
 // setupAvatar restores a player's persisted color/style/accessory, or — on a
 // first visit — rolls a random look and remembers it, so everyone spawns with a
 // distinct avatar that then stays theirs across reconnects.
@@ -172,6 +179,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		sent       int
 		framesSent int
 		start      = time.Now()
+		uiPanel    = hdPanelNone // which on-frame UI panel is open
+		uiField    int           // selected field in the character panel
 	)
 
 	draw := func() {
@@ -197,6 +206,25 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 		}
 
+		// HD UI overlays: the status/hint bar, a transient pickup toast, and any
+		// open panel — so the default client carries the full interface.
+		hint := ""
+		if h, ok := area.(game.Hinter); ok {
+			hint = h.Hint()
+		}
+		game.DrawHUD(img, area.Name(), hint)
+		if tz, ok := area.(game.Toaster); ok {
+			if msg, show := tz.Toast(); show {
+				game.DrawToast(img, msg)
+			}
+		}
+		switch uiPanel {
+		case hdPanelChar:
+			game.DrawCharPanel(img, ctx, uiField)
+		case hdPanelInv:
+			game.DrawInventoryPanel(img, ctx)
+		}
+
 		sent += fw.WriteFrame(out, img, frame%hdRefresh == 0)
 		out.Flush()
 		framesSent++
@@ -211,6 +239,46 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		fmt.Fprintf(out, "HD session over: %d frames, %.0f KB sent, %.1f KB/s avg over %.0fs\r\n",
 			framesSent, float64(sent)/1024, float64(sent)/1024/dur, dur)
 		out.Flush()
+	}
+
+	// uiKey handles HD interface keys: 'c'/'i' toggle the character/inventory
+	// panels, and while a panel is open the arrows navigate/edit it and every
+	// other key is swallowed. Returns whether the key was consumed by the UI.
+	uiKey := func(key string) bool {
+		switch key {
+		case "c":
+			if uiPanel == hdPanelChar {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel, uiField = hdPanelChar, 0
+			}
+			return true
+		case "i":
+			if uiPanel == hdPanelInv {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel = hdPanelInv
+			}
+			return true
+		}
+		if uiPanel == hdPanelNone {
+			return false
+		}
+		switch key {
+		case "up":
+			uiField = (uiField + game.CharFields - 1) % game.CharFields
+		case "down":
+			uiField = (uiField + 1) % game.CharFields
+		case "left":
+			if uiPanel == hdPanelChar {
+				game.CycleAvatarField(ctx, uiField, -1)
+			}
+		case "right":
+			if uiPanel == hdPanelChar {
+				game.CycleAvatarField(ctx, uiField, 1)
+			}
+		}
+		return true // a panel swallows everything else
 	}
 
 	draw()
@@ -243,13 +311,23 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				} else {
 					csi = append(csi, b)
 				}
-			case b == 'q' || b == 'Q' || b == 3: // q or Ctrl-C
+			case b == 3: // Ctrl-C always quits
 				hud()
 				return
+			case b == 'q' || b == 'Q': // q closes an open panel, else quits
+				if uiPanel != hdPanelNone {
+					uiPanel = hdPanelNone
+					draw()
+				} else {
+					hud()
+					return
+				}
 			default:
 				key = string(b)
 			}
-			if km, ok := moveKeyMsg(key); ok {
+			if uiKey(key) {
+				draw()
+			} else if km, ok := moveKeyMsg(key); ok {
 				next, _ := area.Update(km)
 				if t, isTransition := next.(game.Transition); isTransition {
 					fw.Reset() // new scene → full repaint

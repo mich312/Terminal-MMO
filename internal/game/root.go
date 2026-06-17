@@ -255,59 +255,15 @@ func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
 	case "esc", "enter", "q":
 		m.showChar = false
 	case "up", "k":
-		m.charField = (m.charField + 2) % 3
+		m.charField = (m.charField + CharFields - 1) % CharFields
 	case "down", "j", "tab":
-		m.charField = (m.charField + 1) % 3
+		m.charField = (m.charField + 1) % CharFields
 	case "left", "h":
-		m.charAdjust(-1)
+		CycleAvatarField(m.ctx, m.charField, -1)
 	case "right", "l":
-		m.charAdjust(1)
+		CycleAvatarField(m.ctx, m.charField, 1)
 	}
 	return nil
-}
-
-// charAdjust cycles the selected field by d and persists the change. Hats cycle
-// only through the ones the player has unlocked.
-func (m *Model) charAdjust(d int) {
-	cur, ok := m.ctx.World.Self(m.ctx.Name)
-	if !ok {
-		return
-	}
-	switch m.charField {
-	case 0:
-		m.ctx.World.SetAvatar(m.ctx.Name, wrapIdx(cur.Style+d, NumAvatarStyles()), cur.Accessory)
-	case 1:
-		idx := wrapIdx(ui.AvatarColorIndex(cur.Color)+d, ui.NumAvatarColors())
-		m.ctx.World.SetColor(m.ctx.Name, ui.AvatarColorByIndex(idx))
-	case 2:
-		m.ctx.World.SetAvatar(m.ctx.Name, cur.Style, m.cycleHat(cur.Accessory, d))
-	}
-	m.persistAvatar()
-}
-
-// ownedHatList is the accessory indices the player can wear: none (0) plus
-// every hat they've found, in order.
-func (m *Model) ownedHatList() []int {
-	list := []int{0}
-	for i := 1; i < NumAccessories(); i++ {
-		if m.ctx.Hats[i] {
-			list = append(list, i)
-		}
-	}
-	return list
-}
-
-// cycleHat steps to the next/previous owned hat, wrapping.
-func (m *Model) cycleHat(cur, d int) int {
-	list := m.ownedHatList()
-	pos := 0
-	for i, v := range list {
-		if v == cur {
-			pos = i
-		}
-	}
-	pos = ((pos+d)%len(list) + len(list)) % len(list)
-	return list[pos]
 }
 
 // updateArea runs the area's Update and handles a possible transition.
@@ -572,7 +528,7 @@ func (m *Model) charPanel() string {
 	rows = append(rows, "")
 
 	hat := AccessoryName(cur.Accessory)
-	if len(m.ownedHatList()) == 1 {
+	if len(OwnedHats(m.ctx)) == 1 {
 		hat += m.theme.Dim.Render("  (find hats in the Wilds)")
 	}
 	fields := []struct{ label, val string }{

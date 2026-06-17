@@ -49,6 +49,13 @@ type HDLighter interface {
 	HDLight() Light
 }
 
+// Toaster is an area that surfaces a transient one-line message (e.g. an item
+// pickup). Both renderers poll it: the glyph View overlays it and the HD loop
+// draws it onto the frame.
+type Toaster interface {
+	Toast() (text string, show bool)
+}
+
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The
 // Presentation Wing uses it to show the current slide on screen in HD (there
 // are no terminal cells in HD, so the markdown is rendered into the image). It
