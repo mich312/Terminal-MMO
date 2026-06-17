@@ -25,11 +25,37 @@ type Deck struct {
 // there so their stage view stays in sync.
 const presentArea = "presentation"
 
-// CreateDeck stores a new deck authored by owner and returns its id. The slide
-// index starts at 0. Everyone in the Presentation Wing is told to rebuild.
-func (w *World) CreateDeck(owner, title, source string) string {
+// SetDeckPersist registers a callback that saves a deck whenever it is created
+// or edited (main wires this to the SQLite store). nil disables persistence.
+func (w *World) SetDeckPersist(fn func(Deck)) {
+	w.mu.Lock()
+	w.persist = fn
+	w.mu.Unlock()
+}
+
+// LoadDeck inserts a persisted deck at startup without re-saving or
+// broadcasting. Decks are restored oldest-first so creation order is preserved.
+func (w *World) LoadDeck(id, owner, title, source string, created time.Time) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.decks == nil {
+		w.decks = make(map[string]*Deck)
+	}
+	if _, exists := w.decks[id]; exists {
+		return
+	}
+	w.decks[id] = &Deck{
+		ID: id, Owner: owner, Title: title, Source: source,
+		Slides: ui.SplitSlides(source), Created: created,
+	}
+	w.deckOrder = append(w.deckOrder, id)
+}
+
+// CreateDeck stores a new deck authored by owner and returns its id. The slide
+// index starts at 0. Everyone in the Presentation Wing is told to rebuild, and
+// the deck is persisted (if a store is wired).
+func (w *World) CreateDeck(owner, title, source string) string {
+	w.mu.Lock()
 	if w.decks == nil {
 		w.decks = make(map[string]*Deck)
 	}
@@ -44,6 +70,11 @@ func (w *World) CreateDeck(owner, title, source string) string {
 	}
 	w.deckOrder = append(w.deckOrder, id)
 	w.broadcastToArea(presentArea, Event{Type: EventDeck, Player: owner, Area: presentArea, Detail: id})
+	snap, persist := *w.decks[id], w.persist
+	w.mu.Unlock()
+	if persist != nil {
+		persist(snap)
+	}
 	return id
 }
 
@@ -51,9 +82,9 @@ func (w *World) CreateDeck(owner, title, source string) string {
 // current slide is clamped into the new range. Returns false if not allowed.
 func (w *World) UpdateDeck(id, by, title, source string) bool {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	d, ok := w.decks[id]
 	if !ok || d.Owner != by {
+		w.mu.Unlock()
 		return false
 	}
 	if t := strings.TrimSpace(title); t != "" {
@@ -65,6 +96,11 @@ func (w *World) UpdateDeck(id, by, title, source string) bool {
 		d.Current = len(d.Slides) - 1
 	}
 	w.broadcastToArea(presentArea, Event{Type: EventDeck, Player: by, Area: presentArea, Detail: id})
+	snap, persist := *d, w.persist
+	w.mu.Unlock()
+	if persist != nil {
+		persist(snap)
+	}
 	return true
 }
 

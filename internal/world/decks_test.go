@@ -1,6 +1,40 @@
 package world
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// CreateDeck and UpdateDeck fire the persist callback with a snapshot; LoadDeck
+// restores a persisted deck without re-persisting.
+func TestDeckPersistence(t *testing.T) {
+	w := New()
+	defer w.Close()
+	var saved []Deck
+	w.SetDeckPersist(func(d Deck) { saved = append(saved, d) })
+
+	id := w.CreateDeck("anna", "Talk", "a\n---\nb")
+	if !w.UpdateDeck(id, "anna", "Talk v2", "x") {
+		t.Fatal("owner update failed")
+	}
+	if len(saved) != 2 {
+		t.Fatalf("persist fired %d times, want 2", len(saved))
+	}
+	if saved[0].ID != id || saved[1].Title != "Talk v2" {
+		t.Errorf("persisted snapshots wrong: %+v", saved)
+	}
+
+	w2 := New()
+	defer w2.Close()
+	w2.LoadDeck("restored", "bob", "Old Talk", "p\n---\nq\n---\nr", time.Unix(123, 0))
+	d, ok := w2.GetDeck("restored")
+	if !ok || d.Owner != "bob" || len(d.Slides) != 3 {
+		t.Errorf("LoadDeck restored wrong deck: %+v ok=%v", d, ok)
+	}
+	if decks := w2.Decks(); len(decks) != 1 {
+		t.Errorf("restored deck count = %d, want 1", len(decks))
+	}
+}
 
 func TestCreateAndGetDeck(t *testing.T) {
 	w := New()

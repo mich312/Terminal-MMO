@@ -53,6 +53,14 @@ func main() {
 	w := world.New()
 	st := store.Open("./data/durstworld.db")
 
+	// Restore user-authored presentation decks and keep them saved across edits.
+	for _, d := range st.LoadDecks() {
+		w.LoadDeck(d.ID, d.Owner, d.Title, d.Source, time.Unix(d.Created, 0))
+	}
+	w.SetDeckPersist(func(d world.Deck) {
+		st.SaveDeck(d.ID, d.Owner, d.Title, d.Source, d.Created.Unix())
+	})
+
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
 		// persistent Ed25519 host key, generated on first run

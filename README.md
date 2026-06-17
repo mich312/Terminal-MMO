@@ -25,9 +25,10 @@ ssh -p 2222 markus@localhost
 
 - `PORT` env var changes the listen port (default `2222`).
 - `./.ssh/host_key` — persistent Ed25519 host key, generated on first run.
-- `./data/durstworld.db` — SQLite (WAL) for visits, guestbook and the event
-  log. Created with schema on first run; delete it to start fresh. If the
-  file is unwritable the game logs a warning and plays on without memory.
+- `./data/durstworld.db` — SQLite (WAL) for visits, guestbook, the event log
+  and player-authored presentation decks. Created with schema on first run;
+  delete it to start fresh. If the file is unwritable the game logs a warning
+  and plays on without memory.
 
 ### HD mode (experimental real-pixel renderer)
 
@@ -71,7 +72,8 @@ Walk to the `＋` booth and press `e` to author a **markdown deck** in world
 (type or paste it; `---` separates slides) — it becomes a new stage with a big
 screen. Everyone standing in a stage sees the same slide; the deck's owner
 drives it with `n`/`p` from the `▟` lectern and can re-edit with `e`. Decks are
-live, in-memory state — they're gone when the server restarts.
+owned by their author (your SSH username) and saved to SQLite, so your talks
+come back after a restart — only the live slide index resets.
 
 Minimum terminal size is 80×24.
 

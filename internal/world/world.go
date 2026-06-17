@@ -74,6 +74,7 @@ type World struct {
 	decks     map[string]*Deck // player-authored presentation decks
 	deckOrder []string         // deck ids in creation order
 	deckSeq   int
+	persist   func(Deck) // optional: save a deck on create/edit (set by main)
 	guestSeq  int
 	pulse     bool
 	stop      chan struct{}
