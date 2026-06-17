@@ -28,24 +28,52 @@ const Seed = worldSeed
 
 func init() {
 	game.Register("wilds", "The Wilds", func(ctx *game.Ctx) game.Area {
-		return &area{ctx: ctx, gen: worldgen.New(worldSeed)}
+		return &area{ctx: ctx, gen: worldgen.New(worldSeed), discovered: map[[2]int]bool{}}
 	})
 }
 
+// Discovery: the overworld starts hidden and is revealed as the player walks.
+// sightR is the brightly-lit circle around the player; discoverR (a touch
+// wider) is the radius committed to memory, so explored ground stays visible —
+// dimmed — once you move on. Discovery is per-visit (in-memory for the session).
+const (
+	sightR    = 7
+	discoverR = 9
+)
+
 type area struct {
-	ctx     *game.Ctx
-	gen     *worldgen.Generator
-	wx, wy  int // absolute world position (top-left of the body's footprint)
-	frame   int
-	showMap bool
+	ctx        *game.Ctx
+	gen        *worldgen.Generator
+	wx, wy     int // absolute world position (top-left of the body's footprint)
+	frame      int
+	showMap    bool
+	discovered map[[2]int]bool // world cells the player has uncovered this visit
 }
 
 func (a *area) Name() string { return "The Wilds" }
 
 func (a *area) Init(*world.Player) tea.Cmd {
 	a.wx, a.wy = a.spawn()
+	a.reveal()
 	a.ctx.World.EnterArea(a.ctx.Name, "wilds", a.wx, a.wy, "The Wilds")
 	return nil
+}
+
+// reveal uncovers every cell within discoverR of the player's body center,
+// committing it to the discovered set so it stays visible after the player
+// moves on. Centered on the 2×2 footprint so the circle sits under the avatar.
+func (a *area) reveal() {
+	if a.discovered == nil {
+		a.discovered = map[[2]int]bool{}
+	}
+	cx, cy := a.wx+game.PlayerW/2, a.wy+game.PlayerH/2
+	for dy := -discoverR; dy <= discoverR; dy++ {
+		for dx := -discoverR; dx <= discoverR; dx++ {
+			if dx*dx+dy*dy <= discoverR*discoverR {
+				a.discovered[[2]int{cx + dx, cy + dy}] = true
+			}
+		}
+	}
 }
 
 // spawn finds an open footprint near the HQ gate (but not on a portal).
@@ -99,6 +127,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				break
 			}
 			a.wx, a.wy = nx, ny
+			a.reveal()
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
 				return game.Transition{To: portal}, nil
@@ -128,20 +157,45 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
 		for lx := 0; lx < vw; lx++ {
-			row[lx] = CellTile(a.gen.At(ox+lx, oy+ly))
+			wx, wy := ox+lx, oy+ly
+			if a.discovered[[2]int{wx, wy}] {
+				row[lx] = CellTile(a.gen.At(wx, wy))
+			} else {
+				row[lx] = fogTile() // the unexplored world stays hidden
+			}
 		}
 		tiles[ly] = row
 	}
 	return &game.TileMap{W: vw, H: vh, Tiles: tiles}, ox, oy
 }
 
+// fogColor is the near-black an unexplored cell shows in both renderers.
+const fogColor = "#0B0E13"
+
+// fogTile is a blank, dark cell for undiscovered ground — collision still reads
+// the real generator (see fits), so fog only hides terrain, it never blocks.
+func fogTile() game.Tile {
+	return game.Tile{Kind: game.TileFloor, Ch: ' ', Walkable: true,
+		Color: fogColor, Tex: game.TexFlat, Ground: fogColor}
+}
+
+// sightLight is the radial "discovery circle": bright on the player, fading to
+// the night floor at sightR so explored ground beyond it reads as dim memory.
+func (a *area) sightLight() game.Light {
+	return game.Light{X: a.wx + game.PlayerW/2, Y: a.wy + game.PlayerH/2, Radius: sightR}
+}
+
 // HDView implements game.HDViewer so the Wilds renders in HD pixel mode.
 func (a *area) HDView(vw, vh int) (*game.TileMap, int, int) { return a.sample(vw, vh) }
+
+// HDLight implements game.HDLighter so the HD renderer applies the same
+// discovery circle as the glyph view.
+func (a *area) HDLight() game.Light { return a.sightLight() }
 
 func (a *area) View(width, height int) string {
 	tm, ox, oy := a.sample(width, height)
 	players := a.ctx.World.PlayersInArea("wilds")
-	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, ox, oy, game.Light{})
+	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, ox, oy, a.sightLight())
 
 	if a.showMap {
 		panel := a.minimap()
@@ -202,8 +256,14 @@ func CellTile(c worldgen.Cell) game.Tile {
 // texForBiome maps an overworld biome to an HD ground texture.
 func texForBiome(b worldgen.Biome) game.TileTex {
 	switch b {
-	case worldgen.Grass, worldgen.Savanna, worldgen.Swamp:
+	case worldgen.Grass:
 		return game.TexGrass
+	case worldgen.Savanna:
+		return game.TexSavanna
+	case worldgen.Swamp:
+		return game.TexSwamp
+	case worldgen.Snow:
+		return game.TexSnow
 	case worldgen.Sand:
 		return game.TexSand
 	case worldgen.Water, worldgen.Deep:
@@ -212,7 +272,7 @@ func texForBiome(b worldgen.Biome) game.TileTex {
 		return game.TexForest
 	case worldgen.Hill, worldgen.Path:
 		return game.TexDirt
-	case worldgen.Mountain, worldgen.Snow:
+	case worldgen.Mountain:
 		return game.TexRock
 	default:
 		return game.TexFlat
@@ -265,6 +325,10 @@ func (a *area) minimap() string {
 			wy := a.wy + ry*stride
 			if rx == 0 && ry == 0 {
 				b.WriteString(th.Bright.Render("☺"))
+				continue
+			}
+			if !a.discovered[[2]int{wx, wy}] {
+				b.WriteByte(' ') // unexplored — the map fills in as you roam
 				continue
 			}
 			c := a.gen.At(wx, wy)

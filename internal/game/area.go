@@ -42,6 +42,13 @@ type HDViewer interface {
 	HDView(vw, vh int) (window *TileMap, originX, originY int)
 }
 
+// HDLighter lets an HD area supply a radial light — the Wilds uses it for the
+// discovery circle around the player. Areas that don't implement it render at
+// full brightness.
+type HDLighter interface {
+	HDLight() Light
+}
+
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The
 // Presentation Wing uses it to show the current slide on screen in HD (there
 // are no terminal cells in HD, so the markdown is rendered into the image). It

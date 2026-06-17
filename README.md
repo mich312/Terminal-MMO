@@ -73,6 +73,13 @@ spawn — `⌂` Durst HQ (the lobby), `P` Presentation, `K` Kraftwerk, `D` Demo
 Center — to enter each area. Players are multi-tile half-block avatars in their
 own color, drawn over a 2×2 footprint.
 
+The overworld starts **hidden** — only a circle of terrain around you is lit;
+the rest is fog. Walking uncovers new ground, which then stays visible (dimmed)
+on screen and fills in on the minimap (`m`), so the world is something you
+explore rather than see all at once. Climate-driven biomes — forest, savanna,
+snowfields and snow-capped peaks, wetlands, sand, hills — give each direction a
+distinct look, each with its own HD pixel-art ground texture.
+
 ### Presentation Wing
 
 The Presentation Wing is a concourse of stages that grows as people add talks.

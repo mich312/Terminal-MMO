@@ -34,7 +34,13 @@ Direction agreed with the team. Decisions locked:
 - ✅ Biome palettes & climate: domain-warped elevation/moisture for organic
   biome edges, plus a temperature field (colder with altitude) that adds
   snowfields, snow-capped peaks, warm-dry savanna and wet-low swamp to the
-  original water/sand/grass/forest/hill/mountain set.
+  original water/sand/grass/forest/hill/mountain set. Each climate biome has
+  its own hand-authored 6×6 HD ground texture (snow sparkle, dry savanna
+  flecks, swamp mud blotches).
+- ✅ Fog-of-war discovery: the Wilds starts hidden and reveals a circle around
+  the player as they walk (bright sight radius + dimmed explored memory + fog
+  beyond). Drives both the glyph and HD renderers and the minimap. Per-visit,
+  in-memory.
 - ⬜ Particles / weather layer.
 - ⬜ Directional / two-cell avatars with a drop shadow.
 

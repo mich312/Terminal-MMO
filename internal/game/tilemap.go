@@ -29,6 +29,10 @@ const (
 	TexDirt
 	TexForest
 	TexRock
+	// Climate surfaces for the overworld's richer biomes.
+	TexSnow    // bright drifts with sparse sparkle
+	TexSavanna // dry, sparse golden grass
+	TexSwamp   // murky mud blotches with algae sheen
 	// Indoor surfaces for the hand-built rooms.
 	TexFloor // subtly speckled interior floor
 	TexBrick // staggered brick courses, for walls

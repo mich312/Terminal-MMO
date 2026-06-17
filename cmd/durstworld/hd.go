@@ -176,7 +176,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		vh := clamp((rows-1)*cellH/hdScale, 8, min(hdMaxTile, hdMaxPxH/hdScale))
 		tm, ox, oy := hv.HDView(vw, vh)
 		cam := game.Camera{W: vw, H: vh}
-		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
+		light := game.Light{}
+		if l, ok := area.(game.HDLighter); ok {
+			light = l.HDLight() // the Wilds' discovery circle
+		}
+		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, light, ox, oy, hdScale, false, style)
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
 		// HD has no glyph layer, so slides are rasterized straight onto the image.
