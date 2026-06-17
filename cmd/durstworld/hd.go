@@ -181,8 +181,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		// Draw an area's on-screen text (a presentation slide) into the frame —
 		// HD has no glyph layer, so slides are rasterized straight onto the image.
 		if ov, ok := area.(game.HDOverlayer); ok {
-			if title, lines, footer, show := ov.HDSlide(); show {
-				pixel.DrawSlidePanel(img, title, lines, footer)
+			if src, footer, show := ov.HDSlide(); show {
+				pixel.DrawSlidePanel(img, src, footer)
 			}
 		}
 

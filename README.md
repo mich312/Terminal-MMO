@@ -70,7 +70,10 @@ own color, drawn over a 2×2 footprint.
 The Presentation Wing is a concourse of stages that grows as people add talks.
 Walk to the `＋` booth and press `e` to author a **markdown deck** in world
 (type or paste it; `---` separates slides) — it becomes a new stage with a big
-screen. Everyone standing in a stage sees the same slide; the deck's owner
+screen. Decks are GitHub-flavored Markdown: headings, **bold**/_italic_/
+~~strike~~, lists (incl. task lists), tables, blockquotes, links, and fenced
+code blocks with syntax highlighting (via chroma). They render both in the
+glyph client and — drawn as pixels with a bitmap font — in HD mode. Everyone standing in a stage sees the same slide; the deck's owner
 drives it with `n`/`p` from the `▟` lectern and can re-edit with `e`. Decks are
 owned by their author (your SSH username) and saved to SQLite, so your talks
 come back after a restart — only the live slide index resets.

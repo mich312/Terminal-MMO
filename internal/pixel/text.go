@@ -1,6 +1,7 @@
 package pixel
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -8,6 +9,8 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
+
+	"github.com/durst-group/durstworld/internal/markdown"
 )
 
 // fold maps the common non-ASCII punctuation that turns up in slides to ASCII,
@@ -25,6 +28,16 @@ func fold(s string) string {
 			b.WriteByte('\'')
 		case '…':
 			b.WriteString("...")
+		case '│', '┃', '┆', '┊':
+			b.WriteByte('|')
+		case '─', '━', '┄', '┈':
+			b.WriteByte('-')
+		case '┼', '├', '┤', '┬', '┴', '┌', '┐', '└', '┘', '╳':
+			b.WriteByte('+')
+		case '☐':
+			b.WriteString("[ ]")
+		case '☑', '☒':
+			b.WriteString("[x]")
 		default:
 			if r < 128 {
 				b.WriteRune(r)
@@ -82,10 +95,11 @@ func DrawText(dst *image.RGBA, x, y, scale int, s string, col color.Color) {
 	}
 }
 
-// DrawSlidePanel composites a presentation slide onto the frame: a translucent
-// dark card with an accent border, the deck title (accent), the slide body
-// (white) and a footer (dim), centered near the top so the avatar stays visible.
-func DrawSlidePanel(img *image.RGBA, title string, body []string, footer string) {
+// DrawSlidePanel composites a presentation slide onto the frame: the slide's
+// markdown (parsed and syntax-highlighted by the markdown package) drawn into a
+// translucent dark card with an accent border, plus a dim footer, centered near
+// the top so the avatar stays visible.
+func DrawSlidePanel(img *image.RGBA, src, footer string) {
 	W := img.Bounds().Dx()
 	scale := W / 360
 	if scale < 2 {
@@ -94,38 +108,28 @@ func DrawSlidePanel(img *image.RGBA, title string, body []string, footer string)
 	if scale > 5 {
 		scale = 5
 	}
-	white := color.RGBA{0xEC, 0xF1, 0xF8, 255}
-	accent := color.RGBA{0x7D, 0xF0, 0xFF, 255}
-	dim := color.RGBA{0x9A, 0xA3, 0xAD, 255}
-
-	type row struct {
-		s   string
-		col color.RGBA
+	cols := (W * 5 / 6) / (7 * scale)
+	if cols < 18 {
+		cols = 18
 	}
-	var rows []row
-	if title != "" {
-		rows = append(rows, row{fold(title), accent}, row{"", white})
+	if cols > 64 {
+		cols = 64
 	}
-	for _, l := range body {
-		rows = append(rows, row{fold(l), white})
-	}
+	lines := markdown.Render(src, cols)
 	if footer != "" {
-		rows = append(rows, row{"", white}, row{fold(footer), dim})
-	}
-	if len(rows) == 0 {
-		return
+		lines = append(lines, markdown.Line{}, markdown.Line{{Text: footer, Color: "#9AA3AD"}})
 	}
 
 	maxW := 0
-	for _, r := range rows {
-		if w := TextWidth(r.s, scale); w > maxW {
+	for _, ln := range lines {
+		if w := lineWidth(ln, scale); w > maxW {
 			maxW = w
 		}
 	}
 	pad := 5 * scale
 	lh := lineH * scale
 	pw := maxW + pad*2
-	ph := len(rows)*lh + pad*2
+	ph := len(lines)*lh + pad*2
 	if pw > W-6 {
 		pw = W - 6
 	}
@@ -137,11 +141,56 @@ func DrawSlidePanel(img *image.RGBA, title string, body []string, footer string)
 	fillCard(img, ox, oy, pw, ph)
 
 	ty := oy + pad
-	for _, r := range rows {
-		tx := ox + (pw-TextWidth(r.s, scale))/2
-		DrawText(img, tx, ty, scale, r.s, r.col)
+	for _, ln := range lines {
+		drawSpanLine(img, ox+pad, ty, scale, ln)
 		ty += lh
 	}
+}
+
+func lineWidth(ln markdown.Line, scale int) int {
+	w := 0
+	for _, sp := range ln {
+		w += TextWidth(fold(sp.Text), scale)
+	}
+	return w
+}
+
+func drawSpanLine(img *image.RGBA, x, y, scale int, ln markdown.Line) {
+	white := color.RGBA{0xEC, 0xF1, 0xF8, 255}
+	for _, sp := range ln {
+		txt := fold(sp.Text)
+		col := white
+		if sp.Color != "" {
+			col = hexRGBA(sp.Color)
+		}
+		DrawText(img, x, y, scale, txt, col)
+		w := TextWidth(txt, scale)
+		if sp.Strike {
+			sy := y + (13*scale)/2
+			for i := 0; i < w; i++ {
+				setIfInside(img, x+i, sy, col)
+			}
+		}
+		if sp.Underline {
+			uy := y + 12*scale
+			for i := 0; i < w; i++ {
+				setIfInside(img, x+i, uy, col)
+			}
+		}
+		x += w
+	}
+}
+
+func hexRGBA(s string) color.RGBA {
+	s = strings.TrimPrefix(s, "#")
+	if len(s) != 6 {
+		return color.RGBA{0xEC, 0xF1, 0xF8, 255}
+	}
+	var r, g, b int
+	if _, err := fmt.Sscanf(s, "%02x%02x%02x", &r, &g, &b); err != nil {
+		return color.RGBA{0xEC, 0xF1, 0xF8, 255}
+	}
+	return color.RGBA{uint8(r), uint8(g), uint8(b), 255}
 }
 
 // fillCard draws a translucent dark rectangle with a 2px accent border.
@@ -157,7 +206,7 @@ func fillCard(img *image.RGBA, x, y, w, h int) {
 			if i < 2 || j < 2 || i >= w-2 || j >= h-2 {
 				img.SetRGBA(px, py, border)
 			} else {
-				img.SetRGBA(px, py, blend(img.RGBAAt(px, py), bg, 0.9))
+				img.SetRGBA(px, py, blend(img.RGBAAt(px, py), bg, 0.95))
 			}
 		}
 	}

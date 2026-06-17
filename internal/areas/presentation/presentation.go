@@ -382,15 +382,15 @@ func (a *area) Hint() string {
 }
 
 // HDSlide implements game.HDOverlayer: when the player stands in a deck stage,
-// the current slide is drawn on the big screen in HD pixel mode.
-func (a *area) HDSlide() (string, []string, string, bool) {
+// the current slide's markdown is drawn on the big screen in HD pixel mode.
+func (a *area) HDSlide() (string, string, bool) {
 	st, ok := a.stageAt(a.X, a.Y)
 	if !ok || st.booth {
-		return "", nil, "", false
+		return "", "", false
 	}
 	d, ok := a.Ctx.World.GetDeck(st.deckID)
 	if !ok || len(d.Slides) == 0 {
-		return "", nil, "", false
+		return "", "", false
 	}
 	cur := d.Current
 	if cur < 0 {
@@ -399,11 +399,8 @@ func (a *area) HDSlide() (string, []string, string, bool) {
 	if cur > len(d.Slides)-1 {
 		cur = len(d.Slides) - 1
 	}
-	lines := ui.SlidePlain(d.Slides[cur], 40)
-	// The slide's own heading is the on-screen title; the deck name + position
-	// go in the footer, so it isn't shown twice.
 	footer := fmt.Sprintf("%s  ·  slide %d/%d  ·  %s", d.Title, cur+1, len(d.Slides), d.Owner)
-	return "", lines, footer, true
+	return d.Slides[cur], footer, true
 }
 
 func (a *area) View(width, height int) string {

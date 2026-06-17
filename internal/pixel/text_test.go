@@ -12,8 +12,8 @@ func TestTextWidthScales(t *testing.T) {
 }
 
 func TestDrawSlidePanelDrawsSomething(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 480, 320))
-	DrawSlidePanel(img, "", []string{"Hello world", "second line"}, "deck · slide 1/2 · anna")
+	img := image.NewRGBA(image.Rect(0, 0, 520, 360))
+	DrawSlidePanel(img, "# Hello\n\n- one\n- two\n\n```go\nx := 1\n```", "Deck · slide 1/2 · anna")
 	lit := false
 	for i := 0; i+3 < len(img.Pix); i += 4 {
 		if img.Pix[i]|img.Pix[i+1]|img.Pix[i+2] != 0 {

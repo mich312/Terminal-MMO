@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/durst-group/durstworld/internal/ui"
+	"github.com/durst-group/durstworld/internal/markdown"
 )
 
 // Deck is a player-authored markdown presentation. Decks are live, in-memory
@@ -85,7 +85,7 @@ func (w *World) LoadDeck(id, owner, title, source string, created time.Time) {
 	}
 	w.decks[id] = &Deck{
 		ID: id, Owner: owner, Title: title, Source: source,
-		Slides: ui.SplitSlides(source), Created: created,
+		Slides: markdown.SplitSlides(source), Created: created,
 	}
 	w.deckOrder = append(w.deckOrder, id)
 }
@@ -117,7 +117,7 @@ func (w *World) CreateDeck(owner, title, source string) string {
 	id := w.uniqueDeckID(title)
 	w.decks[id] = &Deck{
 		ID: id, Title: title, Owner: owner, Source: source,
-		Slides: ui.SplitSlides(source), Created: time.Now(),
+		Slides: markdown.SplitSlides(source), Created: time.Now(),
 	}
 	w.deckOrder = append(w.deckOrder, id)
 	w.broadcastToArea(presentArea, Event{Type: EventDeck, Player: owner, Area: presentArea, Detail: id})
@@ -142,7 +142,7 @@ func (w *World) UpdateDeck(id, by, title, source string) bool {
 		d.Title = t
 	}
 	d.Source = source
-	d.Slides = ui.SplitSlides(source)
+	d.Slides = markdown.SplitSlides(source)
 	if d.Current > len(d.Slides)-1 {
 		d.Current = len(d.Slides) - 1
 	}
