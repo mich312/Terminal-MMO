@@ -123,7 +123,8 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			Name:  name,
 			// per-session renderer: auto-detects the client's terminal and
 			// downsamples truecolor → 256 → 16 as needed.
-			Theme: ui.NewTheme(bm.MakeRenderer(s)),
+			Theme:     ui.NewTheme(bm.MakeRenderer(s)),
+			Inventory: st.LoadInventory(name),
 		}
 		m := game.NewModel(ctx, events, visit)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}

@@ -53,6 +53,26 @@ func TestDiscoveryRoundTrip(t *testing.T) {
 	}
 }
 
+// Inventory accumulates per item and collected cells are remembered.
+func TestInventoryAndCollected(t *testing.T) {
+	s := openTemp(t)
+	s.AddItem("ada", "berry")
+	s.AddItem("ada", "berry")
+	s.AddItem("ada", "shell")
+	inv := s.LoadInventory("ada")
+	if inv["berry"] != 2 || inv["shell"] != 1 {
+		t.Fatalf("inventory = %v, want berry:2 shell:1", inv)
+	}
+	if s.LoadCollected("ada")[[2]int{5, -9}] {
+		t.Fatal("(5,-9) should not be collected yet")
+	}
+	s.MarkCollected("ada", 5, -9)
+	s.MarkCollected("ada", 5, -9) // idempotent
+	if !s.LoadCollected("ada")[[2]int{5, -9}] {
+		t.Fatal("(5,-9) should be collected after marking")
+	}
+}
+
 // RecordAreaVisit appends new areas and dedupes repeats.
 func TestRecordAreaVisitAppendsAndDedupes(t *testing.T) {
 	s := openTemp(t)

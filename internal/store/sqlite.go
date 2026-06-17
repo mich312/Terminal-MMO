@@ -55,6 +55,18 @@ CREATE TABLE IF NOT EXISTS discovery (
 	mask INTEGER NOT NULL,
 	PRIMARY KEY (name, cx, cy)
 );
+CREATE TABLE IF NOT EXISTS inventory (
+	name  TEXT NOT NULL,
+	item  TEXT NOT NULL,
+	count INTEGER NOT NULL,
+	PRIMARY KEY (name, item)
+);
+CREATE TABLE IF NOT EXISTS collected (
+	name TEXT NOT NULL,
+	x    INTEGER NOT NULL,
+	y    INTEGER NOT NULL,
+	PRIMARY KEY (name, x, y)
+);
 `
 
 type sqliteStore struct {
@@ -161,6 +173,68 @@ func (s *sqliteStore) LoadDiscovery(name string) map[[2]int]uint64 {
 		var mask int64
 		if err := rows.Scan(&cx, &cy, &mask); err == nil {
 			out[[2]int{cx, cy}] = uint64(mask)
+		}
+	}
+	return out
+}
+
+// AddItem increments a player's count of one inventory item.
+func (s *sqliteStore) AddItem(name, item string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO inventory (name, item, count) VALUES (?, ?, 1)
+		 ON CONFLICT(name, item) DO UPDATE SET count = count + 1`,
+		name, item); err != nil {
+		log.Printf("store: add item: %v", err)
+	}
+}
+
+// LoadInventory returns a player's item counts.
+func (s *sqliteStore) LoadInventory(name string) map[string]int {
+	out := map[string]int{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT item, count FROM inventory WHERE name = ?`, name)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item string
+		var count int
+		if err := rows.Scan(&item, &count); err == nil {
+			out[item] = count
+		}
+	}
+	return out
+}
+
+// MarkCollected records that a player harvested the item at (x,y).
+func (s *sqliteStore) MarkCollected(name string, x, y int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO collected (name, x, y) VALUES (?, ?, ?)`,
+		name, x, y); err != nil {
+		log.Printf("store: mark collected: %v", err)
+	}
+}
+
+// LoadCollected returns the cells a player has already harvested.
+func (s *sqliteStore) LoadCollected(name string) map[[2]int]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT x, y FROM collected WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[[2]int]bool{}
+	for rows.Next() {
+		var x, y int
+		if err := rows.Scan(&x, &y); err == nil {
+			out[[2]int{x, y}] = true
 		}
 	}
 	return out

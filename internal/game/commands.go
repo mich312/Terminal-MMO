@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/durst-group/durstworld/internal/ui"
 )
@@ -74,6 +75,11 @@ func init() {
 			name: "goto", aliases: []string{"go"}, usage: "/goto <area>",
 			summary: "teleport to an area",
 			run:     cmdGoto,
+		},
+		{
+			name: "inventory", aliases: []string{"i", "inv"}, usage: "/inventory",
+			summary: "show the items you've collected",
+			run:     cmdInventory,
 		},
 		{
 			name: "clear", usage: "/clear",
@@ -302,6 +308,29 @@ func cmdGoto(m *Model, args []string) tea.Cmd {
 		}
 	}
 	return m.startTransition(dest)
+}
+
+func cmdInventory(m *Model, args []string) tea.Cmd {
+	inv := m.ctx.Inventory
+	total := 0
+	lines := make([]string, 0, len(Items))
+	for _, it := range Items {
+		n := inv[it.ID]
+		if n == 0 {
+			continue
+		}
+		total += n
+		glyph := m.theme.Fg(lipgloss.Color(it.Hex)).Render(string(it.Glyph))
+		lines = append(lines, fmt.Sprintf("%s  %s %s",
+			glyph, m.theme.ChatText.Render(padRight(it.Name, 14)),
+			m.theme.Accent.Render(fmt.Sprintf("×%d", n))))
+	}
+	if total == 0 {
+		m.addSystemLine("your pack is empty — explore the Wilds and press e on a ◆ to pick it up")
+		return nil
+	}
+	m.showInfoPanel(fmt.Sprintf("Inventory — %d", total), lines)
+	return nil
 }
 
 func cmdClear(m *Model, args []string) tea.Cmd {

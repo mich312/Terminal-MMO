@@ -134,7 +134,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 	}()
 
-	ctx := &game.Ctx{World: w, Store: st, Name: name}
+	ctx := &game.Ctx{World: w, Store: st, Name: name, Inventory: st.LoadInventory(name)}
 	areaID, area, hv := enterHD(ctx, "", "wilds")
 
 	cellW, cellH := hdCellSize(ptyReq.Window)
@@ -251,6 +251,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				} else {
 					area = next
 				}
+				draw()
+			} else if key == "e" { // pick up an item under the player
+				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 				draw()
 			}
 		case win = <-winCh:

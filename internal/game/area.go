@@ -68,6 +68,9 @@ type Ctx struct {
 	// Theme is the player's per-session, auto-detecting style set. Nil-safe:
 	// rendering falls back to ui.Default when unset (e.g. in tests).
 	Theme *ui.Theme
+	// Inventory is the session's collected items (id → count), shared between
+	// the Wilds pickup logic and the /inventory command. Loaded at join.
+	Inventory map[string]int
 }
 
 // Transition is a sentinel Area: returning it from Update tells the root

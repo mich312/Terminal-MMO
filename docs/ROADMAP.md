@@ -95,6 +95,19 @@ Direction agreed with the team. Decisions locked:
   "armed" latch so you can't bounce back through the portal you arrived from
   (a 2×2 body can't always stand on a wall-embedded portal tile).
 
+## Phase 5 — Items & inventory ✅
+
+- ✅ Collectibles scattered through the Wilds: a sparse, deterministic,
+  biome-appropriate roll (`internal/areas/wilds/items.go`) places `◆` items —
+  berries/mushrooms in forest, shells on sand, crystals in snow, nuggets in
+  hills. They render as glinting gems (HD) over the biome ground and only show
+  once you've discovered the ground they sit on.
+- ✅ Pickup with `e` (works in both the glyph and HD clients): harvests the item
+  under the 2×2 body into the player's pack, marks the cell collected so it's
+  gone for that player, and toasts the find. `/inventory` (`/i`) lists the haul.
+- ✅ Persistence: per-item counts and harvested cells survive disconnects
+  (store `inventory` + `collected` tables), loaded into `Ctx.Inventory` at join.
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**

@@ -65,6 +65,14 @@ type Store interface {
 	SaveDiscovery(name string, cx, cy int, mask uint64)
 	// LoadDiscovery returns a player's discovered chunks keyed by chunk coord.
 	LoadDiscovery(name string) map[[2]int]uint64
+	// AddItem increments a player's count of one inventory item by one.
+	AddItem(name, item string)
+	// LoadInventory returns a player's item counts (id → count), never nil.
+	LoadInventory(name string) map[string]int
+	// MarkCollected records that a player has picked up the item at (x,y).
+	MarkCollected(name string, x, y int)
+	// LoadCollected returns the world cells a player has already harvested.
+	LoadCollected(name string) map[[2]int]bool
 	Close() error
 }
 
@@ -100,4 +108,8 @@ func (noopStore) SavePosition(string, string, int, int)          {}
 func (noopStore) LoadPosition(string, string) (int, int, bool)   { return 0, 0, false }
 func (noopStore) SaveDiscovery(string, int, int, uint64)         {}
 func (noopStore) LoadDiscovery(string) map[[2]int]uint64         { return nil }
+func (noopStore) AddItem(string, string)                         {}
+func (noopStore) LoadInventory(string) map[string]int            { return map[string]int{} }
+func (noopStore) MarkCollected(string, int, int)                 {}
+func (noopStore) LoadCollected(string) map[[2]int]bool           { return nil }
 func (noopStore) Close() error                                   { return nil }

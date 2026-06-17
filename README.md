@@ -63,7 +63,7 @@ delta updates (only the changed region each frame). Background and rationale:
 | Shift + move | run (two tiles per step) |
 | m | toggle the minimap (in the Wilds) |
 | Enter | chat — heard within 8 tiles of where you stand |
-| e | sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
+| e | pick up a `◆` item in the Wilds · sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
 | n / p | next/previous slide while presenting from your lectern |
 | Tab | who's online |
 | q / Ctrl+C | quit (press twice) |
@@ -78,7 +78,11 @@ the rest is fog. Walking uncovers new ground, which then stays visible (dimmed)
 on screen and fills in on the minimap (`m`), so the world is something you
 explore rather than see all at once. Climate-driven biomes — forest, savanna,
 snowfields and snow-capped peaks, wetlands, sand, hills — give each direction a
-distinct look, each with its own HD pixel-art ground texture.
+distinct look, each with its own HD pixel-art ground texture. Scattered through
+them are `◆` **collectibles** — berries and mushrooms in the woods, shells on
+the beach, crystals in the snow — that you forage by standing on one and
+pressing `e`; `/inventory` (`/i`) shows your haul. Discovery, position and pack
+all persist across sessions.
 
 ### Presentation Wing
 

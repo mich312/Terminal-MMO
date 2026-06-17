@@ -56,6 +56,9 @@ type area struct {
 	showMap    bool
 	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
 	dirty      map[[2]int]bool   // chunks changed since the last persist
+	collected  map[[2]int]bool   // world cells whose item this player has taken
+	toast      string            // transient pickup feedback
+	toastAt    int               // frame the toast was set
 }
 
 func (a *area) Name() string { return "The Wilds" }
@@ -66,6 +69,13 @@ func (a *area) Init(*world.Player) tea.Cmd {
 		a.discovered = map[[2]int]uint64{}
 	}
 	a.dirty = map[[2]int]bool{}
+	a.collected = a.ctx.Store.LoadCollected(a.ctx.Name)
+	if a.collected == nil {
+		a.collected = map[[2]int]bool{}
+	}
+	if a.ctx.Inventory == nil {
+		a.ctx.Inventory = map[string]int{}
+	}
 	a.wx, a.wy = a.resume()
 	a.reveal()
 	a.persist()
@@ -166,6 +176,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			a.showMap = !a.showMap
 			return a, nil
 		}
+		if msg.String() == "e" {
+			a.pickUp()
+			return a, nil
+		}
 		if a.showMap {
 			a.showMap = false // any other key closes the map
 		}
@@ -199,8 +213,42 @@ func (a *area) Hint() string {
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
 	}
+	if it, _, _, ok := a.itemUnderBody(); ok {
+		return "e — take " + it.Name
+	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
+}
+
+// itemUnderBody returns the first uncollected item beneath the 2×2 footprint.
+func (a *area) itemUnderBody() (game.Item, int, int, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			x, y := a.wx+dx, a.wy+dy
+			if a.collected[[2]int{x, y}] {
+				continue
+			}
+			if it, ok := itemAt(a.gen.At(x, y), x, y); ok {
+				return it, x, y, true
+			}
+		}
+	}
+	return game.Item{}, 0, 0, false
+}
+
+// pickUp harvests an item under the player: into the inventory, marked
+// collected (so it's gone for this player), and persisted.
+func (a *area) pickUp() {
+	it, x, y, ok := a.itemUnderBody()
+	if !ok {
+		return
+	}
+	a.collected[[2]int{x, y}] = true
+	a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
+	a.ctx.Inventory[it.ID]++
+	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
+	a.toast = "＋ " + it.Name
+	a.toastAt = a.frame
 }
 
 // sample builds a vw×vh window of the overworld centered on the player and
@@ -216,7 +264,15 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 		for lx := 0; lx < vw; lx++ {
 			wx, wy := ox+lx, oy+ly
 			if a.seen(wx, wy) {
-				row[lx] = CellTile(a.gen.At(wx, wy))
+				cell := a.gen.At(wx, wy)
+				t := CellTile(cell)
+				if !a.collected[[2]int{wx, wy}] {
+					if it, ok := itemAt(cell, wx, wy); ok {
+						t.Ch, t.Color = it.Glyph, it.Hex
+						t.Prop, t.PropHex = game.PropGem, it.Hex // glints in HD
+					}
+				}
+				row[lx] = t
 			} else {
 				row[lx] = fogTile() // the unexplored world stays hidden
 			}
@@ -258,9 +314,19 @@ func (a *area) View(width, height int) string {
 		panel := a.minimap()
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
+	} else if a.frame-a.toastAt < toastFrames && a.toast != "" {
+		th := a.ctx.Theme
+		if th == nil {
+			th = ui.Default
+		}
+		line := th.Toast.Render(a.toast)
+		view = ui.Overlay(view, line, (width-lipgloss.Width(line))/2, 1)
 	}
 	return view
 }
+
+// toastFrames is how long a pickup toast lingers (~3s at the tick rate).
+const toastFrames = 36
 
 // CellTile converts a generated overworld cell into a renderable tile. It is
 // the single source of truth for the Wilds, shared by the glyph and HD
