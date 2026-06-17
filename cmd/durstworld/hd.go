@@ -33,7 +33,10 @@ import (
 // just the Wilds: walk through a portal and the destination renders in pixels
 // too. It shares the live world, so HD and bubbletea players see each other.
 const (
-	hdScale   = 36 // pixels per tile — larger on-screen tiles
+	// hdScale is pixels per tile. Smaller tiles show twice as much world per axis
+	// versus the old 36: the render buffer is pixel-bounded (hdMaxPxW/H), so a
+	// lower scale is free — the player just sees far more of their surroundings.
+	hdScale   = 18
 	hdFPS     = 12
 	hdRefresh = 48 // frames between full repaints
 	hdMaxTile = 140

@@ -48,11 +48,12 @@ func TestLandmarkPortals(t *testing.T) {
 }
 
 // The forced trails must connect the spawn to every wing's door for ANY seed —
-// the regression guard for "spawned boxed in by forest". A 2×2 body walks the
-// overworld, so reachability is computed over footprint-walkable cells (all
-// four cells of the body must be clear), exactly like the live movement code.
+// the regression guard for "spawned boxed in by forest". The live player is a
+// 1×1 body, but reachability is computed over a conservative 2×2 footprint (all
+// four cells clear): if a 2-wide body can reach every landmark, the actual
+// 1-wide body certainly can, so this keeps the stronger corridor guarantee.
 func TestSpawnReachesEveryLandmark(t *testing.T) {
-	const body = 2 // PlayerW/PlayerH (kept local: worldgen is a leaf package)
+	const body = 2 // conservative footprint; live PlayerW/PlayerH is 1
 	footprintWalkable := func(g *Generator, x, y int) bool {
 		for dy := 0; dy < body; dy++ {
 			for dx := 0; dx < body; dx++ {

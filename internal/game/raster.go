@@ -41,7 +41,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	}
 
-	grid := buildGrid(th, tm, cam, light, frame)
+	grid := buildGrid(th, tm, cam, light, frame, originX, originY)
 	cols := make([][]colorful.Color, cam.H)
 	texs := make([][]TileTex, cam.H)
 	props := make([][]TileProp, cam.H)
@@ -67,7 +67,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			// A prop's ground is colored separately from the glyph's color so the
 			// flower-glyph stays red in the text renderer while HD draws grass.
 			if t.Ground != "" {
-				cols[y][x] = applyLight(style.tint(t.Ground), tx, ty, light)
+				cols[y][x] = applyLight(style.tint(t.Ground), originX+x, originY+y, light)
 			}
 			if t.Prop != PropNone {
 				ph := t.PropHex
@@ -175,14 +175,15 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 	body := playerColor(p.Color)
 	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, wf)
 	bw, bh := len([]rune(bmp[0])), len(bmp)
-	// Integer pixel size keeps edges sharp; aim for ~2 tiles tall.
-	k := (PlayerH * scale) / bh
+	// Integer pixel size keeps edges sharp; aim for ~AvatarTilesTall tiles tall,
+	// independent of the (1×1) collision footprint.
+	k := (AvatarTilesTall * scale) / bh
 	if k < 1 {
 		k = 1
 	}
 	destW, destH := bw*k, bh*k
 
-	centerX := (fc + PlayerW/2) * scale
+	centerX := fc*scale + (PlayerW*scale)/2
 	bottomEdge := (fr + PlayerH) * scale
 	left := centerX - destW/2
 	top := bottomEdge - destH

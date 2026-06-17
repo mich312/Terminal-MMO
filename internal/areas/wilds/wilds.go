@@ -43,9 +43,12 @@ func init() {
 // into a uint64 bitmask — so a fully-explored chunk costs 8 bytes while a
 // frontier chunk still keeps exact per-tile bits. Chunks persist to the store,
 // so the map (and the player's position) survive disconnects and re-entry.
+// Radii are sized so the on-screen lit pool stays roughly constant after the
+// view zoomed out (tiles render smaller now): doubling them keeps the bright
+// circle the same apparent size while you see twice as much world around it.
 const (
-	sightR    = 7
-	discoverR = 9
+	sightR    = 14
+	discoverR = 18
 	chunkN    = 8 // cells per chunk side; 8×8 = 64 = one uint64 mask
 )
 

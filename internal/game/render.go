@@ -12,12 +12,19 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// PlayerW, PlayerH is a player's collision footprint in tiles. Avatars are
-// drawn as larger half-block sprites overhanging this footprint.
+// PlayerW, PlayerH is a player's collision footprint in tiles — a single cell,
+// so the player slips through any one-tile gap, doorway or corridor. Avatars are
+// drawn as larger sprites overhanging this footprint (see AvatarTilesTall), so
+// the body still reads big without needing a big opening to move through.
 const (
-	PlayerW = 2
-	PlayerH = 2
+	PlayerW = 1
+	PlayerH = 1
 )
+
+// AvatarTilesTall is how many tiles tall a drawn avatar appears. The art is
+// deliberately larger than the 1×1 collision footprint and overhangs it, so the
+// visual size is decoupled from how much room the player needs to walk.
+const AvatarTilesTall = 2
 
 // Camera is the window of a (possibly larger-than-screen) map that is drawn.
 type Camera struct {
@@ -103,13 +110,17 @@ func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, f
 	if cam.W <= 0 || cam.H <= 0 {
 		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	}
-	grid := buildGrid(th, tm, cam, light, frame)
+	grid := buildGrid(th, tm, cam, light, frame, originX, originY)
 	stampPlayers(grid, th, players, self, frame, originX, originY)
 	return serializeGrid(th, grid)
 }
 
 // buildGrid lays the terrain into a cell grid with day/night tint and lighting.
-func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) [][]rcell {
+// Tiles are indexed camera-relative, but the radial light is evaluated in world
+// coordinates (originX/originY + cell), so windows whose camera sits at (0,0)
+// while carrying an absolute origin — like the Wilds — light up under the player
+// instead of near the world origin.
+func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame, originX, originY int) [][]rcell {
 	ambHex, ambStr := ui.Ambient(ui.Now())
 	amb := mustHex(ambHex)
 	base := map[TileKind]colorful.Color{
@@ -136,7 +147,7 @@ func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) []
 				continue
 			}
 			ch, col, bold := tileLook(t, frame, base, labelC, portalC, amb, ambStr)
-			col = applyLight(col, x, y, light)
+			col = applyLight(col, originX+vx, originY+vy, light)
 			grid[vy][vx] = rcell{ch: ch, fg: col, bold: bold}
 		}
 	}
