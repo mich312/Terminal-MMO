@@ -22,6 +22,7 @@ const (
 	Path
 	Snow
 	Savanna
+	Swamp
 )
 
 // Cell is one generated tile: how it looks, whether it blocks movement, and
@@ -124,8 +125,10 @@ func (g *Generator) At(x, y int) Cell {
 			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
 	case elev < 0.38: // beach
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
-	case elev < 0.70: // lowland — climate decides forest / grassland / savanna
+	case elev < 0.70: // lowland — climate decides the cover
 		switch {
+		case elev < 0.46 && moist > 0.62 && temp > 0.45:
+			return swampCell(g, x, y) // warm, wet, low: wetlands by the water
 		case moist > 0.52:
 			return forestCell(g, x, y)
 		case temp > 0.60 && moist < 0.44:
@@ -200,6 +203,21 @@ func savannaCell(g *Generator, x, y int) Cell {
 		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
 	case r < 0.22:
 		c.Glyph, c.Color = ',', "#C9B85F" // a clump of dry grass
+	}
+	return c
+}
+
+// swampCell is warm, low, waterlogged ground: murky green flats with reeds,
+// hummocks and the odd shallow pool. Stays walkable — boggy, not impassable.
+func swampCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Swamp, Glyph: '·', Color: "#4A5A3A", Walkable: true}
+	switch r := g.prop(x, y); {
+	case r < 0.12:
+		c.Glyph, c.Color = ',', "#6B7A3A" // reeds
+	case r < 0.18:
+		c.Glyph, c.Color = 'o', "#3A5A3A" // a mossy hummock
+	case r < 0.24:
+		c.Glyph, c.Color = '~', "#3E5E55" // a stagnant pool
 	}
 	return c
 }
