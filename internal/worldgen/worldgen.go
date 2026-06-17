@@ -19,6 +19,7 @@ const (
 	Forest
 	Hill
 	Mountain
+	Path
 )
 
 // Cell is one generated tile: how it looks, whether it blocks movement, and
@@ -89,6 +90,12 @@ func (g *Generator) At(x, y int) Cell {
 			return grassCell(g, x, y)
 		}
 	}
+	// Forced walkable trails wire the HQ plaza to every wing. Without them a
+	// player could spawn boxed in by forest/water, since the clearings above are
+	// isolated discs and the terrain between them is otherwise pure noise.
+	if onPath(x, y) {
+		return pathCell(g, x, y)
+	}
 
 	elev := g.fbm(x, y, 0x1, 0.045, 4)
 	moist := g.fbm(x, y, 0x9E37, 0.03, 3)
@@ -139,14 +146,37 @@ func grassCell(g *Generator, x, y int) Cell {
 
 func forestCell(g *Generator, x, y int) Cell {
 	switch r := g.prop(x, y); {
-	case r < 0.42: // a tree — blocks movement (color varies; some autumn)
+	case r < 0.28: // a tree — blocks movement (color varies; some autumn)
 		return Cell{Biome: Forest, Glyph: '♣', Color: treeColor(g.prop2(x, y))}
-	case r < 0.48: // a stump
+	case r < 0.36: // a stump
 		return Cell{Biome: Forest, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
-	case r < 0.56: // undergrowth bush
+	case r < 0.50: // undergrowth bush
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
 	return Cell{Biome: Forest, Glyph: '·', Color: "#3F8A5A", Walkable: true}
+}
+
+// onPath reports whether (x,y) lies on a forced trail: a 3-wide walkable band
+// along the axes between the origin (Durst HQ) and each landmark, so the spawn
+// plaza is always connected to every wing's door regardless of seed.
+func onPath(x, y int) bool {
+	if abs(y) <= 1 && x >= -16 && x <= 16 { // HQ ↔ Kraftwerk / Presentation
+		return true
+	}
+	if abs(x) <= 1 && y >= 0 && y <= 12 { // HQ ↔ Demo Center
+		return true
+	}
+	return false
+}
+
+// pathCell is the worn-dirt trail surface, with the occasional cobble for
+// texture. Always walkable.
+func pathCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Path, Glyph: '·', Color: "#9B8B6A", Walkable: true}
+	if g.prop(x, y) < 0.12 {
+		c.Glyph, c.Color = '∘', "#857653" // a cobble
+	}
+	return c
 }
 
 func hillCell(g *Generator, x, y int) Cell {

@@ -210,7 +210,7 @@ func texForBiome(b worldgen.Biome) game.TileTex {
 		return game.TexWater
 	case worldgen.Forest:
 		return game.TexForest
-	case worldgen.Hill:
+	case worldgen.Hill, worldgen.Path:
 		return game.TexDirt
 	case worldgen.Mountain:
 		return game.TexRock
@@ -232,6 +232,8 @@ func groundColor(b worldgen.Biome) string {
 		return "#E6D6A0"
 	case worldgen.Mountain:
 		return "#9AA0A8"
+	case worldgen.Path:
+		return "#9B8B6A"
 	default:
 		return ""
 	}
