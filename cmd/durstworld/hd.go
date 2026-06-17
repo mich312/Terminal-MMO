@@ -159,9 +159,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 	}()
 
+	fw := &pixel.FrameWriter{Kitty: useKitty, CellW: cellW, CellH: cellH}
 	var (
-		prev       []byte
-		pw, ph     int
 		frame      int
 		sent       int
 		framesSent int
@@ -179,48 +178,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		tm := hdWindow(gen, ox, oy, vw, vh)
 		cam := game.Camera{W: vw, H: vh}
 		img := game.RenderRGBA(nil, tm, w.PlayersInArea("wilds"), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
-		W, H := img.Bounds().Dx(), img.Bounds().Dy()
 
-		doFull := prev == nil || W != pw || H != ph || frame%hdRefresh == 0
-		if !doFull {
-			if r, changed := pixel.DirtyRect(prev, img.Pix, W, H); !changed {
-				// nothing moved — send nothing
-			} else if r.Dx()*r.Dy() > W*H/2 {
-				doFull = true
-			} else {
-				sr := pixel.SnapToCells(r, cellW, cellH, W, H)
-				crop := pixel.Crop(img, sr)
-				var sub []byte
-				if useKitty {
-					sub = pixel.EncodeKitty(crop, 0, 0)
-				} else {
-					sub = pixel.EncodeSixel(crop, false)
-				}
-				out.WriteString("\x1b7")
-				fmt.Fprintf(out, "\x1b[%d;%dH", sr.Min.Y/cellH+1, sr.Min.X/cellW+1)
-				out.Write(sub)
-				out.WriteString("\x1b8")
-				sent += len(sub)
-			}
-		}
-		if doFull {
-			out.WriteString("\x1b7\x1b[H")
-			if useKitty {
-				out.WriteString("\x1b_Ga=d\x1b\\") // reclaim prior placements before the full repaint
-				full := pixel.EncodeKitty(img, 0, 0)
-				out.Write(full)
-				sent += len(full)
-			} else {
-				full := pixel.EncodeSixel(img, false)
-				out.Write(full)
-				sent += len(full)
-			}
-			out.WriteString("\x1b8")
-		}
+		sent += fw.WriteFrame(out, img, frame%hdRefresh == 0)
 		out.Flush()
-
-		prev = append(prev[:0], img.Pix...)
-		pw, ph = W, H
 		framesSent++
 	}
 
@@ -276,7 +236,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				draw()
 			}
 		case win = <-winCh:
-			prev = nil // size changed → force a full repaint
+			fw.Reset() // size changed → force a full repaint
 			out.WriteString("\x1b[2J")
 			draw()
 		case <-ticker.C:
