@@ -152,7 +152,9 @@ func (a *area) Hint() string {
 // returns it with its absolute top-left origin. Shared by the glyph View and
 // the HD pixel renderer.
 func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
-	ox, oy := a.wx-vw/2, a.wy-vh/2
+	// Center the 2×2 body (not its top-left corner) in the window, so the avatar
+	// sits dead center in both the glyph and HD views.
+	ox, oy := a.wx-(vw-game.PlayerW)/2, a.wy-(vh-game.PlayerH)/2
 	tiles := make([][]game.Tile, vh)
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
