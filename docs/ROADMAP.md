@@ -129,6 +129,11 @@ straight onto the RGBA frame with basicfont (ASCII).
   single keys since HD has no command line; arrows navigate/edit, `q` closes.
   The avatar customization is shared with the glyph panel
   (`game.CycleAvatarField`) so both clients stay in sync.
+- ✅ HD **chat**: world events are formatted (`game.HDChatLine`) and drawn as a
+  fading log above the HUD with per-speaker colors; `Enter` opens a text input
+  (`/me`, `/w`, `/goto` plus plain proximity chat). Events are now handled in
+  the HD select loop instead of being drained, so HD players see joins, chat,
+  emotes and whispers — full UI parity with the glyph client.
 
 ## Parked polish
 

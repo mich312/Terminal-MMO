@@ -54,7 +54,7 @@ func DrawHUD(img *image.RGBA, areaName, hint string) {
 		pixel.DrawText(img, 4*s+pixel.TextWidth(areaName+"  ", s), y, s, asciiOnly(hint), hudWhite)
 	}
 	pixel.DrawText(img, 4*s, y+lh, s,
-		"WASD move  e pick  c char  i bag  q quit", hudDim)
+		"move  e pick  enter chat  c char  i bag  q quit", hudDim)
 }
 
 // panelBox centers a pw×ph panel, clamping it on-screen.
@@ -195,6 +195,72 @@ func DrawInventoryPanel(img *image.RGBA, ctx *Ctx) {
 	y += lh / 2
 	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
 }
+
+// HDLine is one rendered chat line for the HD log: text plus its color.
+type HDLine struct {
+	Text string
+	Col  color.RGBA
+}
+
+// hdChatLines is how many recent chat lines the HD log shows.
+const hdChatLines = 6
+
+// HDChatLine formats a world event as an HD chat line; ok is false for events
+// that don't belong in chat (ticks, moves, the player's own join).
+func HDChatLine(ev world.Event, self string) (HDLine, bool) {
+	switch ev.Type {
+	case world.EventChat:
+		return HDLine{ev.Player + ": " + ev.Detail, lipToRGBA(ui.AvatarColor(ev.Player))}, true
+	case world.EventEmote:
+		return HDLine{"* " + ev.Player + " " + ev.Detail, hudAccent}, true
+	case world.EventWhisper:
+		return HDLine{ev.Player + " whispers: " + ev.Detail, hudToast}, true
+	case world.EventJoined:
+		if ev.Player != self {
+			return HDLine{"- " + ev.Player + " arrived", hudDim}, true
+		}
+	case world.EventLeft:
+		if ev.Player != self {
+			if ev.Detail != "" {
+				return HDLine{"- " + ev.Player + " -> " + ev.Detail, hudDim}, true
+			}
+			return HDLine{"- " + ev.Player + " left", hudDim}, true
+		}
+	}
+	return HDLine{}, false
+}
+
+// DrawChat overlays the recent chat lines (and, when active, the input line)
+// just above the HUD bar.
+func DrawChat(img *image.RGBA, lines []HDLine, active bool, input string) {
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	barH := 2*lh + 4*s // keep in step with DrawHUD
+	if len(lines) > hdChatLines {
+		lines = lines[len(lines)-hdChatLines:]
+	}
+
+	bottom := H - barH
+	if active {
+		iy := bottom - lh - 2*s
+		pixel.Shade(img, 0, iy, W, lh+2*s, 0.85)
+		pixel.DrawText(img, 4*s, iy+s, s, "> "+asciiOnly(input)+"_", hudWhite)
+		bottom = iy
+	}
+	if len(lines) == 0 {
+		return
+	}
+	blockH := len(lines)*lh + 2*s
+	pixel.Shade(img, 0, bottom-blockH, W*3/4, blockH, 0.5)
+	y := bottom - lh
+	for i := len(lines) - 1; i >= 0; i-- {
+		pixel.DrawText(img, 4*s, y, s, asciiOnly(lines[i].Text), lines[i].Col)
+		y -= lh
+	}
+}
+
+func lipToRGBA(c lipgloss.Color) color.RGBA { return colorfulToRGBA(playerColor(c)) }
 
 // drawAvatarInto rasterizes a front-facing avatar (style + accessory + color)
 // into the frame at (x,y), each sprite pixel scaled by scale.

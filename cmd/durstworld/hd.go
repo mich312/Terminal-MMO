@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"image/color"
 	"log"
 	"math/rand"
 	"strings"
@@ -142,11 +143,6 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		st.RecordDisconnect(name)
 		log.Printf("%s disconnected (HD)", name)
 	}()
-	go func() { // HD polls the world each frame; drain presence events so senders never block
-		for range events {
-		}
-	}()
-
 	ctx := &game.Ctx{World: w, Store: st, Name: name,
 		Inventory: st.LoadInventory(name), Hats: st.LoadHats(name)}
 	areaID, area, hv := enterHD(ctx, "", "wilds")
@@ -181,7 +177,20 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		start      = time.Now()
 		uiPanel    = hdPanelNone // which on-frame UI panel is open
 		uiField    int           // selected field in the character panel
+		chatLog    []game.HDLine // recent chat lines
+		chatInput  string        // text being typed
+		chatActive bool          // chat input has focus
+		lastChat   time.Time     // when the log last changed (for idle fade)
 	)
+	hudDim := color.RGBA{0x9A, 0xA3, 0xAD, 0xFF}
+	hudAccent := color.RGBA{0x2E, 0x8B, 0xFF, 0xFF}
+	appendChat := func(ln game.HDLine) {
+		chatLog = append(chatLog, ln)
+		if len(chatLog) > 50 {
+			chatLog = chatLog[len(chatLog)-50:]
+		}
+		lastChat = time.Now()
+	}
 
 	draw := func() {
 		cols, rows := win.Width, win.Height
@@ -218,6 +227,13 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				game.DrawToast(img, msg)
 			}
 		}
+		// Chat log + input, fading out when idle so the scene stays clear.
+		var shownChat []game.HDLine
+		if chatActive || time.Since(lastChat) < 12*time.Second {
+			shownChat = chatLog
+		}
+		game.DrawChat(img, shownChat, chatActive, chatInput)
+
 		switch uiPanel {
 		case hdPanelChar:
 			game.DrawCharPanel(img, ctx, uiField)
@@ -281,6 +297,48 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		return true // a panel swallows everything else
 	}
 
+	// sendChat handles a submitted chat line: plain text is proximity chat, a
+	// leading "/" runs the handful of world commands HD supports (the panels
+	// cover the rest). The sender sees their own chat/emote echoed via the world
+	// event stream; whispers are echoed locally here since the world doesn't.
+	sendChat := func(text string) {
+		if !strings.HasPrefix(text, "/") {
+			w.Chat(name, text)
+			return
+		}
+		f := strings.Fields(text[1:])
+		if len(f) == 0 {
+			return
+		}
+		switch strings.ToLower(f[0]) {
+		case "me":
+			if len(f) > 1 {
+				w.Emote(name, strings.Join(f[1:], " "))
+			}
+		case "w", "tell", "msg", "whisper":
+			if len(f) > 2 {
+				to, msg := f[1], strings.Join(f[2:], " ")
+				if w.Whisper(name, to, msg) {
+					appendChat(game.HDLine{Text: "-> " + to + ": " + msg, Col: hudAccent})
+				} else {
+					appendChat(game.HDLine{Text: to + " is not online", Col: hudDim})
+				}
+			}
+		case "goto", "go":
+			if len(f) > 1 {
+				if dest := strings.ToLower(f[1]); dest != areaID && game.AreaRegistered(dest) {
+					fw.Reset()
+					out.WriteString("\x1b[2J")
+					areaID, area, hv = enterHD(ctx, areaID, dest)
+				} else {
+					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
+				}
+			}
+		default:
+			appendChat(game.HDLine{Text: "try chat, /me, /w <name> msg, /goto <area>", Col: hudDim})
+		}
+	}
+
 	draw()
 	ticker := time.NewTicker(time.Second / hdFPS)
 	defer ticker.Stop()
@@ -293,6 +351,32 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case b, ok := <-keys:
 			if !ok {
 				return
+			}
+			if chatActive { // typing a chat line: capture the byte, skip game keys
+				switch {
+				case b == 3: // Ctrl-C still quits
+					hud()
+					return
+				case b == '\r' || b == '\n':
+					text := strings.TrimSpace(chatInput)
+					chatActive, chatInput = false, ""
+					if text != "" {
+						sendChat(text)
+					}
+					draw()
+				case b == 0x7f || b == 0x08: // backspace
+					if n := len(chatInput); n > 0 {
+						chatInput = chatInput[:n-1]
+					}
+					draw()
+				case b == 0x1b: // esc cancels
+					chatActive, chatInput = false, ""
+					draw()
+				case b >= 0x20 && b < 0x7f:
+					chatInput += string(b)
+					draw()
+				}
+				continue
 			}
 			var key string
 			switch {
@@ -339,6 +423,27 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				draw()
 			} else if key == "e" { // pick up an item under the player
 				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+				draw()
+			} else if key == "\r" || key == "\n" { // open chat
+				chatActive, chatInput = true, ""
+				draw()
+			} else if key == "/" { // open chat pre-filled for a command
+				chatActive, chatInput = true, "/"
+				draw()
+			}
+		case ev, ok := <-events:
+			if !ok {
+				events = nil // world closed this stream; stop selecting on it
+				continue
+			}
+			if ln, show := game.HDChatLine(ev, name); show {
+				appendChat(ln)
+				draw()
+			}
+			// Presentation needs slide/deck events to rebuild; other areas poll
+			// the world each frame, so they don't.
+			if ev.Type == world.EventSlide || ev.Type == world.EventDeck {
+				area, _ = area.Update(game.WorldEventMsg(ev))
 				draw()
 			}
 		case win = <-winCh:

@@ -51,11 +51,13 @@ ssh -t -p 2222 you@localhost glyph   # classic half-block client
 WASD or arrow keys to move, `Y U B N` for diagonals, Shift/uppercase to run,
 `e` to pick things up, `q` to quit. It shares the live world, so you and
 glyph-client players see each other. Because HD is the default client, the
-**UI is drawn into the pixel frame**: a status/hint bar, pickup toasts, and
-single-key panels — `c` opens the interactive **character** editor (arrows to
-cycle body / color / hat) and `i` opens your **inventory**. It bypasses
-bubbletea and streams sixel with delta updates (only the changed region each
-frame). Background and rationale: [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
+**UI is drawn into the pixel frame**: a status/hint bar, pickup toasts,
+**chat** (`Enter` to type — plain text, or `/me`, `/w`, `/goto`; the log shows
+recent lines and fades when idle), and single-key panels — `c` opens the
+interactive **character** editor (arrows to cycle body / color / hat) and `i`
+opens your **inventory**. It bypasses bubbletea and streams sixel with delta
+updates (only the changed region each frame). Background and rationale:
+[`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 
 ### Controls
 
