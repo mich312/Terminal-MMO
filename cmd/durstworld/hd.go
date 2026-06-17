@@ -12,23 +12,24 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 
-	"github.com/durst-group/durstworld/internal/areas/wilds"
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
-	"github.com/durst-group/durstworld/internal/worldgen"
 )
 
-// HD ("real pixel") mode is an experimental sixel renderer for the Wilds,
-// reachable with:  ssh -t -p 2222 you@host hd
+// HD ("real pixel") mode is an experimental sixel/kitty renderer, reachable
+// with:  ssh -t -p 2222 you@host hd
 //
 // It deliberately bypasses bubbletea — image escapes are out-of-band and would
-// fight bubbletea's frame diffing — and writes sixel frames straight to the SSH
-// session. It shares the live world (the same world.World, the same Wilds seed),
-// so you and bubbletea players see each other. The point is to feel real SSH
-// performance: latency, bandwidth, and framerate on an actual connection.
+// fight bubbletea's frame diffing — and writes graphics frames straight to the
+// SSH session. It drives the same game.Area objects as the glyph client (so it
+// reuses their spawn, movement and portal logic) and works in every area, not
+// just the Wilds: walk through a portal and the destination renders in pixels
+// too. It shares the live world, so HD and bubbletea players see each other.
 const (
 	hdScale   = 36 // pixels per tile — larger on-screen tiles
 	hdFPS     = 12
@@ -133,9 +134,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 	}()
 
-	gen := worldgen.New(wilds.Seed)
-	px, py := hdSpawn(gen)
-	w.EnterArea(name, "wilds", px, py, "The Wilds")
+	ctx := &game.Ctx{World: w, Store: st, Name: name}
+	areaID, area, hv := enterHD(ctx, "", "wilds")
 
 	cellW, cellH := hdCellSize(ptyReq.Window)
 	win := ptyReq.Window
@@ -174,10 +174,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 		vw := clamp(cols*cellW/hdScale, 8, min(hdMaxTile, hdMaxPxW/hdScale))
 		vh := clamp((rows-1)*cellH/hdScale, 8, min(hdMaxTile, hdMaxPxH/hdScale))
-		ox, oy := px-vw/2, py-vh/2
-		tm := hdWindow(gen, ox, oy, vw, vh)
+		tm, ox, oy := hv.HDView(vw, vh)
 		cam := game.Camera{W: vw, H: vh}
-		img := game.RenderRGBA(nil, tm, w.PlayersInArea("wilds"), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
+		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
 
 		sent += fw.WriteFrame(out, img, frame%hdRefresh == 0)
 		out.Flush()
@@ -231,8 +230,15 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			default:
 				key = string(b)
 			}
-			if key != "" && hdMove(gen, &px, &py, key) {
-				w.Move(name, px, py)
+			if km, ok := moveKeyMsg(key); ok {
+				next, _ := area.Update(km)
+				if t, isTransition := next.(game.Transition); isTransition {
+					fw.Reset() // new scene → full repaint
+					out.WriteString("\x1b[2J")
+					areaID, area, hv = enterHD(ctx, areaID, t.To)
+				} else {
+					area = next
+				}
 				draw()
 			}
 		case win = <-winCh:
@@ -246,23 +252,51 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	}
 }
 
-// hdMove walks the footprint per the shared movement mapping (WASD/arrows, YUBN
-// diagonals, uppercase to run), respecting terrain.
-func hdMove(gen *worldgen.Generator, px, py *int, key string) bool {
-	dx, dy, steps, ok := game.MoveKey(key)
+// enterHD constructs and spawns into an area for HD mode, returning its id, the
+// area and its HD viewer. Panel-only areas (the Arcade stub) aren't pixel-
+// renderable, so a portal into one falls back to the lobby — HD can never strand
+// the player on a blank screen. from is the area being left, so the destination
+// can spawn the player beside the right portal.
+func enterHD(ctx *game.Ctx, from, id string) (string, game.Area, game.HDViewer) {
+	ctx.From = from
+	a := game.NewArea(id, ctx)
+	hv, ok := a.(game.HDViewer)
 	if !ok {
-		return false
+		id = "lobby"
+		a = game.NewArea(id, ctx)
+		hv = a.(game.HDViewer)
 	}
-	moved := false
-	for i := 0; i < steps; i++ {
-		nx, ny := *px+dx, *py+dy
-		if !hdFootprint(gen, nx, ny) {
-			break
-		}
-		*px, *py = nx, ny
-		moved = true
+	self, _ := ctx.World.Self(ctx.Name)
+	a.Init(&self)
+	return id, a, hv
+}
+
+// moveKeyMsg converts a parsed key name into a bubbletea KeyMsg, but only for
+// the movement keys the areas act on (WASD/arrows, YUBN diagonals, Shift to
+// run) — so HD forwards just movement and never trips chat or panel keys.
+func moveKeyMsg(key string) (tea.KeyMsg, bool) {
+	if _, _, _, ok := game.MoveKey(key); !ok {
+		return tea.KeyMsg{}, false
 	}
-	return moved
+	switch key {
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}, true
+	case "down":
+		return tea.KeyMsg{Type: tea.KeyDown}, true
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}, true
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}, true
+	case "shift+up":
+		return tea.KeyMsg{Type: tea.KeyShiftUp}, true
+	case "shift+down":
+		return tea.KeyMsg{Type: tea.KeyShiftDown}, true
+	case "shift+left":
+		return tea.KeyMsg{Type: tea.KeyShiftLeft}, true
+	case "shift+right":
+		return tea.KeyMsg{Type: tea.KeyShiftRight}, true
+	}
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}, true
 }
 
 // csiKey turns a parsed arrow escape into a MoveKey name, prefixing "shift+"
@@ -291,40 +325,6 @@ func arrowKey(b byte) string {
 		return "left"
 	}
 	return ""
-}
-
-func hdSpawn(gen *worldgen.Generator) (int, int) {
-	for _, off := range [][2]int{{2, 2}, {-3, 2}, {2, -3}, {-3, -3}, {3, 0}, {0, 3}} {
-		x, y := worldgen.GateX+off[0], worldgen.GateY+off[1]
-		if hdFootprint(gen, x, y) {
-			return x, y
-		}
-	}
-	return worldgen.GateX + 2, worldgen.GateY + 2
-}
-
-func hdFootprint(gen *worldgen.Generator, x, y int) bool {
-	for dy := 0; dy < game.PlayerH; dy++ {
-		for dx := 0; dx < game.PlayerW; dx++ {
-			if !gen.Walkable(x+dx, y+dy) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// hdWindow samples a vw×vh tile window with its top-left at world (ox,oy).
-func hdWindow(gen *worldgen.Generator, ox, oy, vw, vh int) *game.TileMap {
-	tiles := make([][]game.Tile, vh)
-	for ly := 0; ly < vh; ly++ {
-		row := make([]game.Tile, vw)
-		for lx := 0; lx < vw; lx++ {
-			row[lx] = wilds.CellTile(gen.At(ox+lx, oy+ly))
-		}
-		tiles[ly] = row
-	}
-	return &game.TileMap{W: vw, H: vh, Tiles: tiles}
 }
 
 // hdCellSize derives the terminal's pixel cell size from the PTY window (if the

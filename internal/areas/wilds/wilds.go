@@ -119,19 +119,29 @@ func (a *area) Hint() string {
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
 }
 
-func (a *area) View(width, height int) string {
-	cx, cy := width/2, height/2
-	tiles := make([][]game.Tile, height)
-	for ly := 0; ly < height; ly++ {
-		row := make([]game.Tile, width)
-		for lx := 0; lx < width; lx++ {
-			row[lx] = CellTile(a.gen.At(a.wx+lx-cx, a.wy+ly-cy))
+// sample builds a vw×vh window of the overworld centered on the player and
+// returns it with its absolute top-left origin. Shared by the glyph View and
+// the HD pixel renderer.
+func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
+	ox, oy := a.wx-vw/2, a.wy-vh/2
+	tiles := make([][]game.Tile, vh)
+	for ly := 0; ly < vh; ly++ {
+		row := make([]game.Tile, vw)
+		for lx := 0; lx < vw; lx++ {
+			row[lx] = CellTile(a.gen.At(ox+lx, oy+ly))
 		}
 		tiles[ly] = row
 	}
-	tm := &game.TileMap{W: width, H: height, Tiles: tiles}
+	return &game.TileMap{W: vw, H: vh, Tiles: tiles}, ox, oy
+}
+
+// HDView implements game.HDViewer so the Wilds renders in HD pixel mode.
+func (a *area) HDView(vw, vh int) (*game.TileMap, int, int) { return a.sample(vw, vh) }
+
+func (a *area) View(width, height int) string {
+	tm, ox, oy := a.sample(width, height)
 	players := a.ctx.World.PlayersInArea("wilds")
-	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, a.wx-cx, a.wy-cy, game.Light{})
+	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, ox, oy, game.Light{})
 
 	if a.showMap {
 		panel := a.minimap()

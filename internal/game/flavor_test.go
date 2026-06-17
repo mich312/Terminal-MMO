@@ -26,7 +26,7 @@ func TestFlavorAreaPortalTransition(t *testing.T) {
 		},
 		Legend: map[rune]LegendEntry{'P': {Kind: TilePortal, Ch: '◊', Walkable: true, Portal: "lobby"}},
 		SpawnX: 1, SpawnY: 1,
-		Title:  "Test Room", Body: "flavor text",
+		Title: "Test Room", Body: "flavor text",
 	})
 	a.Init(nil)
 
