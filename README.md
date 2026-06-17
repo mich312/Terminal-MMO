@@ -30,21 +30,34 @@ ssh -p 2222 markus@localhost
   delete it to start fresh. If the file is unwritable the game logs a warning
   and plays on without memory.
 
-### HD mode (experimental real-pixel renderer)
+### HD mode (real-pixel renderer, default)
 
-On a sixel-capable terminal (e.g. Windows Terminal 1.22+) you can walk the Wilds
-rendered as actual pixels instead of half-block glyphs:
+On a sixel- or kitty-capable terminal (e.g. Windows Terminal 1.22+, kitty,
+ghostty, iTerm2, WezTerm) you walk the Wilds rendered as actual pixels instead
+of half-block glyphs. It's the **default** — a plain connection serves it:
 
 ```sh
-ssh -t -p 2222 you@localhost hd
+ssh -p 2222 you@localhost
+```
+
+A plain interactive `ssh` allocates a PTY for free, so no `-t` is needed. To
+opt back into the classic glyph (bubbletea) client, pass a command — which does
+need `-t` to get a PTY:
+
+```sh
+ssh -t -p 2222 you@localhost glyph   # classic half-block client
 ```
 
 WASD or arrow keys to move, `Y U B N` for diagonals, Shift/uppercase to run,
-`q` to quit. It shares the live world, so you and ordinary players see each
-other. It bypasses bubbletea and streams sixel with
-delta updates (only the changed region each frame). Background and rationale:
-[`docs/pixel-renderer.md`](docs/pixel-renderer.md). The standalone
-`cmd/pixeldemo` harness measures look/bandwidth without a server.
+`e` to pick things up, `q` to quit. It shares the live world, so you and
+glyph-client players see each other. Because HD is the default client, the
+**UI is drawn into the pixel frame**: a status/hint bar, pickup toasts,
+**chat** (`Enter` to type — plain text, or `/me`, `/w`, `/goto`; the log shows
+recent lines and fades when idle), and single-key panels — `c` opens the
+interactive **character** editor (arrows to cycle body / color / hat) and `i`
+opens your **inventory**. It bypasses bubbletea and streams sixel with delta
+updates (only the changed region each frame). Background and rationale:
+[`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 
 ### Controls
 
@@ -55,7 +68,7 @@ delta updates (only the changed region each frame). Background and rationale:
 | Shift + move | run (two tiles per step) |
 | m | toggle the minimap (in the Wilds) |
 | Enter | chat — heard within 8 tiles of where you stand |
-| e | sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
+| e | pick up a `◆` item in the Wilds · sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
 | n / p | next/previous slide while presenting from your lectern |
 | Tab | who's online |
 | q / Ctrl+C | quit (press twice) |
@@ -64,6 +77,25 @@ You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near
 spawn — `⌂` Durst HQ (the lobby), `P` Presentation, `K` Kraftwerk, `D` Demo
 Center — to enter each area. Players are multi-tile half-block avatars in their
 own color, drawn over a 2×2 footprint.
+
+The overworld starts **hidden** — only a circle of terrain around you is lit;
+the rest is fog. Walking uncovers new ground, which then stays visible (dimmed)
+on screen and fills in on the minimap (`m`), so the world is something you
+explore rather than see all at once. Climate-driven biomes — forest, savanna,
+snowfields and snow-capped peaks, wetlands, sand, hills — give each direction a
+distinct look, each with its own HD pixel-art ground texture. Scattered through
+them are `◆` **collectibles** — berries and mushrooms in the woods, shells on
+the beach, crystals in the snow — that you forage by standing on one and
+pressing `e`; `/inventory` (`/i`) shows your haul. Rarer still are wearable
+`♚` **hats**, each hidden in a themed biome (a crown in the hills, a halo in
+the snow…): find one and you unlock and wear it. Out past the hub stand
+**sealed gates** — broken arches to hidden areas. The *Whispering Gate* is
+personal: answer its riddle in chat (or offer an item) and it opens for you.
+The *Sunken Gate* is cooperative: the whole community pools offerings (`e`)
+until it opens for everyone. `/character` opens an
+interactive panel to preview your avatar and cycle body, color and the hats
+you've earned with the arrow keys. Discovery, position, pack and unlocked hats
+all persist across sessions.
 
 ### Presentation Wing
 

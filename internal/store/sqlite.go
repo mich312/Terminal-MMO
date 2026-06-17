@@ -41,6 +41,47 @@ CREATE TABLE IF NOT EXISTS decks (
 	source     TEXT NOT NULL,
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS positions (
+	name TEXT NOT NULL,
+	area TEXT NOT NULL,
+	x    INTEGER NOT NULL,
+	y    INTEGER NOT NULL,
+	PRIMARY KEY (name, area)
+);
+CREATE TABLE IF NOT EXISTS discovery (
+	name TEXT NOT NULL,
+	cx   INTEGER NOT NULL,
+	cy   INTEGER NOT NULL,
+	mask INTEGER NOT NULL,
+	PRIMARY KEY (name, cx, cy)
+);
+CREATE TABLE IF NOT EXISTS inventory (
+	name  TEXT NOT NULL,
+	item  TEXT NOT NULL,
+	count INTEGER NOT NULL,
+	PRIMARY KEY (name, item)
+);
+CREATE TABLE IF NOT EXISTS collected (
+	name TEXT NOT NULL,
+	x    INTEGER NOT NULL,
+	y    INTEGER NOT NULL,
+	PRIMARY KEY (name, x, y)
+);
+CREATE TABLE IF NOT EXISTS hats (
+	name TEXT NOT NULL,
+	hat  INTEGER NOT NULL,
+	PRIMARY KEY (name, hat)
+);
+CREATE TABLE IF NOT EXISTS gates_personal (
+	name TEXT NOT NULL,
+	gate TEXT NOT NULL,
+	PRIMARY KEY (name, gate)
+);
+CREATE TABLE IF NOT EXISTS gates_world (
+	gate  TEXT PRIMARY KEY,
+	pool  INTEGER NOT NULL DEFAULT 0,
+	fixed INTEGER NOT NULL DEFAULT 0
+);
 `
 
 type sqliteStore struct {
@@ -94,6 +135,230 @@ func (s *sqliteStore) SaveAvatar(name, color string, style, accessory int) {
 		name, now, now, color, style, accessory); err != nil {
 		log.Printf("store: save avatar: %v", err)
 	}
+}
+
+// SavePosition upserts a player's position within an area.
+func (s *sqliteStore) SavePosition(name, area string, x, y int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO positions (name, area, x, y) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(name, area) DO UPDATE SET x = excluded.x, y = excluded.y`,
+		name, area, x, y); err != nil {
+		log.Printf("store: save position: %v", err)
+	}
+}
+
+// LoadPosition returns a player's saved position within an area.
+func (s *sqliteStore) LoadPosition(name, area string) (x, y int, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.db.QueryRow(
+		`SELECT x, y FROM positions WHERE name = ? AND area = ?`, name, area).Scan(&x, &y); err != nil {
+		return 0, 0, false
+	}
+	return x, y, true
+}
+
+// SaveDiscovery upserts one fog-of-war chunk. mask is a 64-bit cell bitmap; it
+// round-trips through SQLite's signed INTEGER as the same 64 bits.
+func (s *sqliteStore) SaveDiscovery(name string, cx, cy int, mask uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO discovery (name, cx, cy, mask) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(name, cx, cy) DO UPDATE SET mask = excluded.mask`,
+		name, cx, cy, int64(mask)); err != nil {
+		log.Printf("store: save discovery: %v", err)
+	}
+}
+
+// LoadDiscovery returns every discovered chunk for a player.
+func (s *sqliteStore) LoadDiscovery(name string) map[[2]int]uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT cx, cy, mask FROM discovery WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[[2]int]uint64{}
+	for rows.Next() {
+		var cx, cy int
+		var mask int64
+		if err := rows.Scan(&cx, &cy, &mask); err == nil {
+			out[[2]int{cx, cy}] = uint64(mask)
+		}
+	}
+	return out
+}
+
+// AddItem increments a player's count of one inventory item.
+func (s *sqliteStore) AddItem(name, item string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO inventory (name, item, count) VALUES (?, ?, 1)
+		 ON CONFLICT(name, item) DO UPDATE SET count = count + 1`,
+		name, item); err != nil {
+		log.Printf("store: add item: %v", err)
+	}
+}
+
+// SpendItem decrements a player's count of one item (never below zero).
+func (s *sqliteStore) SpendItem(name, item string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`UPDATE inventory SET count = count - 1 WHERE name = ? AND item = ? AND count > 0`,
+		name, item); err != nil {
+		log.Printf("store: spend item: %v", err)
+	}
+}
+
+// LoadInventory returns a player's item counts.
+func (s *sqliteStore) LoadInventory(name string) map[string]int {
+	out := map[string]int{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT item, count FROM inventory WHERE name = ?`, name)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item string
+		var count int
+		if err := rows.Scan(&item, &count); err == nil {
+			out[item] = count
+		}
+	}
+	return out
+}
+
+// MarkCollected records that a player harvested the item at (x,y).
+func (s *sqliteStore) MarkCollected(name string, x, y int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO collected (name, x, y) VALUES (?, ?, ?)`,
+		name, x, y); err != nil {
+		log.Printf("store: mark collected: %v", err)
+	}
+}
+
+// LoadCollected returns the cells a player has already harvested.
+func (s *sqliteStore) LoadCollected(name string) map[[2]int]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT x, y FROM collected WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[[2]int]bool{}
+	for rows.Next() {
+		var x, y int
+		if err := rows.Scan(&x, &y); err == nil {
+			out[[2]int{x, y}] = true
+		}
+	}
+	return out
+}
+
+// UnlockHat records that a player owns an accessory.
+func (s *sqliteStore) UnlockHat(name string, hat int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO hats (name, hat) VALUES (?, ?)`, name, hat); err != nil {
+		log.Printf("store: unlock hat: %v", err)
+	}
+}
+
+// LoadHats returns the accessory indices a player owns.
+func (s *sqliteStore) LoadHats(name string) map[int]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT hat FROM hats WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[int]bool{}
+	for rows.Next() {
+		var hat int
+		if err := rows.Scan(&hat); err == nil {
+			out[hat] = true
+		}
+	}
+	return out
+}
+
+// FixPersonalGate records that a player repaired a personal gate.
+func (s *sqliteStore) FixPersonalGate(name, gate string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO gates_personal (name, gate) VALUES (?, ?)`, name, gate); err != nil {
+		log.Printf("store: fix personal gate: %v", err)
+	}
+}
+
+// LoadPersonalGates returns the personal gates a player has repaired.
+func (s *sqliteStore) LoadPersonalGates(name string) map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT gate FROM gates_personal WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var gate string
+		if err := rows.Scan(&gate); err == nil {
+			out[gate] = true
+		}
+	}
+	return out
+}
+
+// SaveGateWorld upserts a co-op gate's shared pool and fixed flag.
+func (s *sqliteStore) SaveGateWorld(gate string, pool int, fixed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f := 0
+	if fixed {
+		f = 1
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO gates_world (gate, pool, fixed) VALUES (?, ?, ?)
+		 ON CONFLICT(gate) DO UPDATE SET pool = excluded.pool, fixed = excluded.fixed`,
+		gate, pool, f); err != nil {
+		log.Printf("store: save gate world: %v", err)
+	}
+}
+
+// LoadGateWorld returns the shared co-op gate pools and fixed flags.
+func (s *sqliteStore) LoadGateWorld() (map[string]int, map[string]bool) {
+	pools, fixed := map[string]int{}, map[string]bool{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT gate, pool, fixed FROM gates_world`)
+	if err != nil {
+		return pools, fixed
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var gate string
+		var pool, f int
+		if err := rows.Scan(&gate, &pool, &f); err == nil {
+			pools[gate] = pool
+			fixed[gate] = f != 0
+		}
+	}
+	return pools, fixed
 }
 
 // LoadAvatar returns a player's saved avatar customization.

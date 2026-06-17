@@ -212,6 +212,24 @@ func hexRGBA(s string) color.RGBA {
 }
 
 // fillCard draws a translucent dark rectangle with a 2px accent border.
+// DrawPanel composites a bordered, translucent dark card — the base for HD UI
+// overlays (the character and inventory panels). Exported wrapper over the
+// slide card so the game package can build HUD panels onto a frame.
+func DrawPanel(img *image.RGBA, x, y, w, h int) { fillCard(img, x, y, w, h) }
+
+// Shade darkens a rectangle toward near-black by t∈[0,1] — backs the HUD bar
+// and toasts so text stays legible over the scene.
+func Shade(img *image.RGBA, x, y, w, h int, t float64) {
+	dark := color.RGBA{8, 11, 16, 255}
+	for j := 0; j < h; j++ {
+		for i := 0; i < w; i++ {
+			if inside(img, x+i, y+j) {
+				img.SetRGBA(x+i, y+j, blend(img.RGBAAt(x+i, y+j), dark, t))
+			}
+		}
+	}
+}
+
 func fillCard(img *image.RGBA, x, y, w, h int) {
 	bg := color.RGBA{14, 18, 26, 255}
 	border := color.RGBA{0x2E, 0x8B, 0xFF, 255}

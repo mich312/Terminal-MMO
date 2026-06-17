@@ -37,6 +37,27 @@ var groundArt = map[TileTex][][]string{
 		{"BLBBBB", "BBBBDB", "DDBBBB", "BBBDBB", "BBBBBB", "BBLBBB"},
 		{"BBBLBB", "DBBBBB", "BBBBDD", "BBBBBB", "BLBBBB", "BBBBDB"},
 	},
+	// Snow: a clean bright field with a few glinting sparkles (L) and the odd
+	// wind-packed drift shadow (D). Interior-only marks keep drifts seamless.
+	TexSnow: {
+		{"BBBBBB", "BBLBBB", "BBBBBB", "BLBBLB", "BBBBBB", "BBBBBB"},
+		{"BBBBBB", "BBBBLB", "BBLBBB", "BBBBBB", "BBDLBB", "BBBBBB"},
+		{"BBBBBB", "BLBBBB", "BBBBBB", "BBBLDB", "BBLBBB", "BBBBBB"},
+	},
+	// Savanna: dry, sun-bleached grass — scattered dark flecks of parched
+	// tussock, sparser than the lush grass tile.
+	TexSavanna: {
+		{"BBBBBB", "BDBBDB", "BBBBBB", "BDBBBB", "BBBDBB", "BBBBBB"},
+		{"BBBBBB", "BBBDBB", "BDBBBB", "BBBBDB", "BBDBBB", "BBBBBB"},
+		{"BBBBBB", "BBDBBD", "BBBBBB", "DBBDBB", "BBBBBB", "BBBBBB"},
+	},
+	// Swamp: waterlogged muck — clumped dark mud blotches (D) with the
+	// occasional algae sheen (L) catching the light.
+	TexSwamp: {
+		{"BBBBBB", "BDDBBB", "BDDBBB", "BBBBLB", "BBBBBB", "BBBBBB"},
+		{"BBBBBB", "BBBDDB", "BBBDDB", "BLBBBB", "BBBBBB", "BBBBBB"},
+		{"BBBBBB", "BBLBBB", "DDBBBB", "DDBBDB", "BBBBDB", "BBBBBB"},
+	},
 	// Indoor floor: a faint speckle so the surface reads as hand-pixeled.
 	TexFloor: {
 		{"BBBBBB", "BBBBBB", "BBLBBB", "BBBBBB", "BBBBBL", "BBBBBB"},
@@ -118,6 +139,27 @@ var propArt = map[TileProp][]string{
 		"PPPPPP",
 		"PPppPP",
 		"PPppPP",
+	},
+	// PropHat is a wearable lying on the ground — a little brimmed hat that
+	// glints (W) so it reads as special loot, not terrain.
+	PropHat: {
+		"......",
+		"..WP..",
+		".PPPP.",
+		"PPPPPP",
+		".pppp.",
+		"......",
+	},
+	// PropSealed is a broken stone gate arch — a dormant portal. Cracked ring
+	// (P stone, p shade) with a dark, empty centre; reads as "sealed" vs the
+	// glowing portal swirl it becomes once repaired.
+	PropSealed: {
+		".pPPp.",
+		"pP..Pp",
+		"P....P",
+		"P.  .P",
+		"pp..pp",
+		"..pp..",
 	},
 	// PropPortal is drawn by the multi-tile structure pass, not here.
 

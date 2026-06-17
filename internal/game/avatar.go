@@ -38,6 +38,16 @@ func NumAccessories() int          { return len(accessories) }
 func AvatarStyleName(i int) string { return avatarStyles[wrapIdx(i, len(avatarStyles))].Name }
 func AccessoryName(i int) string   { return accessories[wrapIdx(i, len(accessories))].Name }
 
+// AccessoryIndex resolves an accessory name to its index; ok is false if none.
+func AccessoryIndex(name string) (int, bool) {
+	for i, a := range accessories {
+		if a.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
 // facingView maps an 8-way facing to an authored view plus whether to mirror.
 // Any eastward component shows the right profile; westward, the mirrored one;
 // pure vertical shows front/back.

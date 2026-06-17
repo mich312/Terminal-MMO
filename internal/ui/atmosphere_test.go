@@ -30,3 +30,16 @@ func TestAmbientNightDarkerThanNoon(t *testing.T) {
 		t.Fatalf("night tint %v should exceed midday %v", night, noon)
 	}
 }
+
+// The Now seam lets the renderer (and art tools) sample a fixed hour instead of
+// the wall clock, and defaults to time.Now.
+func TestNowOverride(t *testing.T) {
+	orig := Now
+	defer func() { Now = orig }()
+	Now = func() time.Time { return time.Date(2026, 6, 16, 3, 0, 0, 0, time.UTC) }
+	hex, str := Ambient(Now())
+	wantHex, wantStr := Ambient(time.Date(2026, 6, 16, 3, 0, 0, 0, time.UTC))
+	if hex != wantHex || str != wantStr {
+		t.Fatalf("Now override not honored: (%s,%v) != (%s,%v)", hex, str, wantHex, wantStr)
+	}
+}

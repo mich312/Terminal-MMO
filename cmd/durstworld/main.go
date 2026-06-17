@@ -29,16 +29,17 @@ import (
 
 	// areas register themselves with the game registry
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
+	_ "github.com/durst-group/durstworld/internal/areas/grove"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
 	_ "github.com/durst-group/durstworld/internal/areas/stub"
+	_ "github.com/durst-group/durstworld/internal/areas/vault"
 	_ "github.com/durst-group/durstworld/internal/areas/wilds"
 )
 
 func main() {
-	styleName := flag.String("style", os.Getenv("DURST_STYLE"),
-		"HD art style: default | gameboy | neon (or set DURST_STYLE)")
+	styleName := flag.String("style", "default", "HD art style: default | gameboy | neon")
 	flag.Parse()
 
 	port := os.Getenv("PORT")
@@ -62,6 +63,10 @@ func main() {
 	})
 	w.SetDeckRemove(st.DeleteDeck)
 
+	// Restore shared co-op gate progress (contribution pools + which are open).
+	w.LoadGates(st.LoadGateWorld())
+	w.SetGatePersist(st.SaveGateWorld)
+
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
 		// persistent Ed25519 host key, generated on first run
@@ -69,8 +74,9 @@ func main() {
 		// no auth options at all = accept any username, no password
 		wish.WithMiddleware(
 			bm.Middleware(teaHandler(w, st)),
-			// HD ("real pixel" sixel) mode: `ssh -t … hd` serves the experimental
-			// renderer instead of bubbletea. Sits inside activeterm so it has a PTY.
+			// HD ("real pixel" sixel/kitty) mode is the default; `ssh -t … glyph`
+			// opts back into the bubbletea client. Sits inside activeterm so it has
+			// a PTY.
 			hdMiddleware(w, st, style),
 			activeterm.Middleware(), // require a TTY
 			logging.Middleware(),
@@ -83,7 +89,7 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	log.Printf("Durst World listening on :%s — ssh -p %s you@localhost (HD: ssh -t -p %s you@localhost hd)", port, port, port)
+	log.Printf("Durst World listening on :%s — ssh -p %s you@localhost (HD by default; classic glyph client: ssh -t -p %s you@localhost glyph)", port, port, port)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 			log.Printf("server error: %v", err)
@@ -123,7 +129,10 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			Name:  name,
 			// per-session renderer: auto-detects the client's terminal and
 			// downsamples truecolor → 256 → 16 as needed.
-			Theme: ui.NewTheme(bm.MakeRenderer(s)),
+			Theme:      ui.NewTheme(bm.MakeRenderer(s)),
+			Inventory:  st.LoadInventory(name),
+			Hats:       st.LoadHats(name),
+			FixedGates: st.LoadPersonalGates(name),
 		}
 		m := game.NewModel(ctx, events, visit)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/durst-group/durstworld/internal/ui"
 )
@@ -74,6 +75,16 @@ func init() {
 			name: "goto", aliases: []string{"go"}, usage: "/goto <area>",
 			summary: "teleport to an area",
 			run:     cmdGoto,
+		},
+		{
+			name: "inventory", aliases: []string{"i", "inv"}, usage: "/inventory",
+			summary: "show the items you've collected",
+			run:     cmdInventory,
+		},
+		{
+			name: "character", aliases: []string{"char"}, usage: "/character",
+			summary: "preview and customize your avatar",
+			run:     cmdCharacter,
 		},
 		{
 			name: "clear", usage: "/clear",
@@ -233,15 +244,20 @@ func cmdAvatar(m *Model, args []string) tea.Cmd {
 	}
 	if len(args) == 0 {
 		m.addSystemLine("styles: " + listIndexed(NumAvatarStyles(), AvatarStyleName))
-		m.addSystemLine("hats:   " + listIndexed(NumAccessories(), AccessoryName))
-		m.addSystemLine(fmt.Sprintf("you: %s + %s — usage: /avatar <style> [hat]  (also /color)",
+		m.addSystemLine("hats:   " + ownedHats(m))
+		m.addSystemLine(fmt.Sprintf("you: %s + %s — usage: /avatar <style> [hat]  · /character to preview",
 			AvatarStyleName(cur.Style), AccessoryName(cur.Accessory)))
 		return nil
 	}
 	style := resolveIndex(args[0], cur.Style, NumAvatarStyles(), AvatarStyleName)
 	acc := cur.Accessory
 	if len(args) > 1 {
-		acc = resolveIndex(args[1], cur.Accessory, NumAccessories(), AccessoryName)
+		want := resolveIndex(args[1], cur.Accessory, NumAccessories(), AccessoryName)
+		if want != 0 && !m.ctx.Hats[want] {
+			m.addSystemLine("you haven't found the " + AccessoryName(want) + " yet — explore the Wilds to wear it")
+			return nil
+		}
+		acc = want
 	}
 	if m.ctx.World.SetAvatar(m.ctx.Name, style, acc) {
 		m.persistAvatar()
@@ -256,6 +272,21 @@ func (m *Model) persistAvatar() {
 	if p, ok := m.ctx.World.Self(m.ctx.Name); ok {
 		m.ctx.Store.SaveAvatar(m.ctx.Name, string(p.Color), p.Style, p.Accessory)
 	}
+}
+
+// ownedHats lists the accessories the player has unlocked (0:none is always
+// available), for the /avatar listing.
+func ownedHats(m *Model) string {
+	parts := []string{"0:none"}
+	for i := 1; i < NumAccessories(); i++ {
+		if m.ctx.Hats[i] {
+			parts = append(parts, fmt.Sprintf("%d:%s", i, AccessoryName(i)))
+		}
+	}
+	if len(parts) == 1 {
+		return "none yet — find hats out in the Wilds"
+	}
+	return strings.Join(parts, "  ")
 }
 
 // listIndexed renders "0:name  1:name  …" for a command's options listing.
@@ -302,6 +333,36 @@ func cmdGoto(m *Model, args []string) tea.Cmd {
 		}
 	}
 	return m.startTransition(dest)
+}
+
+func cmdInventory(m *Model, args []string) tea.Cmd {
+	inv := m.ctx.Inventory
+	total := 0
+	lines := make([]string, 0, len(Items))
+	for _, it := range Items {
+		n := inv[it.ID]
+		if n == 0 {
+			continue
+		}
+		total += n
+		glyph := m.theme.Fg(lipgloss.Color(it.Hex)).Render(string(it.Glyph))
+		lines = append(lines, fmt.Sprintf("%s  %s %s",
+			glyph, m.theme.ChatText.Render(padRight(it.Name, 14)),
+			m.theme.Accent.Render(fmt.Sprintf("×%d", n))))
+	}
+	if total == 0 {
+		m.addSystemLine("your pack is empty — explore the Wilds and press e on a ◆ to pick it up")
+		return nil
+	}
+	m.showInfoPanel(fmt.Sprintf("Inventory — %d", total), lines)
+	return nil
+}
+
+func cmdCharacter(m *Model, args []string) tea.Cmd {
+	m.showInfo, m.showPlayers = false, false
+	m.showChar = true
+	m.charField = 0
+	return nil
 }
 
 func cmdClear(m *Model, args []string) tea.Cmd {

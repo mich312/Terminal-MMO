@@ -1,6 +1,7 @@
 package game
 
 import (
+	"strings"
 	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
@@ -115,6 +116,43 @@ func spritePixel(code rune, body colorful.Color, isSelf bool) (colorful.Color, b
 	default:
 		return colorful.Color{}, false
 	}
+}
+
+// AvatarPreview renders a front-facing avatar (style + accessory + color) as
+// half-block lines for the character panel: full 12-px width, two pixels per
+// cell tall. Drawn through the theme's renderer so it downsamples like the live
+// avatar. Transparent pixels show the panel background.
+func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []string {
+	if th == nil {
+		th = ui.Default
+	}
+	body := playerColor(color)
+	bmp := AvatarBitmap(style, accessory, world.DirS, 0)
+	bg := lipgloss.Color(ui.HexPanelBg)
+	toLip := func(c colorful.Color) lipgloss.Color { return lipgloss.Color(c.Clamped().Hex()) }
+
+	lines := make([]string, 0, len(bmp)/2)
+	for row := 0; row+1 < len(bmp); row += 2 {
+		top := []rune(bmp[row])
+		bot := []rune(bmp[row+1])
+		var sb strings.Builder
+		for col := 0; col < len(top) && col < len(bot); col++ {
+			tc, topOp := spritePixel(top[col], body, false)
+			bc, botOp := spritePixel(bot[col], body, false)
+			switch {
+			case topOp && botOp:
+				sb.WriteString(th.FgBg(toLip(tc), toLip(bc)).Render("▀"))
+			case topOp:
+				sb.WriteString(th.FgBg(toLip(tc), bg).Render("▀"))
+			case botOp:
+				sb.WriteString(th.FgBg(toLip(bc), bg).Render("▄"))
+			default:
+				sb.WriteString(th.FgBg(bg, bg).Render(" "))
+			}
+		}
+		lines = append(lines, sb.String())
+	}
+	return lines
 }
 
 // downsampleBitmap nearest-samples a sprite down to at most maxW×maxH (keeping

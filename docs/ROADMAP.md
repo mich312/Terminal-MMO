@@ -31,7 +31,18 @@ Direction agreed with the team. Decisions locked:
   Kraftwerk machines pulse, coolant flows, lamps flicker; lobby plants breathe.
 - ✅ Radial lighting (`Light` / `Walker.RenderLit`): tiles fade to shadow past
   the player's reach. Kraftwerk is now a dim machine hall.
-- ⬜ Biome palettes (will land with the overworld).
+- ✅ Biome palettes & climate: domain-warped elevation/moisture for organic
+  biome edges, plus a temperature field (colder with altitude) that adds
+  snowfields, snow-capped peaks, warm-dry savanna and wet-low swamp to the
+  original water/sand/grass/forest/hill/mountain set. Each climate biome has
+  its own hand-authored 6×6 HD ground texture (snow sparkle, dry savanna
+  flecks, swamp mud blotches).
+- ✅ Fog-of-war discovery: the Wilds starts hidden and reveals a circle around
+  the player as they walk (bright sight radius + dimmed explored memory + fog
+  beyond). Drives both the glyph and HD renderers and the minimap. Persisted to
+  the store as 8×8 chunk bitmasks (full chunks pack to 8 bytes, frontier chunks
+  keep exact bits), alongside the player's position — so the map and where you
+  stand survive disconnects and re-entry.
 - ⬜ Particles / weather layer.
 - ⬜ Directional / two-cell avatars with a drop shadow.
 
@@ -84,12 +95,71 @@ Direction agreed with the team. Decisions locked:
   "armed" latch so you can't bounce back through the portal you arrived from
   (a 2×2 body can't always stand on a wall-embedded portal tile).
 
+## Phase 5 — Items & inventory ✅
+
+- ✅ Collectibles scattered through the Wilds: a sparse, deterministic,
+  biome-appropriate roll (`internal/areas/wilds/items.go`) places `◆` items —
+  berries/mushrooms in forest, shells on sand, crystals in snow, nuggets in
+  hills. They render as glinting gems (HD) over the biome ground and only show
+  once you've discovered the ground they sit on.
+- ✅ Pickup with `e` (works in both the glyph and HD clients): harvests the item
+  under the 2×2 body into the player's pack, marks the cell collected so it's
+  gone for that player, and toasts the find. `/inventory` (`/i`) lists the haul.
+- ✅ Persistence: per-item counts and harvested cells survive disconnects
+  (store `inventory` + `collected` tables), loaded into `Ctx.Inventory` at join.
+- ✅ Wearable hats as gated loot: the 5 accessories are now **found**, not free —
+  each `♚` hat hides in a themed biome (crown in hills, halo in snow, …). Pick
+  one up (`e`) to unlock and equip it; ownership persists (`hats` table) and
+  `/avatar` only lets you wear what you've found. New players start hatless.
+- ✅ Interactive character panel (`/character`): a live avatar preview over
+  cycleable Style / Color / Hat fields (↑↓ pick, ←→ change), persisting each
+  change. Hat cycling is limited to unlocked hats.
+
+## Phase 6 — UI in HD (the default client) ✅
+
+Rule: HD is the default renderer, so all UI is built into the pixel frame, not
+just the glyph client. HD has no glyph layer, so the interface is rasterized
+straight onto the RGBA frame with basicfont (ASCII).
+
+- ✅ HD overlay layer (`internal/game/hd_ui.go`, on `pixel.DrawPanel`/`Shade`):
+  a bottom **status/hint bar** (area + contextual hint + control legend) and
+  transient **pickup toasts** (toast moved to a wall-clock so it works without
+  the glyph tick).
+- ✅ HD **character panel** (`c`) and **inventory panel** (`i`), reachable by
+  single keys since HD has no command line; arrows navigate/edit, `q` closes.
+  The avatar customization is shared with the glyph panel
+  (`game.CycleAvatarField`) so both clients stay in sync.
+- ✅ HD **chat**: world events are formatted (`game.HDChatLine`) and drawn as a
+  fading log above the HUD with per-speaker colors; `Enter` opens a text input
+  (`/me`, `/w`, `/goto` plus plain proximity chat). Events are now handled in
+  the HD select loop instead of being drained, so HD players see joins, chat,
+  emotes and whispers — full UI parity with the glyph client.
+
+## Phase 7 — Sealed gates ✅
+
+Optional, riddle/offering-gated doors out past the hub (the four landmark
+doors stay open). Two kinds, to exercise both solo and social play:
+
+- ✅ **Personal gates** (the Whispering Gate → The Grove): each player repairs
+  it themselves — say the riddle's answer in chat at the gate, or press `e` to
+  offer the required item. Per-player state (`Ctx.FixedGates`, `gates_personal`).
+- ✅ **Co-op gates** (the Sunken Gate → The Vault): a shared community effort —
+  anyone presses `e` to contribute an item into a pool; when it fills, the gate
+  opens for everyone. Global state lives in the shared `World`
+  (`OfferToGate`/`GateFixed`), persisted (`gates_world`) and live across sessions.
+- ✅ Sealed gates render as a dull broken arch (`PropSealed`) that becomes a
+  glowing portal once repaired; the status/HUD hint shows the riddle or the
+  pool progress. Works in both clients (chat answer + `e` offer). Destinations
+  are `game.FlavorArea` reward rooms; worldgen places the gates on extended
+  trails with clearings, so they're always reachable.
+
 ## Parked polish
 
-- Real-pixel renderer (kitty graphics / sixel): prototyped and measured — see
-  [`docs/pixel-renderer.md`](pixel-renderer.md). Verdict: keep half-blocks as the
-  baseline; a sixel-first, flat + delta, event-driven `/hd` mode is the only
-  shippable shape, as an opt-in with half-block fallback.
+- ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**
+  renderer — a plain `ssh` serves HD (sixel/kitty, auto-detected from TERM),
+  `ssh -t … glyph` opts back into the half-block client. Flat + delta,
+  event-driven, with the half-block renderer as the fallback. Background and
+  measurements: [`docs/pixel-renderer.md`](pixel-renderer.md).
 - Particles / weather layer.
 - Directional facing for avatars (sprite mirrors with movement).
 - Mark landmarks on the minimap distinctly.

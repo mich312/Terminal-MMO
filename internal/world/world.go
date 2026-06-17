@@ -80,16 +80,76 @@ type World struct {
 	pulse     bool
 	stop      chan struct{}
 	stopOnce  sync.Once
+
+	// Shared co-op gate state: contribution pools and which gates are open.
+	gatePool    map[string]int
+	gateFixed   map[string]bool
+	gatePersist func(gate string, pool int, fixed bool) // set by main
 }
 
 func New() *World {
 	w := &World{
-		players: make(map[string]*Player),
-		subs:    make(map[string]chan Event),
-		stop:    make(chan struct{}),
+		players:   make(map[string]*Player),
+		subs:      make(map[string]chan Event),
+		stop:      make(chan struct{}),
+		gatePool:  make(map[string]int),
+		gateFixed: make(map[string]bool),
 	}
 	go w.tickLoop()
 	return w
+}
+
+// LoadGates seeds the shared co-op gate state from persistence (called once at
+// startup). SetGatePersist wires saving back.
+func (w *World) LoadGates(pools map[string]int, fixed map[string]bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for g, n := range pools {
+		w.gatePool[g] = n
+	}
+	for g, f := range fixed {
+		w.gateFixed[g] = f
+	}
+}
+
+// SetGatePersist registers a callback to persist co-op gate state on change.
+func (w *World) SetGatePersist(fn func(gate string, pool int, fixed bool)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.gatePersist = fn
+}
+
+// GateFixed reports whether a co-op gate is open for everyone.
+func (w *World) GateFixed(gate string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.gateFixed[gate]
+}
+
+// GatePool returns how many contributions a co-op gate has so far.
+func (w *World) GatePool(gate string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.gatePool[gate]
+}
+
+// OfferToGate adds one contribution toward a co-op gate; when the pool reaches
+// need it locks the gate open for everyone. Returns the new pool and fixed flag.
+func (w *World) OfferToGate(gate string, need int) (pool int, fixed bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.gateFixed[gate] {
+		return w.gatePool[gate], true
+	}
+	w.gatePool[gate]++
+	if w.gatePool[gate] >= need {
+		w.gateFixed[gate] = true
+	}
+	pool, fixed = w.gatePool[gate], w.gateFixed[gate]
+	if w.gatePersist != nil {
+		w.gatePersist(gate, pool, fixed)
+	}
+	return pool, fixed
 }
 
 // tickLoop broadcasts the global 2 Hz pulse that drives portal animation.

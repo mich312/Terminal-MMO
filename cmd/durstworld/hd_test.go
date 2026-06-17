@@ -35,6 +35,21 @@ func TestMoveKeyMsg(t *testing.T) {
 	}
 }
 
+// HD is the default: only an explicit `glyph` command routes to the bubbletea
+// client; a plain connection or any other args stays HD.
+func TestCmdWantsClassic(t *testing.T) {
+	for _, cmd := range [][]string{{"glyph"}, {"glyph", "extra"}} {
+		if !cmdWantsClassic(cmd) {
+			t.Errorf("%v should opt into the classic client", cmd)
+		}
+	}
+	for _, cmd := range [][]string{nil, {}, {"hd"}, {"GLYPH"}, {"foo"}} {
+		if cmdWantsClassic(cmd) {
+			t.Errorf("%v should stay in default HD", cmd)
+		}
+	}
+}
+
 // A portal into a panel-only area (the Arcade) can't render in HD, so enterHD
 // falls back to the lobby rather than stranding the player on a blank screen.
 func TestEnterHDFallsBackForPanelArea(t *testing.T) {

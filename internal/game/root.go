@@ -78,6 +78,8 @@ type Model struct {
 	showInfo    bool // generic info panel (/help, /who)
 	infoTitle   string
 	infoLines   []string
+	showChar    bool // interactive character panel (/character)
+	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
 	quitArmed   bool
 }
 
@@ -246,6 +248,24 @@ func (m *Model) showInfoPanel(title string, lines []string) {
 	m.showInfo = true
 }
 
+// handleCharKey drives the interactive character panel: ↑↓ pick a field, ←→
+// change it live (persisting the avatar), esc/enter/q close.
+func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "enter", "q":
+		m.showChar = false
+	case "up", "k":
+		m.charField = (m.charField + CharFields - 1) % CharFields
+	case "down", "j", "tab":
+		m.charField = (m.charField + 1) % CharFields
+	case "left", "h":
+		CycleAvatarField(m.ctx, m.charField, -1)
+	case "right", "l":
+		CycleAvatarField(m.ctx, m.charField, 1)
+	}
+	return nil
+}
+
 // updateArea runs the area's Update and handles a possible transition.
 func (m *Model) updateArea(msg tea.Msg) tea.Cmd {
 	next, cmd := m.area.Update(msg)
@@ -319,6 +339,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// any key dismisses the info panel and is otherwise swallowed
 		m.showInfo = false
 		return m, nil
+	}
+
+	if m.showChar {
+		return m, m.handleCharKey(msg)
 	}
 
 	if m.showPlayers {
@@ -475,6 +499,11 @@ func (m *Model) playView() string {
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showChar {
+		panel := m.charPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	} else if m.showPlayers {
 		panel := m.playerListPanel()
 		pw := lipgloss.Width(panel)
@@ -482,6 +511,43 @@ func (m *Model) playView() string {
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	}
 	return view
+}
+
+// charPanel renders the interactive character editor: a live avatar preview
+// over three cycleable fields (style, color, hat). The hat row hints how to
+// unlock more when the player only has the default.
+func (m *Model) charPanel() string {
+	cur, ok := m.ctx.World.Self(m.ctx.Name)
+	if !ok {
+		return ""
+	}
+	rows := []string{m.theme.PanelTitle.Render("Character"), ""}
+	for _, line := range AvatarPreview(m.theme, cur.Style, cur.Accessory, cur.Color) {
+		rows = append(rows, "   "+line)
+	}
+	rows = append(rows, "")
+
+	hat := AccessoryName(cur.Accessory)
+	if len(OwnedHats(m.ctx)) == 1 {
+		hat += m.theme.Dim.Render("  (find hats in the Wilds)")
+	}
+	fields := []struct{ label, val string }{
+		{"Style", AvatarStyleName(cur.Style)},
+		{"Color", fmt.Sprintf("#%d", ui.AvatarColorIndex(cur.Color))},
+		{"Hat", hat},
+	}
+	for i, f := range fields {
+		label := m.theme.Dim.Render(padRight(f.label, 6))
+		if i == m.charField {
+			rows = append(rows, fmt.Sprintf("%s %s %s",
+				m.theme.Accent.Render("►"), label,
+				m.theme.Bright.Render("◄ "+f.val+" ►")))
+		} else {
+			rows = append(rows, fmt.Sprintf("  %s %s", label, m.theme.ChatText.Render(f.val)))
+		}
+	}
+	rows = append(rows, "", m.theme.Dim.Render("↑↓ field · ←→ change · esc close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 
 func (m *Model) infoPanel() string {

@@ -57,6 +57,36 @@ type Store interface {
 	LoadDecks() []DeckRecord
 	// DeleteDeck removes a persisted deck by id.
 	DeleteDeck(id string)
+	// SavePosition upserts where a player stands in an area (e.g. the Wilds).
+	SavePosition(name, area string, x, y int)
+	// LoadPosition returns a player's saved position in an area; ok is false if none.
+	LoadPosition(name, area string) (x, y int, ok bool)
+	// SaveDiscovery upserts one 8×8 fog-of-war chunk as a 64-bit cell mask.
+	SaveDiscovery(name string, cx, cy int, mask uint64)
+	// LoadDiscovery returns a player's discovered chunks keyed by chunk coord.
+	LoadDiscovery(name string) map[[2]int]uint64
+	// AddItem increments a player's count of one inventory item by one.
+	AddItem(name, item string)
+	// SpendItem decrements a player's count of one item by one (floor 0).
+	SpendItem(name, item string)
+	// LoadInventory returns a player's item counts (id → count), never nil.
+	LoadInventory(name string) map[string]int
+	// MarkCollected records that a player has picked up the item at (x,y).
+	MarkCollected(name string, x, y int)
+	// LoadCollected returns the world cells a player has already harvested.
+	LoadCollected(name string) map[[2]int]bool
+	// UnlockHat records that a player has found an accessory (by its index).
+	UnlockHat(name string, hat int)
+	// LoadHats returns the accessory indices a player owns.
+	LoadHats(name string) map[int]bool
+	// FixPersonalGate records that a player has repaired a personal gate.
+	FixPersonalGate(name, gate string)
+	// LoadPersonalGates returns the personal gates a player has repaired.
+	LoadPersonalGates(name string) map[string]bool
+	// SaveGateWorld upserts a co-op gate's shared pool count and fixed flag.
+	SaveGateWorld(gate string, pool int, fixed bool)
+	// LoadGateWorld returns the shared co-op gate pools and fixed flags.
+	LoadGateWorld() (pools map[string]int, fixed map[string]bool)
 	Close() error
 }
 
@@ -88,4 +118,21 @@ func (noopStore) LoadAvatar(string) (string, int, int, bool) {
 func (noopStore) SaveDeck(string, string, string, string, int64) {}
 func (noopStore) LoadDecks() []DeckRecord                        { return nil }
 func (noopStore) DeleteDeck(string)                              {}
-func (noopStore) Close() error                                   { return nil }
+func (noopStore) SavePosition(string, string, int, int)          {}
+func (noopStore) LoadPosition(string, string) (int, int, bool)   { return 0, 0, false }
+func (noopStore) SaveDiscovery(string, int, int, uint64)         {}
+func (noopStore) LoadDiscovery(string) map[[2]int]uint64         { return nil }
+func (noopStore) AddItem(string, string)                         {}
+func (noopStore) SpendItem(string, string)                       {}
+func (noopStore) LoadInventory(string) map[string]int            { return map[string]int{} }
+func (noopStore) MarkCollected(string, int, int)                 {}
+func (noopStore) LoadCollected(string) map[[2]int]bool           { return nil }
+func (noopStore) UnlockHat(string, int)                          {}
+func (noopStore) LoadHats(string) map[int]bool                   { return nil }
+func (noopStore) FixPersonalGate(string, string)                 {}
+func (noopStore) LoadPersonalGates(string) map[string]bool       { return nil }
+func (noopStore) SaveGateWorld(string, int, bool)                {}
+func (noopStore) LoadGateWorld() (map[string]int, map[string]bool) {
+	return map[string]int{}, map[string]bool{}
+}
+func (noopStore) Close() error { return nil }

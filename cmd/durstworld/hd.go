@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"image/color"
 	"log"
 	"math/rand"
 	"strings"
@@ -21,8 +22,9 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// HD ("real pixel") mode is an experimental sixel/kitty renderer, reachable
-// with:  ssh -t -p 2222 you@host hd
+// HD ("real pixel") mode is the default sixel/kitty renderer, served on a plain
+// interactive connection:  ssh -p 2222 you@host  (opt back into the classic
+// glyph client with `ssh -t -p 2222 you@host glyph`).
 //
 // It deliberately bypasses bubbletea — image escapes are out-of-band and would
 // fight bubbletea's frame diffing — and writes graphics frames straight to the
@@ -44,6 +46,13 @@ const (
 	hdMaxPxH = 640
 )
 
+// HD UI panels reachable with single keys (HD has no command line).
+const (
+	hdPanelNone = iota
+	hdPanelChar
+	hdPanelInv
+)
+
 // setupAvatar restores a player's persisted color/style/accessory, or — on a
 // first visit — rolls a random look and remembers it, so everyone spawns with a
 // distinct avatar that then stays theirs across reconnects.
@@ -53,55 +62,61 @@ func setupAvatar(w *world.World, st store.Store, name string) {
 			w.SetColor(name, lipgloss.Color(color))
 		}
 		w.SetAvatar(name, style, accessory)
+		// Grandfather a hat the player is already wearing into their owned set,
+		// so gating stays consistent for anyone from before hats were earned.
+		if accessory != 0 {
+			st.UnlockHat(name, accessory)
+		}
 		return
 	}
+	// New players spawn with a random body/color but no hat — hats are earned by
+	// exploring the Wilds.
 	color := ui.AvatarColorByIndex(rand.Intn(ui.NumAvatarColors()))
 	style := rand.Intn(game.NumAvatarStyles())
-	accessory := rand.Intn(game.NumAccessories())
 	w.SetColor(name, color)
-	w.SetAvatar(name, style, accessory)
-	st.SaveAvatar(name, string(color), style, accessory)
+	w.SetAvatar(name, style, 0)
+	st.SaveAvatar(name, string(color), style, 0)
 }
 
-// isHD reports whether a session asked for HD mode (an "hd" argument, e.g.
-// `ssh -t host hd`).
-func isHD(s ssh.Session) bool {
-	for _, a := range s.Command() {
-		if a == "hd" {
+// wantsClassic reports whether a session asked for the classic glyph client
+// (`ssh -t host glyph`) instead of the default HD renderer.
+func wantsClassic(s ssh.Session) bool { return cmdWantsClassic(s.Command()) }
+
+// cmdWantsClassic is wantsClassic over a raw command slice, split out so the
+// arg matching is testable without an ssh.Session.
+func cmdWantsClassic(cmd []string) bool {
+	for _, a := range cmd {
+		if a == "glyph" {
 			return true
 		}
 	}
 	return false
 }
 
-// hdMiddleware intercepts HD sessions and serves the sixel renderer instead of
-// bubbletea; everything else falls through unchanged. Placed inside activeterm
-// so a PTY is guaranteed. style is the server-wide art style for HD frames.
+// hdMiddleware serves the HD (sixel/kitty) renderer by default and falls
+// through to the bubbletea glyph client only when a session explicitly opts
+// out (e.g. `ssh -t host glyph`). Serving HD on a plain `ssh host` is what lets
+// it work without a forced `-t`: an interactive session gets a PTY for free,
+// whereas a command session (`ssh host hd`) would need `-t` to allocate one.
+// Placed inside activeterm so a PTY is guaranteed. style is the server-wide art
+// style for HD frames.
 func hdMiddleware(w *world.World, st store.Store, style *game.Style) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
-			if isHD(s) {
-				runHD(s, w, st, style)
+			if wantsClassic(s) {
+				next(s)
 				return
 			}
-			next(s)
+			runHD(s, w, st, style)
 		}
 	}
 }
 
 // preferKitty decides whether to drive the session with the kitty graphics
-// protocol instead of sixel. An explicit `hd kitty` / `hd sixel` argument wins;
-// otherwise we infer from TERM — kitty and ghostty speak the kitty protocol and
-// ghostty has no sixel, so they default to kitty; everything else to sixel.
-func preferKitty(term string, cmd []string) bool {
-	for _, a := range cmd {
-		switch a {
-		case "kitty":
-			return true
-		case "sixel":
-			return false
-		}
-	}
+// protocol instead of sixel, inferred from TERM: kitty and ghostty speak the
+// kitty protocol (and ghostty has no sixel), so they get kitty; everything else
+// gets sixel.
+func preferKitty(term string) bool {
 	return strings.Contains(term, "kitty") || strings.Contains(term, "ghostty")
 }
 
@@ -112,9 +127,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		return
 	}
 	// Ghostty/kitty speak the kitty graphics protocol and have no sixel; other
-	// terminals (iTerm2, WezTerm, xterm) use sixel. Pick from the forwarded TERM,
-	// overridable with an explicit `hd kitty` / `hd sixel` argument.
-	useKitty := preferKitty(ptyReq.Term, s.Command())
+	// terminals (iTerm2, WezTerm, xterm) use sixel. Pick from the forwarded TERM.
+	useKitty := preferKitty(ptyReq.Term)
 	proto := "sixel"
 	if useKitty {
 		proto = "kitty"
@@ -129,12 +143,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		st.RecordDisconnect(name)
 		log.Printf("%s disconnected (HD)", name)
 	}()
-	go func() { // HD polls the world each frame; drain presence events so senders never block
-		for range events {
-		}
-	}()
-
-	ctx := &game.Ctx{World: w, Store: st, Name: name}
+	ctx := &game.Ctx{World: w, Store: st, Name: name,
+		Inventory: st.LoadInventory(name), Hats: st.LoadHats(name),
+		FixedGates: st.LoadPersonalGates(name)}
 	areaID, area, hv := enterHD(ctx, "", "wilds")
 
 	cellW, cellH := hdCellSize(ptyReq.Window)
@@ -165,7 +176,22 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		sent       int
 		framesSent int
 		start      = time.Now()
+		uiPanel    = hdPanelNone // which on-frame UI panel is open
+		uiField    int           // selected field in the character panel
+		chatLog    []game.HDLine // recent chat lines
+		chatInput  string        // text being typed
+		chatActive bool          // chat input has focus
+		lastChat   time.Time     // when the log last changed (for idle fade)
 	)
+	hudDim := color.RGBA{0x9A, 0xA3, 0xAD, 0xFF}
+	hudAccent := color.RGBA{0x2E, 0x8B, 0xFF, 0xFF}
+	appendChat := func(ln game.HDLine) {
+		chatLog = append(chatLog, ln)
+		if len(chatLog) > 50 {
+			chatLog = chatLog[len(chatLog)-50:]
+		}
+		lastChat = time.Now()
+	}
 
 	draw := func() {
 		cols, rows := win.Width, win.Height
@@ -176,7 +202,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		vh := clamp((rows-1)*cellH/hdScale, 8, min(hdMaxTile, hdMaxPxH/hdScale))
 		tm, ox, oy := hv.HDView(vw, vh)
 		cam := game.Camera{W: vw, H: vh}
-		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
+		light := game.Light{}
+		if l, ok := area.(game.HDLighter); ok {
+			light = l.HDLight() // the Wilds' discovery circle
+		}
+		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, light, ox, oy, hdScale, false, style)
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
 		// HD has no glyph layer, so slides are rasterized straight onto the image.
@@ -184,6 +214,32 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if src, footer, show := ov.HDSlide(); show {
 				pixel.DrawSlidePanel(img, src, footer)
 			}
+		}
+
+		// HD UI overlays: the status/hint bar, a transient pickup toast, and any
+		// open panel — so the default client carries the full interface.
+		hint := ""
+		if h, ok := area.(game.Hinter); ok {
+			hint = h.Hint()
+		}
+		game.DrawHUD(img, area.Name(), hint)
+		if tz, ok := area.(game.Toaster); ok {
+			if msg, show := tz.Toast(); show {
+				game.DrawToast(img, msg)
+			}
+		}
+		// Chat log + input, fading out when idle so the scene stays clear.
+		var shownChat []game.HDLine
+		if chatActive || time.Since(lastChat) < 12*time.Second {
+			shownChat = chatLog
+		}
+		game.DrawChat(img, shownChat, chatActive, chatInput)
+
+		switch uiPanel {
+		case hdPanelChar:
+			game.DrawCharPanel(img, ctx, uiField)
+		case hdPanelInv:
+			game.DrawInventoryPanel(img, ctx)
 		}
 
 		sent += fw.WriteFrame(out, img, frame%hdRefresh == 0)
@@ -202,6 +258,88 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		out.Flush()
 	}
 
+	// uiKey handles HD interface keys: 'c'/'i' toggle the character/inventory
+	// panels, and while a panel is open the arrows navigate/edit it and every
+	// other key is swallowed. Returns whether the key was consumed by the UI.
+	uiKey := func(key string) bool {
+		switch key {
+		case "c":
+			if uiPanel == hdPanelChar {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel, uiField = hdPanelChar, 0
+			}
+			return true
+		case "i":
+			if uiPanel == hdPanelInv {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel = hdPanelInv
+			}
+			return true
+		}
+		if uiPanel == hdPanelNone {
+			return false
+		}
+		switch key {
+		case "up":
+			uiField = (uiField + game.CharFields - 1) % game.CharFields
+		case "down":
+			uiField = (uiField + 1) % game.CharFields
+		case "left":
+			if uiPanel == hdPanelChar {
+				game.CycleAvatarField(ctx, uiField, -1)
+			}
+		case "right":
+			if uiPanel == hdPanelChar {
+				game.CycleAvatarField(ctx, uiField, 1)
+			}
+		}
+		return true // a panel swallows everything else
+	}
+
+	// sendChat handles a submitted chat line: plain text is proximity chat, a
+	// leading "/" runs the handful of world commands HD supports (the panels
+	// cover the rest). The sender sees their own chat/emote echoed via the world
+	// event stream; whispers are echoed locally here since the world doesn't.
+	sendChat := func(text string) {
+		if !strings.HasPrefix(text, "/") {
+			w.Chat(name, text)
+			return
+		}
+		f := strings.Fields(text[1:])
+		if len(f) == 0 {
+			return
+		}
+		switch strings.ToLower(f[0]) {
+		case "me":
+			if len(f) > 1 {
+				w.Emote(name, strings.Join(f[1:], " "))
+			}
+		case "w", "tell", "msg", "whisper":
+			if len(f) > 2 {
+				to, msg := f[1], strings.Join(f[2:], " ")
+				if w.Whisper(name, to, msg) {
+					appendChat(game.HDLine{Text: "-> " + to + ": " + msg, Col: hudAccent})
+				} else {
+					appendChat(game.HDLine{Text: to + " is not online", Col: hudDim})
+				}
+			}
+		case "goto", "go":
+			if len(f) > 1 {
+				if dest := strings.ToLower(f[1]); dest != areaID && game.AreaRegistered(dest) {
+					fw.Reset()
+					out.WriteString("\x1b[2J")
+					areaID, area, hv = enterHD(ctx, areaID, dest)
+				} else {
+					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
+				}
+			}
+		default:
+			appendChat(game.HDLine{Text: "try chat, /me, /w <name> msg, /goto <area>", Col: hudDim})
+		}
+	}
+
 	draw()
 	ticker := time.NewTicker(time.Second / hdFPS)
 	defer ticker.Stop()
@@ -214,6 +352,32 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case b, ok := <-keys:
 			if !ok {
 				return
+			}
+			if chatActive { // typing a chat line: capture the byte, skip game keys
+				switch {
+				case b == 3: // Ctrl-C still quits
+					hud()
+					return
+				case b == '\r' || b == '\n':
+					text := strings.TrimSpace(chatInput)
+					chatActive, chatInput = false, ""
+					if text != "" {
+						sendChat(text)
+					}
+					draw()
+				case b == 0x7f || b == 0x08: // backspace
+					if n := len(chatInput); n > 0 {
+						chatInput = chatInput[:n-1]
+					}
+					draw()
+				case b == 0x1b: // esc cancels
+					chatActive, chatInput = false, ""
+					draw()
+				case b >= 0x20 && b < 0x7f:
+					chatInput += string(b)
+					draw()
+				}
+				continue
 			}
 			var key string
 			switch {
@@ -232,13 +396,23 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				} else {
 					csi = append(csi, b)
 				}
-			case b == 'q' || b == 'Q' || b == 3: // q or Ctrl-C
+			case b == 3: // Ctrl-C always quits
 				hud()
 				return
+			case b == 'q' || b == 'Q': // q closes an open panel, else quits
+				if uiPanel != hdPanelNone {
+					uiPanel = hdPanelNone
+					draw()
+				} else {
+					hud()
+					return
+				}
 			default:
 				key = string(b)
 			}
-			if km, ok := moveKeyMsg(key); ok {
+			if uiKey(key) {
+				draw()
+			} else if km, ok := moveKeyMsg(key); ok {
 				next, _ := area.Update(km)
 				if t, isTransition := next.(game.Transition); isTransition {
 					fw.Reset() // new scene → full repaint
@@ -247,6 +421,31 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				} else {
 					area = next
 				}
+				draw()
+			} else if key == "e" { // pick up an item under the player
+				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+				draw()
+			} else if key == "\r" || key == "\n" { // open chat
+				chatActive, chatInput = true, ""
+				draw()
+			} else if key == "/" { // open chat pre-filled for a command
+				chatActive, chatInput = true, "/"
+				draw()
+			}
+		case ev, ok := <-events:
+			if !ok {
+				events = nil // world closed this stream; stop selecting on it
+				continue
+			}
+			if ln, show := game.HDChatLine(ev, name); show {
+				appendChat(ln)
+				draw()
+			}
+			// Presentation needs slide/deck events to rebuild; the Wilds needs
+			// chat to catch a gate riddle answered aloud. Other areas poll the
+			// world each frame, so they don't need the rest.
+			if ev.Type == world.EventSlide || ev.Type == world.EventDeck || ev.Type == world.EventChat {
+				area, _ = area.Update(game.WorldEventMsg(ev))
 				draw()
 			}
 		case win = <-winCh:

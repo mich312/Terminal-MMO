@@ -85,6 +85,17 @@ func AvatarColorByIndex(i int) lipgloss.Color {
 	return avatarColors[((i%n)+n)%n]
 }
 
+// AvatarColorIndex returns the index of a color in the avatar palette, or 0 if
+// it isn't one of them (e.g. a custom color).
+func AvatarColorIndex(c lipgloss.Color) int {
+	for i, ac := range avatarColors {
+		if ac == c {
+			return i
+		}
+	}
+	return 0
+}
+
 // Theme is the full set of styles bound to one renderer (one SSH session, or
 // the process default). Build it with NewTheme.
 type Theme struct {

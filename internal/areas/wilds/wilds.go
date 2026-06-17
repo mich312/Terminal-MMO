@@ -9,6 +9,7 @@ package wilds
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,24 +29,134 @@ const Seed = worldSeed
 
 func init() {
 	game.Register("wilds", "The Wilds", func(ctx *game.Ctx) game.Area {
-		return &area{ctx: ctx, gen: worldgen.New(worldSeed)}
+		return &area{ctx: ctx, gen: worldgen.New(worldSeed),
+			discovered: map[[2]int]uint64{}, dirty: map[[2]int]bool{}}
 	})
 }
 
+// Discovery: the overworld starts hidden and is revealed as the player walks.
+// sightR is the brightly-lit circle around the player; discoverR (a touch
+// wider) is the radius committed to memory, so explored ground stays visible —
+// dimmed — once you move on.
+//
+// Memory is stored as a sparse grid of chunkN×chunkN cells, each chunk packed
+// into a uint64 bitmask — so a fully-explored chunk costs 8 bytes while a
+// frontier chunk still keeps exact per-tile bits. Chunks persist to the store,
+// so the map (and the player's position) survive disconnects and re-entry.
+const (
+	sightR    = 7
+	discoverR = 9
+	chunkN    = 8 // cells per chunk side; 8×8 = 64 = one uint64 mask
+)
+
 type area struct {
-	ctx     *game.Ctx
-	gen     *worldgen.Generator
-	wx, wy  int // absolute world position (top-left of the body's footprint)
-	frame   int
-	showMap bool
+	ctx        *game.Ctx
+	gen        *worldgen.Generator
+	wx, wy     int // absolute world position (top-left of the body's footprint)
+	frame      int
+	showMap    bool
+	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
+	dirty      map[[2]int]bool   // chunks changed since the last persist
+	collected  map[[2]int]bool   // world cells whose item this player has taken
+	toast      string            // transient pickup feedback
+	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
+}
+
+// toastDuration is how long a pickup message lingers.
+const toastDuration = 3 * time.Second
+
+// Toast implements game.Toaster: the current pickup message, if still fresh.
+// Both renderers poll it — the glyph View and the HD overlay.
+func (a *area) Toast() (string, bool) {
+	return a.toast, a.toast != "" && time.Now().Before(a.toastUntil)
+}
+
+func (a *area) setToast(msg string) {
+	a.toast, a.toastUntil = msg, time.Now().Add(toastDuration)
 }
 
 func (a *area) Name() string { return "The Wilds" }
 
 func (a *area) Init(*world.Player) tea.Cmd {
-	a.wx, a.wy = a.spawn()
+	a.discovered = a.ctx.Store.LoadDiscovery(a.ctx.Name)
+	if a.discovered == nil {
+		a.discovered = map[[2]int]uint64{}
+	}
+	a.dirty = map[[2]int]bool{}
+	a.collected = a.ctx.Store.LoadCollected(a.ctx.Name)
+	if a.collected == nil {
+		a.collected = map[[2]int]bool{}
+	}
+	if a.ctx.Inventory == nil {
+		a.ctx.Inventory = map[string]int{}
+	}
+	if a.ctx.FixedGates == nil {
+		a.ctx.FixedGates = a.ctx.Store.LoadPersonalGates(a.ctx.Name)
+		if a.ctx.FixedGates == nil {
+			a.ctx.FixedGates = map[string]bool{}
+		}
+	}
+	a.wx, a.wy = a.resume()
+	a.reveal()
+	a.persist()
 	a.ctx.World.EnterArea(a.ctx.Name, "wilds", a.wx, a.wy, "The Wilds")
 	return nil
+}
+
+// resume returns the saved position if it's still an open, non-portal footprint
+// (so you don't re-trigger the door you arrived through), else a fresh spawn by
+// the HQ gate.
+func (a *area) resume() (int, int) {
+	if x, y, ok := a.ctx.Store.LoadPosition(a.ctx.Name, "wilds"); ok && a.fits(x, y) {
+		if _, isPortal := a.portalUnder(x, y); !isPortal {
+			return x, y
+		}
+	}
+	return a.spawn()
+}
+
+// chunkOf splits a world cell into its chunk coordinate and bit index.
+func chunkOf(x, y int) (cx, cy int, bit uint) {
+	return x >> 3, y >> 3, uint((y&(chunkN-1))*chunkN + (x & (chunkN - 1)))
+}
+
+// seen reports whether a world cell has been discovered.
+func (a *area) seen(x, y int) bool {
+	cx, cy, bit := chunkOf(x, y)
+	return a.discovered[[2]int{cx, cy}]&(1<<bit) != 0
+}
+
+// markSeen records a cell as discovered, flagging its chunk dirty if changed.
+func (a *area) markSeen(x, y int) {
+	cx, cy, bit := chunkOf(x, y)
+	key := [2]int{cx, cy}
+	if nw := a.discovered[key] | (1 << bit); nw != a.discovered[key] {
+		a.discovered[key] = nw
+		a.dirty[key] = true
+	}
+}
+
+// reveal uncovers every cell within discoverR of the player's body center.
+// Centered on the 2×2 footprint so the circle sits under the avatar.
+func (a *area) reveal() {
+	cx, cy := a.wx+game.PlayerW/2, a.wy+game.PlayerH/2
+	for dy := -discoverR; dy <= discoverR; dy++ {
+		for dx := -discoverR; dx <= discoverR; dx++ {
+			if dx*dx+dy*dy <= discoverR*discoverR {
+				a.markSeen(cx+dx, cy+dy)
+			}
+		}
+	}
+}
+
+// persist flushes newly-revealed chunks and the player's position to the store,
+// so the map and where-you-stand survive disconnects and re-entry.
+func (a *area) persist() {
+	for ch := range a.dirty {
+		a.ctx.Store.SaveDiscovery(a.ctx.Name, ch[0], ch[1], a.discovered[ch])
+		delete(a.dirty, ch)
+	}
+	a.ctx.Store.SavePosition(a.ctx.Name, "wilds", a.wx, a.wy)
 }
 
 // spawn finds an open footprint near the HQ gate (but not on a portal).
@@ -64,25 +175,111 @@ func (a *area) fits(x, y int) bool { return footprintWalkable(a.gen, x, y) }
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
-			if c := a.gen.At(x+dx, y+dy); c.Portal != "" {
+			cx, cy := x+dx, y+dy
+			if c := a.gen.At(cx, cy); c.Portal != "" {
 				return c.Portal, true
+			}
+			// An opened gate behaves like a portal; a sealed one does not.
+			if g, ok := gateAtCell(cx, cy); ok && a.gateOpen(g) {
+				return g.Portal, true
 			}
 		}
 	}
 	return "", false
 }
 
+// gateOpen reports whether a gate is repaired for this player (personal) or for
+// everyone (co-op).
+func (a *area) gateOpen(g gate) bool {
+	if g.kind == gateCoop {
+		return a.ctx.World.GateFixed(g.Portal)
+	}
+	return a.ctx.FixedGates[g.Portal]
+}
+
+// sealedGateUnderBody returns the sealed gate the player is standing on, if any.
+func (a *area) sealedGateUnderBody() (gate, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			if g, ok := gateAtCell(a.wx+dx, a.wy+dy); ok && !a.gateOpen(g) {
+				return g, true
+			}
+		}
+	}
+	return gate{}, false
+}
+
+// offerToGate spends the required item to repair a personal gate or contribute
+// to a co-op gate's pool.
+func (a *area) offerToGate(g gate) {
+	if a.ctx.Inventory[g.item] <= 0 {
+		a.setToast("the " + g.Name + " needs a " + itemName(g.item))
+		return
+	}
+	a.ctx.Inventory[g.item]--
+	if a.ctx.Inventory[g.item] <= 0 {
+		delete(a.ctx.Inventory, g.item)
+	}
+	a.ctx.Store.SpendItem(a.ctx.Name, g.item)
+
+	if g.kind == gateCoop {
+		pool, fixed := a.ctx.World.OfferToGate(g.Portal, g.need)
+		if fixed {
+			a.setToast("the " + g.Name + " roars to life!")
+		} else {
+			a.setToast(fmt.Sprintf("offered a %s — %d/%d", itemName(g.item), pool, g.need))
+		}
+		return
+	}
+	a.fixPersonalGate(g)
+}
+
+// fixPersonalGate marks a personal gate repaired for this player.
+func (a *area) fixPersonalGate(g gate) {
+	a.ctx.FixedGates[g.Portal] = true
+	a.ctx.Store.FixPersonalGate(a.ctx.Name, g.Portal)
+	a.setToast("the " + g.Name + " opens for you!")
+}
+
+// gatePrompt is the status-bar hint shown while standing at a sealed gate.
+func (a *area) gatePrompt(g gate) string {
+	if g.kind == gateCoop {
+		return fmt.Sprintf("%s [SEALED] — e: offer a %s  (%d/%d given)",
+			g.Name, itemName(g.item), a.ctx.World.GatePool(g.Portal), g.need)
+	}
+	return fmt.Sprintf("%s [SEALED] — riddle: %s  (say the answer, or e: offer a %s)",
+		g.Name, g.riddle, itemName(g.item))
+}
+
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	switch msg := msg.(type) {
 	case game.WorldEventMsg:
-		if ev := world.Event(msg); ev.Type == world.EventTick {
+		ev := world.Event(msg)
+		switch ev.Type {
+		case world.EventTick:
 			a.frame = int(ev.Frame)
+		case world.EventChat:
+			// Answer a personal gate's riddle by saying it aloud at the gate.
+			if ev.Player == a.ctx.Name {
+				if g, ok := a.sealedGateUnderBody(); ok && g.kind == gatePersonal &&
+					g.answer != "" && normalizeAnswer(ev.Detail) == normalizeAnswer(g.answer) {
+					a.fixPersonalGate(g)
+				}
+			}
 		}
 		return a, nil
 
 	case tea.KeyMsg:
 		if msg.String() == "m" {
 			a.showMap = !a.showMap
+			return a, nil
+		}
+		if msg.String() == "e" {
+			if g, ok := a.sealedGateUnderBody(); ok {
+				a.offerToGate(g)
+			} else {
+				a.pickUp()
+			}
 			return a, nil
 		}
 		if a.showMap {
@@ -99,13 +296,16 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				break
 			}
 			a.wx, a.wy = nx, ny
+			a.reveal()
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
+				a.persist()
 				return game.Transition{To: portal}, nil
 			}
 		}
 		if a.wx != sx || a.wy != sy {
 			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
+			a.persist()
 		}
 	}
 	return a, nil
@@ -115,45 +315,169 @@ func (a *area) Hint() string {
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
 	}
+	if g, ok := a.sealedGateUnderBody(); ok {
+		return a.gatePrompt(g)
+	}
+	if h, _, _, ok := a.hatUnderBody(); ok {
+		return "e — wear the " + h.name
+	}
+	if it, _, _, ok := a.itemUnderBody(); ok {
+		return "e — take " + it.Name
+	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
+}
+
+// itemUnderBody returns the first uncollected item beneath the 2×2 footprint.
+func (a *area) itemUnderBody() (game.Item, int, int, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			x, y := a.wx+dx, a.wy+dy
+			if a.collected[[2]int{x, y}] {
+				continue
+			}
+			if it, ok := itemAt(a.gen.At(x, y), x, y); ok {
+				return it, x, y, true
+			}
+		}
+	}
+	return game.Item{}, 0, 0, false
+}
+
+// hatUnderBody returns the first uncollected hat beneath the 2×2 footprint.
+func (a *area) hatUnderBody() (hatLoot, int, int, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			x, y := a.wx+dx, a.wy+dy
+			if a.collected[[2]int{x, y}] {
+				continue
+			}
+			if h, ok := hatAt(a.gen.At(x, y), x, y); ok {
+				return h, x, y, true
+			}
+		}
+	}
+	return hatLoot{}, 0, 0, false
+}
+
+// pickUp harvests whatever lies under the player. Hats take precedence: they
+// unlock the accessory and equip it; ordinary items go into the pack. Both mark
+// the cell collected and persist.
+func (a *area) pickUp() {
+	if h, x, y, ok := a.hatUnderBody(); ok {
+		a.collected[[2]int{x, y}] = true
+		a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
+		if a.ctx.Hats == nil {
+			a.ctx.Hats = map[int]bool{}
+		}
+		if !a.ctx.Hats[h.idx] {
+			a.ctx.Hats[h.idx] = true
+			a.ctx.Store.UnlockHat(a.ctx.Name, h.idx)
+		}
+		if self, ok := a.ctx.World.Self(a.ctx.Name); ok {
+			a.ctx.World.SetAvatar(a.ctx.Name, self.Style, h.idx)
+			a.ctx.Store.SaveAvatar(a.ctx.Name, string(self.Color), self.Style, h.idx)
+		}
+		a.setToast("+ " + h.name + " (now worn!)")
+		return
+	}
+	it, x, y, ok := a.itemUnderBody()
+	if !ok {
+		return
+	}
+	a.collected[[2]int{x, y}] = true
+	a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
+	a.ctx.Inventory[it.ID]++
+	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
+	a.setToast("+ " + it.Name)
 }
 
 // sample builds a vw×vh window of the overworld centered on the player and
 // returns it with its absolute top-left origin. Shared by the glyph View and
 // the HD pixel renderer.
 func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
-	ox, oy := a.wx-vw/2, a.wy-vh/2
+	// Center the 2×2 body (not its top-left corner) in the window, so the avatar
+	// sits dead center in both the glyph and HD views.
+	ox, oy := a.wx-(vw-game.PlayerW)/2, a.wy-(vh-game.PlayerH)/2
 	tiles := make([][]game.Tile, vh)
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
 		for lx := 0; lx < vw; lx++ {
-			row[lx] = CellTile(a.gen.At(ox+lx, oy+ly))
+			wx, wy := ox+lx, oy+ly
+			if a.seen(wx, wy) {
+				cell := a.gen.At(wx, wy)
+				t := CellTile(cell)
+				if g, ok := gateAtCell(wx, wy); ok {
+					if !a.gateOpen(g) { // sealed: a dull, broken arch (no swirl)
+						t.Ch, t.Color = '⊘', "#8A8A98"
+						t.Prop, t.PropHex = game.PropSealed, "#7A7A88"
+						t.Tex, t.Ground = game.TexRock, "#33363E"
+					}
+				} else if !a.collected[[2]int{wx, wy}] {
+					if h, ok := hatAt(cell, wx, wy); ok {
+						t.Ch, t.Color = '♚', h.hex
+						t.Prop, t.PropHex = game.PropHat, h.hex
+					} else if it, ok := itemAt(cell, wx, wy); ok {
+						t.Ch, t.Color = it.Glyph, it.Hex
+						t.Prop, t.PropHex = game.PropGem, it.Hex // glints in HD
+					}
+				}
+				row[lx] = t
+			} else {
+				row[lx] = fogTile() // the unexplored world stays hidden
+			}
 		}
 		tiles[ly] = row
 	}
 	return &game.TileMap{W: vw, H: vh, Tiles: tiles}, ox, oy
 }
 
+// fogColor is the near-black an unexplored cell shows in both renderers.
+const fogColor = "#0B0E13"
+
+// fogTile is a blank, dark cell for undiscovered ground — collision still reads
+// the real generator (see fits), so fog only hides terrain, it never blocks.
+func fogTile() game.Tile {
+	return game.Tile{Kind: game.TileFloor, Ch: ' ', Walkable: true,
+		Color: fogColor, Tex: game.TexFlat, Ground: fogColor}
+}
+
+// sightLight is the radial "discovery circle": bright on the player, fading to
+// the night floor at sightR so explored ground beyond it reads as dim memory.
+func (a *area) sightLight() game.Light {
+	return game.Light{X: a.wx + game.PlayerW/2, Y: a.wy + game.PlayerH/2, Radius: sightR}
+}
+
 // HDView implements game.HDViewer so the Wilds renders in HD pixel mode.
 func (a *area) HDView(vw, vh int) (*game.TileMap, int, int) { return a.sample(vw, vh) }
+
+// HDLight implements game.HDLighter so the HD renderer applies the same
+// discovery circle as the glyph view.
+func (a *area) HDLight() game.Light { return a.sightLight() }
 
 func (a *area) View(width, height int) string {
 	tm, ox, oy := a.sample(width, height)
 	players := a.ctx.World.PlayersInArea("wilds")
-	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, ox, oy, game.Light{})
+	view := game.RenderWindow(a.ctx.Theme, tm, players, a.ctx.Name, a.frame, ox, oy, a.sightLight())
 
 	if a.showMap {
 		panel := a.minimap()
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
+	} else if msg, show := a.Toast(); show {
+		th := a.ctx.Theme
+		if th == nil {
+			th = ui.Default
+		}
+		line := th.Toast.Render(msg)
+		view = ui.Overlay(view, line, (width-lipgloss.Width(line))/2, 1)
 	}
 	return view
 }
 
 // CellTile converts a generated overworld cell into a renderable tile. It is
-// the single source of truth for the Wilds, the HD renderer and the pixeldemo
-// harness. Color/Ch keep the original cell look for the glyph renderer; Tex,
+// the single source of truth for the Wilds, shared by the glyph and HD
+// renderers. Color/Ch keep the original cell look for the glyph renderer; Tex,
 // Ground and Prop drive the HD tileset (decorations become sprites over the
 // biome ground rather than solid squares).
 func CellTile(c worldgen.Cell) game.Tile {
@@ -204,13 +528,19 @@ func texForBiome(b worldgen.Biome) game.TileTex {
 	switch b {
 	case worldgen.Grass:
 		return game.TexGrass
+	case worldgen.Savanna:
+		return game.TexSavanna
+	case worldgen.Swamp:
+		return game.TexSwamp
+	case worldgen.Snow:
+		return game.TexSnow
 	case worldgen.Sand:
 		return game.TexSand
 	case worldgen.Water, worldgen.Deep:
 		return game.TexWater
 	case worldgen.Forest:
 		return game.TexForest
-	case worldgen.Hill:
+	case worldgen.Hill, worldgen.Path:
 		return game.TexDirt
 	case worldgen.Mountain:
 		return game.TexRock
@@ -232,6 +562,14 @@ func groundColor(b worldgen.Biome) string {
 		return "#E6D6A0"
 	case worldgen.Mountain:
 		return "#9AA0A8"
+	case worldgen.Path:
+		return "#9B8B6A"
+	case worldgen.Snow:
+		return "#E8EEF5"
+	case worldgen.Savanna:
+		return "#B8A659"
+	case worldgen.Swamp:
+		return "#4A5A3A"
 	default:
 		return ""
 	}
@@ -257,6 +595,10 @@ func (a *area) minimap() string {
 			wy := a.wy + ry*stride
 			if rx == 0 && ry == 0 {
 				b.WriteString(th.Bright.Render("☺"))
+				continue
+			}
+			if !a.seen(wx, wy) {
+				b.WriteByte(' ') // unexplored — the map fills in as you roam
 				continue
 			}
 			c := a.gen.At(wx, wy)

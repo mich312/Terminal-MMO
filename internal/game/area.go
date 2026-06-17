@@ -42,6 +42,20 @@ type HDViewer interface {
 	HDView(vw, vh int) (window *TileMap, originX, originY int)
 }
 
+// HDLighter lets an HD area supply a radial light — the Wilds uses it for the
+// discovery circle around the player. Areas that don't implement it render at
+// full brightness.
+type HDLighter interface {
+	HDLight() Light
+}
+
+// Toaster is an area that surfaces a transient one-line message (e.g. an item
+// pickup). Both renderers poll it: the glyph View overlays it and the HD loop
+// draws it onto the frame.
+type Toaster interface {
+	Toast() (text string, show bool)
+}
+
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The
 // Presentation Wing uses it to show the current slide on screen in HD (there
 // are no terminal cells in HD, so the markdown is rendered into the image). It
@@ -61,6 +75,15 @@ type Ctx struct {
 	// Theme is the player's per-session, auto-detecting style set. Nil-safe:
 	// rendering falls back to ui.Default when unset (e.g. in tests).
 	Theme *ui.Theme
+	// Inventory is the session's collected items (id → count), shared between
+	// the Wilds pickup logic and the /inventory command. Loaded at join.
+	Inventory map[string]int
+	// Hats is the set of accessory indices the player has unlocked (found in the
+	// world). Index 0 ("none") is always available. Loaded at join.
+	Hats map[int]bool
+	// FixedGates is the set of personal gate ids this player has repaired.
+	// Loaded at join. Co-op gate state lives in the shared World instead.
+	FixedGates map[string]bool
 }
 
 // Transition is a sentinel Area: returning it from Update tells the root

@@ -19,6 +19,10 @@ const (
 	Forest
 	Hill
 	Mountain
+	Path
+	Snow
+	Savanna
+	Swamp
 )
 
 // Cell is one generated tile: how it looks, whether it blocks movement, and
@@ -75,6 +79,15 @@ var Landmarks = []Landmark{
 	{0, 12, "democenter", "Demo Center", 'D', "#C792EA", 3},
 }
 
+// Gates are sealed portals out past the hub — optional, riddle/offering-gated
+// doors to hidden areas. worldgen only fixes their position, clearing and a
+// dormant marker; the Wilds decides (from world/player state) whether each is
+// sealed or open, and what repairs it. Portal holds the destination area id.
+var Gates = []Landmark{
+	{22, 0, "grove", "Whispering Gate", '◈', "#C792EA", 2},
+	{0, 18, "vault", "Sunken Gate", '◈', "#56E1FF", 2},
+}
+
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
 func (g *Generator) At(x, y int) Cell {
 	for _, lm := range Landmarks {
@@ -83,15 +96,43 @@ func (g *Generator) At(x, y int) Cell {
 				Walkable: true, Object: true, Portal: lm.Portal}
 		}
 	}
-	// Forced grassy clearings around each landmark keep the plaza walkable.
+	// A sealed gate renders as a dormant marker on walkable ground; the Wilds
+	// turns it into an open portal (or keeps it sealed) from live state.
+	for _, gt := range Gates {
+		if x == gt.X && y == gt.Y {
+			return Cell{Biome: Grass, Glyph: gt.Glyph, Color: gt.Color, Walkable: true, Object: true}
+		}
+	}
+	// Forced grassy clearings around each landmark and gate keep them walkable.
 	for _, lm := range Landmarks {
 		if abs(x-lm.X) <= lm.Clear && abs(y-lm.Y) <= lm.Clear {
 			return grassCell(g, x, y)
 		}
 	}
+	for _, gt := range Gates {
+		if abs(x-gt.X) <= gt.Clear && abs(y-gt.Y) <= gt.Clear {
+			return grassCell(g, x, y)
+		}
+	}
+	// Forced walkable trails wire the HQ plaza to every wing. Without them a
+	// player could spawn boxed in by forest/water, since the clearings above are
+	// isolated discs and the terrain between them is otherwise pure noise.
+	if onPath(x, y) {
+		return pathCell(g, x, y)
+	}
 
-	elev := g.fbm(x, y, 0x1, 0.045, 4)
-	moist := g.fbm(x, y, 0x9E37, 0.03, 3)
+	// Domain warping: offset the sample point by a low-frequency noise field
+	// before reading elevation/moisture, so biome edges meander organically
+	// (wavy coastlines, interlocking forests) instead of forming smooth blobs.
+	const warp = 18.0
+	wx := float64(x) + warp*(g.fbmAt(float64(x), float64(y), 0x1233A, 0.02, 2)-0.5)
+	wy := float64(y) + warp*(g.fbmAt(float64(x), float64(y), 0x77C2B, 0.02, 2)-0.5)
+
+	elev := g.fbmAt(wx, wy, 0x1, 0.045, 4)
+	moist := g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
+	// Temperature is a large-scale climate field (low frequency = broad warm/cold
+	// regions), nudged colder as elevation rises so highlands and peaks freeze.
+	temp := g.fbmAt(wx, wy, 0x7E11, 0.014, 3) - 0.30*(elev-0.5)
 
 	switch {
 	case elev < 0.24: // deep water
@@ -103,17 +144,29 @@ func (g *Generator) At(x, y int) Cell {
 	case elev < 0.34: // shallows
 		return Cell{Biome: Water, Glyph: '~', Color: "#5BB0E0",
 			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
-	case elev < 0.38:
+	case elev < 0.38: // beach
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
-	case elev < 0.70:
-		if moist > 0.52 {
+	case elev < 0.70: // lowland — climate decides the cover
+		switch {
+		case elev < 0.46 && moist > 0.62 && temp > 0.45:
+			return swampCell(g, x, y) // warm, wet, low: wetlands by the water
+		case moist > 0.52:
 			return forestCell(g, x, y)
+		case temp > 0.60 && moist < 0.44:
+			return savannaCell(g, x, y)
+		default:
+			return grassCell(g, x, y)
 		}
-		return grassCell(g, x, y)
-	case elev < 0.84:
+	case elev < 0.84: // highland — cold tops freeze to snow, else hills
+		if temp < 0.40 {
+			return snowCell(g, x, y)
+		}
 		return hillCell(g, x, y)
-	default:
-		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // peaks block
+	default: // peaks — snow-capped where cold, bare rock where warm
+		if temp < 0.52 {
+			return Cell{Biome: Snow, Glyph: '▲', Color: "#EAF0F7"} // snowy peak (blocks)
+		}
+		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
 	}
 }
 
@@ -139,14 +192,78 @@ func grassCell(g *Generator, x, y int) Cell {
 
 func forestCell(g *Generator, x, y int) Cell {
 	switch r := g.prop(x, y); {
-	case r < 0.42: // a tree — blocks movement (color varies; some autumn)
+	case r < 0.28: // a tree — blocks movement (color varies; some autumn)
 		return Cell{Biome: Forest, Glyph: '♣', Color: treeColor(g.prop2(x, y))}
-	case r < 0.48: // a stump
+	case r < 0.36: // a stump
 		return Cell{Biome: Forest, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
-	case r < 0.56: // undergrowth bush
+	case r < 0.50: // undergrowth bush
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
 	return Cell{Biome: Forest, Glyph: '·', Color: "#3F8A5A", Walkable: true}
+}
+
+// snowCell is cold high ground: pale, mostly open, with the odd ice-glazed
+// rock. Nothing here blocks — snowfields stay crossable.
+func snowCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Snow, Glyph: '·', Color: "#E8EEF5", Walkable: true}
+	switch r := g.prop(x, y); {
+	case r < 0.05:
+		c.Glyph, c.Color = '°', "#C2CCD6" // an icy rock
+	case r < 0.14:
+		c.Glyph, c.Color = ',', "#D4DEEA" // a snow tuft / drift
+	}
+	return c
+}
+
+// savannaCell is warm, dry grassland: golden tufts and the occasional scrubby
+// bush. Kept free of blocking props so the dry plains stay open.
+func savannaCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Savanna, Glyph: '·', Color: "#B8A659", Walkable: true}
+	switch r := g.prop(x, y); {
+	case r < 0.05:
+		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
+	case r < 0.22:
+		c.Glyph, c.Color = ',', "#C9B85F" // a clump of dry grass
+	}
+	return c
+}
+
+// swampCell is warm, low, waterlogged ground: murky green flats with reeds,
+// hummocks and the odd shallow pool. Stays walkable — boggy, not impassable.
+func swampCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Swamp, Glyph: '·', Color: "#4A5A3A", Walkable: true}
+	switch r := g.prop(x, y); {
+	case r < 0.12:
+		c.Glyph, c.Color = ',', "#6B7A3A" // reeds
+	case r < 0.18:
+		c.Glyph, c.Color = 'o', "#3A5A3A" // a mossy hummock
+	case r < 0.24:
+		c.Glyph, c.Color = '~', "#3E5E55" // a stagnant pool
+	}
+	return c
+}
+
+// onPath reports whether (x,y) lies on a forced trail: a 3-wide walkable band
+// along the axes between the origin (Durst HQ) and each landmark, so the spawn
+// plaza is always connected to every wing's door regardless of seed.
+func onPath(x, y int) bool {
+	if abs(y) <= 1 && x >= -16 && x <= 22 { // HQ ↔ Kraftwerk / Presentation / Whispering Gate
+		return true
+	}
+	if abs(x) <= 1 && y >= 0 && y <= 18 { // HQ ↔ Demo Center / Sunken Gate
+		return true
+	}
+	return false
+}
+
+// pathCell is the worn-dirt trail surface, with the occasional cobble for
+// texture. Always walkable.
+func pathCell(g *Generator, x, y int) Cell {
+	c := Cell{Biome: Path, Glyph: '·', Color: "#9B8B6A", Walkable: true}
+	if g.prop(x, y) < 0.12 {
+		c.Glyph, c.Color = '∘', "#857653" // a cobble
+	}
+	return c
 }
 
 func hillCell(g *Generator, x, y int) Cell {
@@ -187,14 +304,15 @@ func treeColor(r float64) string {
 
 // ── noise ──────────────────────────────────────────────────────────────────
 
-// fbm sums octaves of value noise into [0,1]. freq is the base lattice
-// frequency; salt separates independent fields (elevation vs moisture).
-func (g *Generator) fbm(x, y int, salt uint64, freq float64, octaves int) float64 {
+// fbmAt sums octaves of value noise into [0,1] at a float coordinate (so the
+// domain-warped sample point can be fractional). freq is the base lattice
+// frequency; salt separates independent fields (elevation, moisture, temp).
+func (g *Generator) fbmAt(x, y float64, salt uint64, freq float64, octaves int) float64 {
 	var sum, norm float64
 	a := 1.0
 	f := freq
 	for i := 0; i < octaves; i++ {
-		sum += a * g.valueNoise(float64(x)*f, float64(y)*f, salt+uint64(i))
+		sum += a * g.valueNoise(x*f, y*f, salt+uint64(i))
 		norm += a
 		a *= 0.5
 		f *= 2
