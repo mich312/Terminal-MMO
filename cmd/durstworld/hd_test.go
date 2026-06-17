@@ -35,17 +35,15 @@ func TestMoveKeyMsg(t *testing.T) {
 	}
 }
 
-// HD is the default: only an explicit opt-out command (glyph/classic/tui/text)
-// routes to the bubbletea client; a plain connection or any other args stays HD.
+// HD is the default: only an explicit `glyph` command routes to the bubbletea
+// client; a plain connection or any other args stays HD.
 func TestCmdWantsClassic(t *testing.T) {
-	classic := [][]string{{"glyph"}, {"classic"}, {"tui"}, {"text"}, {"glyph", "extra"}}
-	for _, cmd := range classic {
+	for _, cmd := range [][]string{{"glyph"}, {"glyph", "extra"}} {
 		if !cmdWantsClassic(cmd) {
 			t.Errorf("%v should opt into the classic client", cmd)
 		}
 	}
-	hd := [][]string{nil, {}, {"hd"}, {"kitty"}, {"sixel"}, {"GLYPH"}, {"foo"}}
-	for _, cmd := range hd {
+	for _, cmd := range [][]string{nil, {}, {"hd"}, {"GLYPH"}, {"foo"}} {
 		if cmdWantsClassic(cmd) {
 			t.Errorf("%v should stay in default HD", cmd)
 		}

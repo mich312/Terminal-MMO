@@ -30,13 +30,12 @@ walking avatars.
   glyph renderer (shares `buildGrid` for palette/tint/light). Flat tiles by
   default; optional bilinear-smoothed terrain + vignette; avatars upscaled with
   bilinear alpha (rounded, anti-aliased) over a soft contact shadow.
-- `cmd/pixeldemo` — a standalone harness (kept out of bubbletea/wish on
-  purpose). Hand-rolled **kitty** (RGBA + zlib, optional `c=,r=` display
-  scaling) and **sixel** (216-cube, ordered dither only when smoothing)
-  encoders; terminal capability + cell-size probe; an efficient **delta loop**
-  (transmit only the dirty cell-aligned region, nothing when static, periodic
-  full refresh); fixed internal resolution (`-res`, kitty only); per-frame
-  timing + bandwidth reporting.
+- `internal/pixel` — the `FrameWriter`: hand-rolled **kitty** (RGBA + zlib,
+  optional `c=,r=` display scaling) and **sixel** (216-cube, ordered dither only
+  when smoothing) encoders, plus the **delta loop** (transmit only the dirty
+  cell-aligned region, nothing when static, periodic full refresh). Driven for
+  live sessions by `cmd/durstworld/hd.go`, kept out of bubbletea/wish on purpose
+  (image escapes are out-of-band and bubbletea would clobber them).
 
 ## What we measured
 
@@ -86,9 +85,11 @@ will clobber them), and it adds **per-session encode CPU** on the server.
 
 ## Run it
 
+HD shipped as the default renderer — just connect (a plain interactive `ssh`
+gets a PTY, so no `-t` is needed):
+
 ```sh
-go run ./cmd/pixeldemo                 # auto-detect, auto-fit, flat + delta (the shippable config)
-go run ./cmd/pixeldemo -probe          # report protocol support + cell size
-go run ./cmd/pixeldemo -smooth         # pretty (bilinear + vignette), ~12× heavier
-go run ./cmd/pixeldemo -motion walk    # delta in action (static camera)
+go run ./cmd/durstworld
+ssh -p 2222 you@localhost            # HD (sixel/kitty, auto-detected from TERM)
+ssh -t -p 2222 you@localhost glyph   # classic half-block glyph client
 ```

@@ -37,8 +37,7 @@ import (
 )
 
 func main() {
-	styleName := flag.String("style", os.Getenv("DURST_STYLE"),
-		"HD art style: default | gameboy | neon (or set DURST_STYLE)")
+	styleName := flag.String("style", "default", "HD art style: default | gameboy | neon")
 	flag.Parse()
 
 	port := os.Getenv("PORT")

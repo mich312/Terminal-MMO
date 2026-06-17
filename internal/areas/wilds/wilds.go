@@ -152,8 +152,8 @@ func (a *area) View(width, height int) string {
 }
 
 // CellTile converts a generated overworld cell into a renderable tile. It is
-// the single source of truth for the Wilds, the HD renderer and the pixeldemo
-// harness. Color/Ch keep the original cell look for the glyph renderer; Tex,
+// the single source of truth for the Wilds, shared by the glyph and HD
+// renderers. Color/Ch keep the original cell look for the glyph renderer; Tex,
 // Ground and Prop drive the HD tileset (decorations become sprites over the
 // biome ground rather than solid squares).
 func CellTile(c worldgen.Cell) game.Tile {

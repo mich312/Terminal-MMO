@@ -64,19 +64,15 @@ func setupAvatar(w *world.World, st store.Store, name string) {
 	st.SaveAvatar(name, string(color), style, accessory)
 }
 
-// classicNames are the session-command arguments that opt out of the default
-// HD renderer and request the classic glyph (bubbletea) client instead.
-var classicNames = map[string]bool{"glyph": true, "classic": true, "tui": true, "text": true}
-
 // wantsClassic reports whether a session asked for the classic glyph client
-// (e.g. `ssh -t host glyph`) instead of the default HD renderer.
+// (`ssh -t host glyph`) instead of the default HD renderer.
 func wantsClassic(s ssh.Session) bool { return cmdWantsClassic(s.Command()) }
 
 // cmdWantsClassic is wantsClassic over a raw command slice, split out so the
 // arg matching is testable without an ssh.Session.
 func cmdWantsClassic(cmd []string) bool {
 	for _, a := range cmd {
-		if classicNames[a] {
+		if a == "glyph" {
 			return true
 		}
 	}
@@ -103,18 +99,10 @@ func hdMiddleware(w *world.World, st store.Store, style *game.Style) wish.Middle
 }
 
 // preferKitty decides whether to drive the session with the kitty graphics
-// protocol instead of sixel. An explicit `hd kitty` / `hd sixel` argument wins;
-// otherwise we infer from TERM — kitty and ghostty speak the kitty protocol and
-// ghostty has no sixel, so they default to kitty; everything else to sixel.
-func preferKitty(term string, cmd []string) bool {
-	for _, a := range cmd {
-		switch a {
-		case "kitty":
-			return true
-		case "sixel":
-			return false
-		}
-	}
+// protocol instead of sixel, inferred from TERM: kitty and ghostty speak the
+// kitty protocol (and ghostty has no sixel), so they get kitty; everything else
+// gets sixel.
+func preferKitty(term string) bool {
 	return strings.Contains(term, "kitty") || strings.Contains(term, "ghostty")
 }
 
@@ -125,9 +113,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		return
 	}
 	// Ghostty/kitty speak the kitty graphics protocol and have no sixel; other
-	// terminals (iTerm2, WezTerm, xterm) use sixel. Pick from the forwarded TERM,
-	// overridable with an explicit `hd kitty` / `hd sixel` argument.
-	useKitty := preferKitty(ptyReq.Term, s.Command())
+	// terminals (iTerm2, WezTerm, xterm) use sixel. Pick from the forwarded TERM.
+	useKitty := preferKitty(ptyReq.Term)
 	proto := "sixel"
 	if useKitty {
 		proto = "kitty"

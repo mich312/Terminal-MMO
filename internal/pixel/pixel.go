@@ -1,7 +1,7 @@
 // Package pixel encodes RGBA frames for terminal graphics protocols — the
 // kitty graphics protocol and sixel — and supports delta updates (dirty-rect
-// diff + crop) so callers can re-send only the changed region. Shared by the
-// pixeldemo harness and the live HD SSH renderer.
+// diff + crop) so callers can re-send only the changed region. Driven by the
+// live HD SSH renderer (cmd/durstworld/hd.go).
 package pixel
 
 import (
