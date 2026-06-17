@@ -30,17 +30,26 @@ ssh -p 2222 markus@localhost
   delete it to start fresh. If the file is unwritable the game logs a warning
   and plays on without memory.
 
-### HD mode (experimental real-pixel renderer)
+### HD mode (real-pixel renderer, default)
 
-On a sixel-capable terminal (e.g. Windows Terminal 1.22+) you can walk the Wilds
-rendered as actual pixels instead of half-block glyphs:
+On a sixel- or kitty-capable terminal (e.g. Windows Terminal 1.22+, kitty,
+ghostty, iTerm2, WezTerm) you walk the Wilds rendered as actual pixels instead
+of half-block glyphs. It's the **default** — a plain connection serves it:
 
 ```sh
-ssh -t -p 2222 you@localhost hd
+ssh -p 2222 you@localhost
+```
+
+A plain interactive `ssh` allocates a PTY for free, so no `-t` is needed. To
+opt back into the classic glyph (bubbletea) client, pass a command — which does
+need `-t` to get a PTY:
+
+```sh
+ssh -t -p 2222 you@localhost glyph   # also: classic | tui | text
 ```
 
 WASD or arrow keys to move, `Y U B N` for diagonals, Shift/uppercase to run,
-`q` to quit. It shares the live world, so you and ordinary players see each
+`q` to quit. It shares the live world, so you and glyph-client players see each
 other. It bypasses bubbletea and streams sixel with
 delta updates (only the changed region each frame). Background and rationale:
 [`docs/pixel-renderer.md`](docs/pixel-renderer.md). The standalone

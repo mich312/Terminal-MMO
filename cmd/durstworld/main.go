@@ -69,8 +69,9 @@ func main() {
 		// no auth options at all = accept any username, no password
 		wish.WithMiddleware(
 			bm.Middleware(teaHandler(w, st)),
-			// HD ("real pixel" sixel) mode: `ssh -t … hd` serves the experimental
-			// renderer instead of bubbletea. Sits inside activeterm so it has a PTY.
+			// HD ("real pixel" sixel/kitty) mode is the default; `ssh -t … glyph`
+			// opts back into the bubbletea client. Sits inside activeterm so it has
+			// a PTY.
 			hdMiddleware(w, st, style),
 			activeterm.Middleware(), // require a TTY
 			logging.Middleware(),
@@ -83,7 +84,7 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	log.Printf("Durst World listening on :%s — ssh -p %s you@localhost (HD: ssh -t -p %s you@localhost hd)", port, port, port)
+	log.Printf("Durst World listening on :%s — ssh -p %s you@localhost (HD by default; classic glyph client: ssh -t -p %s you@localhost glyph)", port, port, port)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 			log.Printf("server error: %v", err)

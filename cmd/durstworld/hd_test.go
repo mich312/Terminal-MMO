@@ -35,6 +35,23 @@ func TestMoveKeyMsg(t *testing.T) {
 	}
 }
 
+// HD is the default: only an explicit opt-out command (glyph/classic/tui/text)
+// routes to the bubbletea client; a plain connection or any other args stays HD.
+func TestCmdWantsClassic(t *testing.T) {
+	classic := [][]string{{"glyph"}, {"classic"}, {"tui"}, {"text"}, {"glyph", "extra"}}
+	for _, cmd := range classic {
+		if !cmdWantsClassic(cmd) {
+			t.Errorf("%v should opt into the classic client", cmd)
+		}
+	}
+	hd := [][]string{nil, {}, {"hd"}, {"kitty"}, {"sixel"}, {"GLYPH"}, {"foo"}}
+	for _, cmd := range hd {
+		if cmdWantsClassic(cmd) {
+			t.Errorf("%v should stay in default HD", cmd)
+		}
+	}
+}
+
 // A portal into a panel-only area (the Arcade) can't render in HD, so enterHD
 // falls back to the lobby rather than stranding the player on a blank screen.
 func TestEnterHDFallsBackForPanelArea(t *testing.T) {

@@ -21,8 +21,9 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// HD ("real pixel") mode is an experimental sixel/kitty renderer, reachable
-// with:  ssh -t -p 2222 you@host hd
+// HD ("real pixel") mode is the default sixel/kitty renderer, served on a plain
+// interactive connection:  ssh -p 2222 you@host  (opt back into the classic
+// glyph client with `ssh -t -p 2222 you@host glyph`).
 //
 // It deliberately bypasses bubbletea — image escapes are out-of-band and would
 // fight bubbletea's frame diffing — and writes graphics frames straight to the
@@ -63,28 +64,40 @@ func setupAvatar(w *world.World, st store.Store, name string) {
 	st.SaveAvatar(name, string(color), style, accessory)
 }
 
-// isHD reports whether a session asked for HD mode (an "hd" argument, e.g.
-// `ssh -t host hd`).
-func isHD(s ssh.Session) bool {
-	for _, a := range s.Command() {
-		if a == "hd" {
+// classicNames are the session-command arguments that opt out of the default
+// HD renderer and request the classic glyph (bubbletea) client instead.
+var classicNames = map[string]bool{"glyph": true, "classic": true, "tui": true, "text": true}
+
+// wantsClassic reports whether a session asked for the classic glyph client
+// (e.g. `ssh -t host glyph`) instead of the default HD renderer.
+func wantsClassic(s ssh.Session) bool { return cmdWantsClassic(s.Command()) }
+
+// cmdWantsClassic is wantsClassic over a raw command slice, split out so the
+// arg matching is testable without an ssh.Session.
+func cmdWantsClassic(cmd []string) bool {
+	for _, a := range cmd {
+		if classicNames[a] {
 			return true
 		}
 	}
 	return false
 }
 
-// hdMiddleware intercepts HD sessions and serves the sixel renderer instead of
-// bubbletea; everything else falls through unchanged. Placed inside activeterm
-// so a PTY is guaranteed. style is the server-wide art style for HD frames.
+// hdMiddleware serves the HD (sixel/kitty) renderer by default and falls
+// through to the bubbletea glyph client only when a session explicitly opts
+// out (e.g. `ssh -t host glyph`). Serving HD on a plain `ssh host` is what lets
+// it work without a forced `-t`: an interactive session gets a PTY for free,
+// whereas a command session (`ssh host hd`) would need `-t` to allocate one.
+// Placed inside activeterm so a PTY is guaranteed. style is the server-wide art
+// style for HD frames.
 func hdMiddleware(w *world.World, st store.Store, style *game.Style) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
-			if isHD(s) {
-				runHD(s, w, st, style)
+			if wantsClassic(s) {
+				next(s)
 				return
 			}
-			next(s)
+			runHD(s, w, st, style)
 		}
 	}
 }
