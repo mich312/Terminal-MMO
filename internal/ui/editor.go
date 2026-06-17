@@ -162,14 +162,25 @@ func (e *Editor) renderLine(t *Theme, row, width int) string {
 	if row != e.cy {
 		return t.ChatText.Render(clip(string(runes), width))
 	}
-	cur := ' '
-	if e.cx < len(runes) {
-		cur = runes[e.cx]
+	// Scroll horizontally so the cursor stays inside the panel on long lines.
+	start := 0
+	if e.cx >= width {
+		start = e.cx - width + 1
 	}
-	before := string(runes[:e.cx])
+	end := start + width
+	if end > len(runes) {
+		end = len(runes)
+	}
+	win := runes[start:end]
+	crel := e.cx - start
+	cur := ' '
+	if crel < len(win) {
+		cur = win[crel]
+	}
+	before := string(win[:crel])
 	after := ""
-	if e.cx < len(runes) {
-		after = string(runes[e.cx+1:])
+	if crel < len(win) {
+		after = string(win[crel+1:])
 	}
 	cursor := t.r.NewStyle().Reverse(true).Render(string(cur))
 	return t.ChatText.Render(before) + cursor + t.ChatText.Render(after)

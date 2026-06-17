@@ -1,6 +1,7 @@
 package world
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -212,7 +213,7 @@ func (w *World) uniqueDeckID(title string) string {
 		w.deckSeq++
 		id := base
 		if _, taken := w.decks[id]; taken || i > 1 {
-			id = base + "-" + itoa(w.deckSeq)
+			id = base + "-" + strconv.Itoa(w.deckSeq)
 		}
 		if _, taken := w.decks[id]; !taken {
 			return id
@@ -236,16 +237,4 @@ func slugify(s string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var d []byte
-	for n > 0 {
-		d = append([]byte{byte('0' + n%10)}, d...)
-		n /= 10
-	}
-	return string(d)
 }

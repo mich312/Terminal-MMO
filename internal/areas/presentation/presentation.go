@@ -305,7 +305,9 @@ func (a *area) editKey(key tea.KeyMsg) {
 	case tea.KeyCtrlS:
 		src := a.editor.Value()
 		if a.editID == "" {
-			a.Ctx.World.CreateDeck(a.Ctx.Name, a.pendingTitle, src)
+			if a.Ctx.World.CreateDeck(a.Ctx.Name, a.pendingTitle, src) == "" {
+				return // the wing filled while editing — keep the editor open so the work isn't lost
+			}
 		} else {
 			a.Ctx.World.UpdateDeck(a.editID, a.Ctx.Name, a.pendingTitle, src)
 		}
@@ -320,20 +322,28 @@ func (a *area) editKey(key tea.KeyMsg) {
 	}
 }
 
-// rebuildSafe regenerates the map and keeps the local player on walkable ground
-// — retiring a deck shifts later bays left, so a player may need nudging to the
-// concourse.
+// rebuildSafe regenerates the map and keeps the local player sensibly placed.
+// Retiring an earlier deck shifts every later bay left, so a player can end up
+// on a wall (handled) or — worse — silently standing in a *different* stage than
+// the one they were watching. In either case we step them down to the concourse
+// near their current column rather than mis-attribute them to someone else's
+// talk.
 func (a *area) rebuildSafe() {
+	prev, wasInStage := a.stageAt(a.X, a.Y)
 	a.rebuild()
-	if a.fits(a.X, a.Y) {
+	now, inStage := a.stageAt(a.X, a.Y)
+	shifted := wasInStage && inStage && now.deckID != prev.deckID
+	if a.fits(a.X, a.Y) && !shifted {
 		return
 	}
 	cy := stageH + 3 // a concourse row
-	for x := 1; x <= a.Map.W-2; x++ {
-		if a.fits(x, cy) {
-			a.X, a.Y = x, cy
-			a.Ctx.World.Move(a.Ctx.Name, x, cy)
-			return
+	for d := 0; d < a.Map.W; d++ {
+		for _, x := range [2]int{a.X - d, a.X + d} {
+			if a.fits(x, cy) {
+				a.X, a.Y = x, cy
+				a.Ctx.World.Move(a.Ctx.Name, x, cy)
+				return
+			}
 		}
 	}
 }

@@ -250,6 +250,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				draw()
 			}
 		case win = <-winCh:
+			cellW, cellH = hdCellSize(win) // the client may report new pixel dims
+			fw.CellW, fw.CellH = cellW, cellH
 			fw.Reset() // size changed → force a full repaint
 			out.WriteString("\x1b[2J")
 			draw()

@@ -29,6 +29,11 @@ func TestRetireRepositionsPlayer(t *testing.T) {
 	if !a.fits(a.X, a.Y) {
 		t.Errorf("player stranded off walkable ground at (%d,%d) after retire", a.X, a.Y)
 	}
+	// They were watching deck "c"; after the shift they must not be silently
+	// standing in a *different* deck's stage.
+	if st, in := a.stageAt(a.X, a.Y); in && !st.booth && st.deckID != "c" {
+		t.Errorf("player mis-attributed to deck %q after an earlier deck was retired", st.deckID)
+	}
 }
 
 // The wing always has at least the create booth, and grows one bay per deck.
