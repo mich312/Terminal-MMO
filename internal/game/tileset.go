@@ -37,6 +37,20 @@ var groundArt = map[TileTex][][]string{
 		{"BLBBBB", "BBBBDB", "DDBBBB", "BBBDBB", "BBBBBB", "BBLBBB"},
 		{"BBBLBB", "DBBBBB", "BBBBDD", "BBBBBB", "BLBBBB", "BBBBDB"},
 	},
+	// Indoor floor: a faint speckle so the surface reads as hand-pixeled.
+	TexFloor: {
+		{"BBBBBB", "BBBBBB", "BBLBBB", "BBBBBB", "BBBBBL", "BBBBBB"},
+		{"BBBBBB", "LBBBBB", "BBBBBB", "BBBLBB", "BBBBBB", "BBBBBB"},
+	},
+	// Brick wall: staggered courses with darker mortar.
+	TexBrick: {
+		{"BBBBBD", "BBBBBD", "DDDDDD", "DBBBBB", "DBBBBB", "DDDDDD"},
+	},
+	// Metal plate: riveted panels for the machine hall.
+	TexMetal: {
+		{"LBBBBB", "BBBBBB", "BBBBBB", "LBBBBB", "BBBBBB", "BBBBBB"},
+		{"BBBBBL", "BBBBBB", "BBBBBB", "BBBBBL", "BBBBBB", "BBBBBB"},
+	},
 }
 
 var propArt = map[TileProp][]string{
@@ -106,6 +120,93 @@ var propArt = map[TileProp][]string{
 		"PPppPP",
 	},
 	// PropPortal is drawn by the multi-tile structure pass, not here.
+
+	// Indoor furniture, drawn with the richer prop palette: o outline, p/D shade,
+	// L/W highlight, G animated glow. Authored for the hand-built rooms.
+	PropMachine: {
+		"oPPPPo",
+		"PLPPLP",
+		"PPGGPP",
+		"PpPPpP",
+		"PLLLLP",
+		".oPPo.",
+	},
+	PropScreen: {
+		"oPPPPo",
+		"PGGGGP",
+		"PGGGGP",
+		"PGGGGP",
+		"oPPPPo",
+		"..pp..",
+	},
+	PropPlinth: {
+		".LPPL.",
+		"..PP..",
+		".oPPo.",
+		".PppP.",
+		"oPPPPo",
+		"pPPPPp",
+	},
+	PropGem: {
+		"..W...",
+		".WGW..",
+		"WGGGW.",
+		".WGW..",
+		"..W...",
+		"......",
+	},
+	PropLamp: {
+		"..GG..",
+		".GWWG.",
+		".GGGG.",
+		"..pp..",
+		"..PP..",
+		".oPPo.",
+	},
+	PropCrate: {
+		"oPPPPo",
+		"PLppLP",
+		"PpPPpP",
+		"PpPPpP",
+		"PLppLP",
+		"oPPPPo",
+	},
+	// Reactor core: a white-hot energy orb that pulses.
+	PropCore: {
+		".oGGo.",
+		"oGWWGo",
+		"GWWWWG",
+		"GWWWWG",
+		"oGWWGo",
+		".oGGo.",
+	},
+	// Turbine/generator with a glowing core band.
+	PropTurbine: {
+		"oPPPPo",
+		"PLppLP",
+		"PGGGGP",
+		"PGGGGP",
+		"PLppLP",
+		"oPPPPo",
+	},
+	// Pipe segment with a glowing valve.
+	PropPipe: {
+		".PPPP.",
+		".PppP.",
+		".PGGP.",
+		".PGGP.",
+		".PppP.",
+		".PPPP.",
+	},
+	// Fountain/water feature with a bright glowing basin.
+	PropFountain: {
+		".oPPo.",
+		".PWWP.",
+		"oGWWGo",
+		"GWWWWG",
+		".pGGp.",
+		"oPPPPo",
+	},
 }
 
 // portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in

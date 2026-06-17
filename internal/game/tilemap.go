@@ -29,6 +29,10 @@ const (
 	TexDirt
 	TexForest
 	TexRock
+	// Indoor surfaces for the hand-built rooms.
+	TexFloor // subtly speckled interior floor
+	TexBrick // staggered brick courses, for walls
+	TexMetal // riveted metal plate, for machine halls
 )
 
 // TileProp is a sprite drawn over the ground in the HD renderer — flowers,
@@ -46,6 +50,17 @@ const (
 	PropStump
 	PropHouse  // decorative multi-tile building
 	PropPortal // animated area-entrance gate
+	// Indoor furniture for the hand-built rooms.
+	PropMachine  // boxy machine / plotter
+	PropScreen   // wall-mounted display panel (animated)
+	PropPlinth   // exhibit pedestal
+	PropGem      // small showcased item (glints)
+	PropLamp     // light fixture / spotlight (glows)
+	PropCrate    // crate / desk block
+	PropCore     // reactor energy orb (glows, hero feature)
+	PropTurbine  // turbine / generator unit (glows)
+	PropPipe     // pipe segment with a valve light
+	PropFountain // water feature centerpiece (glows)
 )
 
 // Tile is one cell of a parsed map.
@@ -85,6 +100,12 @@ type LegendEntry struct {
 	Object   string
 	Anim     *TileAnim
 	Color    string
+	// HD pixel-renderer data (ignored by the glyph renderer): a ground texture,
+	// the ground base color, and an optional sprite prop drawn over it.
+	Tex     TileTex
+	Ground  string
+	Prop    TileProp
+	PropHex string
 }
 
 // MapText is a label drawn over the map (display only; the tiles underneath
@@ -101,10 +122,13 @@ type TileMap struct {
 	Texts []MapText
 }
 
-// baseLegend covers the runes every map shares.
+// baseLegend covers the runes every map shares. Walls and floors carry HD
+// texture/ground data so the hand-built rooms render as pixel art (not flat
+// blocks) in HD mode; the glyph renderer ignores those fields. An area can
+// override these in its own legend (e.g. a metal or carpeted floor).
 var baseLegend = map[rune]LegendEntry{
-	'#': {Kind: TileWall, Ch: '█'},
-	'.': {Kind: TileFloor, Ch: '·', Walkable: true},
+	'#': {Kind: TileWall, Ch: '█', Tex: TexBrick, Ground: "#3E4650"},
+	'.': {Kind: TileFloor, Ch: '·', Walkable: true, Tex: TexFloor, Ground: "#2A2F37"},
 	' ': {Kind: TileVoid, Ch: ' '},
 }
 
@@ -147,6 +171,10 @@ func ParseMap(rows []string, legend map[rune]LegendEntry, texts []MapText) *Tile
 				Object:   le.Object,
 				Anim:     le.Anim,
 				Color:    le.Color,
+				Tex:      le.Tex,
+				Ground:   le.Ground,
+				Prop:     le.Prop,
+				PropHex:  le.PropHex,
 			}
 		}
 		tm.Tiles = append(tm.Tiles, line)

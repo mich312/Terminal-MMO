@@ -297,21 +297,34 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 	}
 
 	if art, ok := style.Props[prop]; ok {
-		pc := colorfulToRGBA(propCol)
-		pd := colorfulToRGBA(propCol.BlendLab(shadowColor, style.PropShadeMix).Clamped())
-		tr := colorfulToRGBA(style.Trunk)
-		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
+		// A richer prop palette than plain fill/shade: outline (o), shades (p, D),
+		// highlights (L, W), trunk (T) and an animated emissive glow (G) that
+		// pulses with the frame so screens, lamps and the reactor core come alive.
+		// Per-tile phase keeps lamps/screens from blinking in unison.
+		glow := propCol.BlendLab(spriteWhite, 0.45+0.4*math.Sin(float64(frame)*0.3+float64(wx*7+wy*3)))
+		paint := func(r byte) (color.RGBA, bool) {
 			switch r {
 			case 'P':
-				return pc, true
+				return colorfulToRGBA(propCol), true
 			case 'p':
-				return pd, true
+				return colorfulToRGBA(propCol.BlendLab(shadowColor, style.PropShadeMix).Clamped()), true
+			case 'D':
+				return colorfulToRGBA(propCol.BlendLab(shadowColor, 0.42).Clamped()), true
+			case 'o':
+				return colorfulToRGBA(propCol.BlendLab(shadowColor, 0.6).Clamped()), true
+			case 'L':
+				return colorfulToRGBA(propCol.BlendLab(spriteWhite, 0.4).Clamped()), true
+			case 'W':
+				return colorfulToRGBA(propCol.BlendLab(spriteWhite, 0.72).Clamped()), true
+			case 'G':
+				return colorfulToRGBA(glow.Clamped()), true
 			case 'T':
-				return tr, true
+				return colorfulToRGBA(style.Trunk), true
 			default:
 				return color.RGBA{}, false // '.' transparent
 			}
-		})
+		}
+		blitTileArt(img, ox, oy, scale, art, paint)
 	}
 }
 

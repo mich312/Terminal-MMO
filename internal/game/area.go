@@ -33,6 +33,23 @@ type InputCapturer interface {
 	CapturesInput() bool
 }
 
+// HDViewer is an area the HD pixel renderer can draw: it returns a vw×vh tile
+// window centered on the local player, plus the window's absolute top-left
+// origin (players carry absolute world coordinates, so the renderer maps them
+// onto the window with this origin). Walker-based areas and the Wilds implement
+// it; panel-only areas (the Arcade stub) don't, so HD mode skips them.
+type HDViewer interface {
+	HDView(vw, vh int) (window *TileMap, originX, originY int)
+}
+
+// HDOverlayer lets an area draw a text panel over the HD pixel frame. The
+// Presentation Wing uses it to show the current slide on screen in HD (there
+// are no terminal cells in HD, so the markdown is rendered into the image). It
+// returns the slide's markdown source, a footer, and whether to show it.
+type HDOverlayer interface {
+	HDSlide() (src string, footer string, show bool)
+}
+
 // Ctx is everything an area needs: shared world, persistence, and who the
 // local player is. From is the area id the player came from ("" on a fresh
 // connect) so areas can spawn players next to the right portal.

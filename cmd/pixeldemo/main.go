@@ -156,7 +156,7 @@ func main() {
 		baseBytes, sentBytes int
 		dirtySum             float64
 		started              = time.Now()
-		framePeriod          = time.Second / time.Duration(maxInt(*fps, 1))
+		framePeriod          = time.Second / time.Duration(max(*fps, 1))
 		prev                 []byte
 		w, h                 = nativeW, nativeH
 	)
@@ -241,9 +241,9 @@ func main() {
 		pxW: w, pxH: h, fps: *fps,
 		rasterMS:  msPerFrame(rasterNS, *frames),
 		encodeMS:  msPerFrame(encodeNS, *frames),
-		baseBytes: baseBytes / maxInt(*frames, 1),
-		sentBytes: sentBytes / maxInt(*frames, 1),
-		dirtyPct:  100 * dirtySum / float64(maxInt(*frames, 1)),
+		baseBytes: baseBytes / max(*frames, 1),
+		sentBytes: sentBytes / max(*frames, 1),
+		dirtyPct:  100 * dirtySum / float64(max(*frames, 1)),
 		gotFPS:    float64(*frames) / elapsed.Seconds(),
 	})
 }
@@ -503,19 +503,5 @@ delta        %s
 }
 
 func msPerFrame(totalNS int64, frames int) float64 {
-	return float64(totalNS) / float64(maxInt(frames, 1)) / 1e6
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+	return float64(totalNS) / float64(max(frames, 1)) / 1e6
 }

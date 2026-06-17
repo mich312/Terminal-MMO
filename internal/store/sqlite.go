@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS events (
 	detail     TEXT NOT NULL DEFAULT '',
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS decks (
+	id         TEXT PRIMARY KEY,
+	owner      TEXT NOT NULL,
+	title      TEXT NOT NULL,
+	source     TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
 `
 
 type sqliteStore struct {
@@ -152,7 +159,12 @@ func (s *sqliteStore) RecordAreaVisit(name, area string) {
 		return // player row missing or unreadable; not worth fighting
 	}
 	var areas []string
-	_ = json.Unmarshal([]byte(raw), &areas)
+	if err := json.Unmarshal([]byte(raw), &areas); err != nil {
+		// Corrupt blob: log and leave it untouched rather than silently
+		// overwriting it with a fresh single-element list.
+		log.Printf("store: areas_visited for %q is corrupt (%v); leaving it", name, err)
+		return
+	}
 	for _, a := range areas {
 		if a == area {
 			return
@@ -213,4 +225,49 @@ func (s *sqliteStore) GuestbookEntries(n int) []GuestbookEntry {
 
 func (s *sqliteStore) Close() error {
 	return s.db.Close()
+}
+
+// SaveDeck upserts a player-authored presentation deck, keyed by id (owned by
+// owner). The created_at of an existing row is preserved.
+func (s *sqliteStore) SaveDeck(id, owner, title, source string, createdUnix int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO decks (id, owner, title, source, created_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+			owner = excluded.owner, title = excluded.title, source = excluded.source`,
+		id, owner, title, source, createdUnix); err != nil {
+		log.Printf("store: save deck: %v", err)
+	}
+}
+
+// DeleteDeck removes a persisted deck by id.
+func (s *sqliteStore) DeleteDeck(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM decks WHERE id = ?`, id); err != nil {
+		log.Printf("store: delete deck: %v", err)
+	}
+}
+
+// LoadDecks returns every persisted deck, oldest first.
+func (s *sqliteStore) LoadDecks() []DeckRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT id, owner, title, source, created_at FROM decks ORDER BY created_at, id`)
+	if err != nil {
+		log.Printf("store: load decks: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	var out []DeckRecord
+	for rows.Next() {
+		var d DeckRecord
+		if err := rows.Scan(&d.ID, &d.Owner, &d.Title, &d.Source, &d.Created); err != nil {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }

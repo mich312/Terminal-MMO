@@ -25,9 +25,10 @@ ssh -p 2222 markus@localhost
 
 - `PORT` env var changes the listen port (default `2222`).
 - `./.ssh/host_key` — persistent Ed25519 host key, generated on first run.
-- `./data/durstworld.db` — SQLite (WAL) for visits, guestbook and the event
-  log. Created with schema on first run; delete it to start fresh. If the
-  file is unwritable the game logs a warning and plays on without memory.
+- `./data/durstworld.db` — SQLite (WAL) for visits, guestbook, the event log
+  and player-authored presentation decks. Created with schema on first run;
+  delete it to start fresh. If the file is unwritable the game logs a warning
+  and plays on without memory.
 
 ### HD mode (experimental real-pixel renderer)
 
@@ -54,8 +55,8 @@ delta updates (only the changed region each frame). Background and rationale:
 | Shift + move | run (two tiles per step) |
 | m | toggle the minimap (in the Wilds) |
 | Enter | chat — heard within 8 tiles of where you stand |
-| e | sign the guestbook (next to the lobby reception desk) |
-| n / p | next/previous slide while standing on a `▣` presenter tile |
+| e | sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
+| n / p | next/previous slide while presenting from your lectern |
 | Tab | who's online |
 | q / Ctrl+C | quit (press twice) |
 
@@ -63,6 +64,23 @@ You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near
 spawn — `⌂` Durst HQ (the lobby), `P` Presentation, `K` Kraftwerk, `D` Demo
 Center — to enter each area. Players are multi-tile half-block avatars in their
 own color, drawn over a 2×2 footprint.
+
+### Presentation Wing
+
+The Presentation Wing is a concourse of stages that grows as people add talks.
+Walk to the `＋` booth and press `e` to author a **markdown deck** in world
+(type or paste it; `---` separates slides) — it becomes a new stage with a big
+screen. Decks are GitHub-flavored Markdown: headings, **bold**/_italic_/
+~~strike~~, lists (incl. task lists), tables, blockquotes, links, and fenced
+code blocks with syntax highlighting (via chroma). They render both in the
+glyph client and — drawn as pixels with a bitmap font — in HD mode. Everyone standing in a stage sees the same slide; the deck's owner
+drives it with `n`/`p` from the `▟` lectern and can re-edit with `e`. Decks are
+owned by their author (your SSH username) and saved to SQLite, so your talks
+come back after a restart — only the live slide index resets.
+
+The wing holds a fixed number of stages (8). When it's full the `＋` booth says
+so; a presenter has to retire one of their own talks (`x`, then `x` again to
+confirm, at their lectern) before a new one can be added.
 
 Minimum terminal size is 80×24.
 
@@ -146,10 +164,16 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
    }
    ```
 
-   For a walkable map, embed `game.Walker` and define the map as a string
-   slice plus a rune legend (see `internal/areas/kraftwerk` for the
-   smallest example). `Walker.HandleCommon` gives you movement, wall
-   collision, portal triggering and the portal pulse for free.
+   For a simple room — a walkable map with a portal back out and a
+   descriptive side panel — you don't implement the interface at all: hand
+   the map (a string slice plus a rune legend), spawn point and panel text
+   to `game.RegisterFlavor` and you're done. `internal/areas/kraftwerk` is
+   the worked example.
+
+   For anything with its own interaction (the lobby's guestbook, the
+   Presentation Wing's slides), embed `game.Walker` and implement `Area`
+   yourself. `Walker.HandleCommon` gives you movement, wall collision,
+   portal triggering and the portal pulse for free.
 
 2. Self-register in `init()`:
 
@@ -170,7 +194,7 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
 Optional extras: implement `game.Hinter` for a contextual status-bar hint,
 `game.InputCapturer` to grab all keys while a panel is open, and use
 `world.World` for any shared state that everyone in the area must agree on
-(the Presentation Wing's slide indices are the worked example).
+(the Presentation Wing's player-authored decks are the worked example).
 
 ## Architecture
 

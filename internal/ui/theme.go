@@ -1,6 +1,6 @@
-// Package ui holds the shared visual language of Durst World: one palette,
-// one set of lipgloss styles, a few small rendering helpers. No other
-// package defines colors.
+// Package ui holds the shared visual language of Durst World: the lipgloss
+// styles and a few small rendering helpers. The hex palette itself lives in the
+// leaf package palette (shared with markdown); ui builds styles from it.
 //
 // Color is truecolor-first: the palette is authored as 24-bit hex and each
 // SSH session renders through its own *lipgloss.Renderer (see NewTheme),
@@ -14,24 +14,27 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
+
+	"github.com/durst-group/durstworld/internal/palette"
 )
 
-// Palette — truecolor hex. Restrained: deep slate, near-white, the Durst
-// blue→cyan accent ramp, one warn amber, and 8 readable avatar hues.
+// Hex* alias the shared palette so existing callers (and the styles below)
+// keep their names; palette is the single source of these values.
 const (
-	HexAccent  = "#2E8BFF" // Durst blue
-	HexAccent2 = "#7DF0FF" // cyan tip of the accent ramp
-	HexBright  = "#F5F7FA" // near-white
-	HexText    = "#C2CBD6"
-	HexDim     = "#6B7480" // walls, decor
-	HexFaint   = "#333A45" // floor dots
-	HexWarn    = "#FFB454"
-	HexPortalA = "#2E8BFF" // portal pulse phase A
-	HexPortalB = "#7DF0FF" // portal pulse phase B
-	HexBarBg   = "#1B2027"
-	HexBarText = "#C2CBD6"
-	HexToast   = "#8A93A0" // join/leave one-liners
-	HexPanelBg = "#11151B"
+	HexAccent  = palette.Accent
+	HexAccent2 = palette.Accent2
+	HexBright  = palette.Bright
+	HexText    = palette.Text
+	HexDim     = palette.Dim
+	HexFaint   = palette.Faint
+	HexWarn    = palette.Warn
+	HexPortalA = palette.PortalA
+	HexPortalB = palette.PortalB
+	HexBarBg   = palette.BarBg
+	HexBarText = palette.BarText
+	HexToast   = palette.Toast
+	HexPanelBg = palette.PanelBg
+	HexCodeBg  = palette.CodeBg
 )
 
 // Back-compat color vars used by a few callers directly.
@@ -177,6 +180,15 @@ func (t *Theme) Wrap(width int) lipgloss.Style {
 // Bar is Wrap plus the status-bar background.
 func (t *Theme) Bar(width int) lipgloss.Style {
 	return t.r.NewStyle().Width(width).MaxHeight(1).Background(lipgloss.Color(HexBarBg))
+}
+
+// Screen is a presentation "big screen": a rounded accent border with padding
+// and no fill, so a rendered markdown slide reads cleanly over the scene.
+func (t *Theme) Screen() lipgloss.Style {
+	return t.r.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(HexAccent)).
+		Padding(1, 2)
 }
 
 // Default is the process-wide theme for tests and init-time globals. Sessions

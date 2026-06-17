@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -118,6 +119,30 @@ func (w *Walker) RenderLit(vw, vh, radius int) string {
 	cam := CameraOn(w.Map, w.X, w.Y, vw, vh)
 	light := Light{X: w.X, Y: w.Y, Radius: radius}
 	return RenderLitViewport(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Frame, cam, light)
+}
+
+// HDView returns a vw×vh tile window centered on the player for the HD pixel
+// renderer, plus its absolute top-left origin. Tiles outside the map come back
+// as void; portal tiles are tagged as animated gate props so they read as
+// entrances in pixel mode. Implements HDViewer for every Walker-based area.
+func (w *Walker) HDView(vw, vh int) (*TileMap, int, int) {
+	ox, oy := w.X-vw/2, w.Y-vh/2
+	tiles := make([][]Tile, vh)
+	for ly := 0; ly < vh; ly++ {
+		row := make([]Tile, vw)
+		for lx := 0; lx < vw; lx++ {
+			t := w.Map.At(ox+lx, oy+ly)
+			if t.Kind == TilePortal {
+				t.Prop, t.PropHex = PropPortal, t.Color
+				if t.PropHex == "" {
+					t.PropHex = ui.HexPortalB
+				}
+			}
+			row[lx] = t
+		}
+		tiles[ly] = row
+	}
+	return &TileMap{W: vw, H: vh, Tiles: tiles}, ox, oy
 }
 
 // PortalHint returns the status-bar hint for a portal the player stands on

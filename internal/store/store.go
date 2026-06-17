@@ -23,6 +23,15 @@ type GuestbookEntry struct {
 	CreatedAt time.Time
 }
 
+// DeckRecord is a persisted presentation deck (owned by a user).
+type DeckRecord struct {
+	ID      string
+	Owner   string
+	Title   string
+	Source  string
+	Created int64 // unix seconds
+}
+
 // Store is the only door to persistence. Writes never fail the game.
 type Store interface {
 	// RecordVisit upserts the player row and returns the (already
@@ -42,6 +51,12 @@ type Store interface {
 	SaveAvatar(name, color string, style, accessory int)
 	// LoadAvatar returns a player's saved avatar; ok is false if none stored.
 	LoadAvatar(name string) (color string, style, accessory int, ok bool)
+	// SaveDeck upserts a user-owned presentation deck.
+	SaveDeck(id, owner, title, source string, createdUnix int64)
+	// LoadDecks returns every persisted deck, oldest first.
+	LoadDecks() []DeckRecord
+	// DeleteDeck removes a persisted deck by id.
+	DeleteDeck(id string)
 	Close() error
 }
 
@@ -70,4 +85,7 @@ func (noopStore) SaveAvatar(string, string, int, int)   {}
 func (noopStore) LoadAvatar(string) (string, int, int, bool) {
 	return "", 0, 0, false
 }
-func (noopStore) Close() error { return nil }
+func (noopStore) SaveDeck(string, string, string, string, int64) {}
+func (noopStore) LoadDecks() []DeckRecord                        { return nil }
+func (noopStore) DeleteDeck(string)                              {}
+func (noopStore) Close() error                                   { return nil }
