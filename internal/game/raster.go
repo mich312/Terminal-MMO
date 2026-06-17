@@ -23,9 +23,16 @@ import (
 // always anti-aliased over a soft contact shadow — a small, localized cost.
 // Each tile maps to a scale×scale block; the avatar is sized to ~2 tiles tall
 // so it sits within its 2×2 footprint, matching the half-block renderer.
-func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool) *image.RGBA {
+//
+// style selects the art style (sprite sets, shading, palette); a nil style uses
+// DefaultStyle. A non-nil style.Palette.Map recolors the finished frame in one
+// final pass (the basis for the monochrome / neon looks).
+func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool, style *Style) *image.RGBA {
 	if th == nil {
 		th = ui.Default
+	}
+	if style == nil {
+		style = DefaultStyle()
 	}
 	if scale < 1 {
 		scale = 1
@@ -60,14 +67,14 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			// A prop's ground is colored separately from the glyph's color so the
 			// flower-glyph stays red in the text renderer while HD draws grass.
 			if t.Ground != "" {
-				cols[y][x] = applyLight(tintedHex(t.Ground), tx, ty, light)
+				cols[y][x] = applyLight(style.tint(t.Ground), tx, ty, light)
 			}
 			if t.Prop != PropNone {
 				ph := t.PropHex
 				if ph == "" {
 					ph = t.Color
 				}
-				propCols[y][x] = tintedHex(ph)
+				propCols[y][x] = style.tint(ph)
 			}
 		}
 	}
@@ -96,7 +103,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				b := bilerp(c00.B, c10.B, c01.B, c11.B, tx, ty)
 
 				d := math.Hypot(float64(px)-cxf, float64(py)-cyf) / maxD
-				v := 1 - 0.12*d*d // gentle vignette
+				v := 1 - style.Vignette*d*d // gentle vignette
 				setPixel(img, px, py, r*v, g*v, b*v)
 			}
 		}
@@ -107,7 +114,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
-					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame)
+					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style)
 			}
 		}
 		// Portals are multi-tile animated gates drawn over the terrain so they can
@@ -115,14 +122,29 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				if props[vy][vx] == PropPortal {
-					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, portalArt)
+					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				}
 			}
 		}
 	}
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
+	if m := style.Palette.Map; m != nil {
+		applyColorMap(img, m)
+	}
 	return img
+}
+
+// applyColorMap remaps every opaque pixel through m — one pass over the finished
+// frame, so a style can recolor terrain, props and avatars together without
+// touching the per-element draw paths.
+func applyColorMap(img *image.RGBA, m func(colorful.Color) colorful.Color) {
+	p := img.Pix
+	for i := 0; i+3 < len(p); i += 4 {
+		c := colorful.Color{R: float64(p[i]) / 255, G: float64(p[i+1]) / 255, B: float64(p[i+2]) / 255}
+		c = m(c).Clamped()
+		p[i], p[i+1], p[i+2] = f2b(c.R), f2b(c.G), f2b(c.B)
+	}
 }
 
 // stampSpritesRGBA draws every player's avatar, oldest movers first and self
@@ -249,9 +271,9 @@ const tileArtN = 6
 // paintTile draws one tile: the ground surface sprite (a shade pattern colored
 // by base) nearest-upscaled to the on-screen tile size, then an optional prop
 // sprite over it. Sharp pixels throughout.
-func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int) {
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style) {
 	baseRGBA := colorfulToRGBA(base)
-	variants := groundArt[tex]
+	variants := style.Ground[tex]
 	if len(variants) == 0 { // flat / untextured
 		fillRect(img, ox, oy, scale, scale, baseRGBA)
 	} else {
@@ -260,8 +282,8 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 			idx = (frame / 4) % len(variants) // ripples animate
 		}
 		art := variants[idx%len(variants)]
-		light := colorfulToRGBA(base.BlendLab(spriteWhite, 0.18).Clamped())
-		dark := colorfulToRGBA(base.BlendLab(shadowColor, 0.22).Clamped())
+		light := colorfulToRGBA(base.BlendLab(spriteWhite, style.GroundLightMix).Clamped())
+		dark := colorfulToRGBA(base.BlendLab(shadowColor, style.GroundDarkMix).Clamped())
 		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
 			switch r {
 			case 'L':
@@ -274,10 +296,10 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 		})
 	}
 
-	if art, ok := propArt[prop]; ok {
+	if art, ok := style.Props[prop]; ok {
 		pc := colorfulToRGBA(propCol)
-		pd := colorfulToRGBA(propCol.BlendLab(shadowColor, 0.32).Clamped())
-		tr := colorfulToRGBA(trunkColor)
+		pd := colorfulToRGBA(propCol.BlendLab(shadowColor, style.PropShadeMix).Clamped())
+		tr := colorfulToRGBA(style.Trunk)
 		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
 			switch r {
 			case 'P':
@@ -296,7 +318,7 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 // drawStructure renders a multi-tile sprite (house or portal) centered on tile
 // (vx,vy), bottom-aligned so its base sits on the tile and it overhangs upward.
 // 'R'/'P' take the structure color; '@' is the animated portal swirl.
-func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int, art []string) {
+func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int, art []string, pal ui.Palette) {
 	apx := scale / tileArtN // art-pixel size, matching the avatar's
 	if apx < 1 {
 		apx = 1
@@ -326,7 +348,7 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 			case 'D':
 				c = base
 			case '@':
-				c = portalPixel(ax, ay, frame)
+				c = portalPixel(ax, ay, frame, pal)
 			default:
 				ok = false
 			}
@@ -338,10 +360,11 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 }
 
 // portalPixel returns a swirling portal color for an art pixel at the given
-// frame — diagonal bands of the portal ramp drift to read as an active gate.
-func portalPixel(ax, ay, frame int) color.RGBA {
+// frame — diagonal bands of the style's portal ramp drift to read as an active
+// gate.
+func portalPixel(ax, ay, frame int, pal ui.Palette) color.RGBA {
 	s := 0.5 + 0.5*math.Sin(float64(ax+ay)*0.7-float64(frame)*0.45)
-	return colorfulToRGBA(mustHex(string(ui.Blend(ui.HexPortalA, ui.HexPortalB, s))))
+	return colorfulToRGBA(mustHex(string(ui.Blend(pal.PortalA, pal.PortalB, s))))
 }
 
 // blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale

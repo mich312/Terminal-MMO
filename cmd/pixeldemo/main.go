@@ -50,7 +50,7 @@ import (
 
 func main() {
 	proto := flag.String("proto", "auto", "image protocol: kitty | sixel | auto")
-	scale := flag.Int("scale", 12, "pixels per tile (sprite pixel = scale/2)")
+	scale := flag.Int("scale", 36, "pixels per tile (sprite pixel = scale/2)")
 	vw := flag.Int("w", 0, "viewport width in tiles (0 = auto-fit the terminal)")
 	vh := flag.Int("h", 0, "viewport height in tiles (0 = auto-fit the terminal)")
 	frames := flag.Int("frames", 60, "number of frames to render")
@@ -59,6 +59,7 @@ func main() {
 	motion := flag.String("motion", "pan", "scene motion: pan (camera scrolls) | walk (camera still, one avatar walks)")
 	refresh := flag.Int("refresh", 48, "frames between full repaints (bounds kitty placement memory)")
 	smooth := flag.Bool("smooth", false, "bilinear terrain + vignette (pretty but ~15x more bytes); default flat tiles compress far better")
+	style := flag.String("style", "default", "art style: default | gameboy | neon")
 	res := flag.String("res", "", "fixed internal render resolution WxH (e.g. 480x270); empty = native tiles×scale. kitty scales it to fill the window")
 	still := flag.Bool("still", false, "render a single frame and exit")
 	probe := flag.Bool("probe", false, "report terminal graphics support + cell size and exit")
@@ -148,6 +149,7 @@ func main() {
 	gen := worldgen.New(*seed)
 	wx, wy := worldgen.GateX, worldgen.GateY
 	walk := *motion == "walk"
+	artStyle := game.StyleByName(*style)
 
 	var (
 		rasterNS, encodeNS   int64
@@ -173,7 +175,7 @@ func main() {
 		cam := game.Camera{X: 0, Y: 0, W: *vw, H: *vh}
 
 		t0 := time.Now()
-		img := game.RenderRGBA(nil, tm, players, "you", f, cam, game.Light{}, ox, oy, *scale, *smooth)
+		img := game.RenderRGBA(nil, tm, players, "you", f, cam, game.Light{}, ox, oy, *scale, *smooth, artStyle)
 		if resMode {
 			img = downscale(img, resW, resH)
 		}
