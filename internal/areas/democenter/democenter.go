@@ -1,15 +1,9 @@
 // Package democenter is a placeholder area: a small showroom with
-// decorative printers and a portal back to the lobby.
+// decorative printers and a portal back to the lobby, built as a
+// game.FlavorArea (map data plus one RegisterFlavor call).
 package democenter
 
-import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
-	"github.com/durst-group/durstworld/internal/game"
-	"github.com/durst-group/durstworld/internal/ui"
-	"github.com/durst-group/durstworld/internal/world"
-)
+import "github.com/durst-group/durstworld/internal/game"
 
 var rows = []string{
 	"##############################",
@@ -32,38 +26,12 @@ var legend = map[rune]game.LegendEntry{
 }
 
 func init() {
-	game.Register("democenter", "Demo Center", func(ctx *game.Ctx) game.Area {
-		return &area{Walker: game.Walker{
-			Ctx:    ctx,
-			Map:    game.ParseMap(rows, legend, nil),
-			AreaID: "democenter",
-		}}
+	game.RegisterFlavor(game.FlavorConfig{
+		ID: "democenter", Display: "Demo Center",
+		Rows: rows, Legend: legend,
+		SpawnX: 27, SpawnY: 5, Jitter: 1,
+		Title:     "🖨 Demo Center",
+		Body:      "The printers are warming up.\n\nCome back for the full tour.",
+		PanelLeft: true,
 	})
-}
-
-type area struct {
-	game.Walker
-}
-
-func (a *area) Name() string { return "Demo Center" }
-
-func (a *area) Init(p *world.Player) tea.Cmd {
-	a.Enter(27, 5, 1)
-	return nil
-}
-
-func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	if portal, handled := a.HandleCommon(msg); handled && portal != "" {
-		return game.Transition{To: portal}, nil
-	}
-	return a, nil
-}
-
-func (a *area) Hint() string { return a.PortalHint() }
-
-func (a *area) View(width, height int) string {
-	panel := ui.PanelStyle.Width(34).Render(
-		ui.PanelTitleStyle.Render("🖨 Demo Center") + "\n\n" +
-			ui.ChatTextStyle.Render("The printers are warming up.\n\nCome back for the full tour."))
-	return lipgloss.JoinHorizontal(lipgloss.Center, panel, "   ", a.Render())
 }

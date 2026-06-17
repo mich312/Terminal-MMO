@@ -1,15 +1,9 @@
 // Package kraftwerk is a placeholder area: a small machine hall with
-// flavor text and a portal back to the lobby.
+// flavor text and a portal back to the lobby. It is the worked example of a
+// game.FlavorArea — map data plus a single RegisterFlavor call.
 package kraftwerk
 
-import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
-	"github.com/durst-group/durstworld/internal/game"
-	"github.com/durst-group/durstworld/internal/ui"
-	"github.com/durst-group/durstworld/internal/world"
-)
+import "github.com/durst-group/durstworld/internal/game"
 
 var rows = []string{
 	"##############################",
@@ -39,43 +33,14 @@ var legend = map[rune]game.LegendEntry{
 		ColorA: "#FF8A4C", ColorB: "#FFC861", Speed: 2}},
 }
 
-// lightRadius is how far the player's lamp reaches; the rest sits in shadow.
-const lightRadius = 9
-
 func init() {
-	game.Register("kraftwerk", "Kraftwerk", func(ctx *game.Ctx) game.Area {
-		return &area{Walker: game.Walker{
-			Ctx:    ctx,
-			Map:    game.ParseMap(rows, legend, nil),
-			AreaID: "kraftwerk",
-		}}
+	game.RegisterFlavor(game.FlavorConfig{
+		ID: "kraftwerk", Display: "Kraftwerk",
+		Rows: rows, Legend: legend,
+		SpawnX: 2, SpawnY: 5, Jitter: 1,
+		Title: "⚡ Durst Kraftwerk",
+		Body:  "Home of spin-offs and experiments.\n\nThe machines are warming up — mind the coolant.",
+		// The hall sits in shadow; the player's lamp reaches 9 tiles.
+		Light: 9,
 	})
-}
-
-type area struct {
-	game.Walker
-}
-
-func (a *area) Name() string { return "Kraftwerk" }
-
-func (a *area) Init(p *world.Player) tea.Cmd {
-	a.Enter(2, 5, 1)
-	return nil
-}
-
-func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	if portal, handled := a.HandleCommon(msg); handled && portal != "" {
-		return game.Transition{To: portal}, nil
-	}
-	return a, nil
-}
-
-func (a *area) Hint() string { return a.PortalHint() }
-
-func (a *area) View(width, height int) string {
-	panel := ui.PanelStyle.Width(34).Render(
-		ui.PanelTitleStyle.Render("⚡ Durst Kraftwerk") + "\n\n" +
-			ui.ChatTextStyle.Render("Home of spin-offs and experiments.\n\nThe machines are warming up — mind the coolant."))
-	mapView := a.RenderLit(a.Map.W, a.Map.H, lightRadius)
-	return lipgloss.JoinHorizontal(lipgloss.Center, mapView, "   ", panel)
 }

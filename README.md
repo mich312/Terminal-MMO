@@ -146,10 +146,16 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
    }
    ```
 
-   For a walkable map, embed `game.Walker` and define the map as a string
-   slice plus a rune legend (see `internal/areas/kraftwerk` for the
-   smallest example). `Walker.HandleCommon` gives you movement, wall
-   collision, portal triggering and the portal pulse for free.
+   For a simple room — a walkable map with a portal back out and a
+   descriptive side panel — you don't implement the interface at all: hand
+   the map (a string slice plus a rune legend), spawn point and panel text
+   to `game.RegisterFlavor` and you're done. `internal/areas/kraftwerk` is
+   the worked example.
+
+   For anything with its own interaction (the lobby's guestbook, the
+   Presentation Wing's slides), embed `game.Walker` and implement `Area`
+   yourself. `Walker.HandleCommon` gives you movement, wall collision,
+   portal triggering and the portal pulse for free.
 
 2. Self-register in `init()`:
 
