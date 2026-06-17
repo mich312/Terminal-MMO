@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log"
 	"net"
 	"os"
@@ -36,10 +37,18 @@ import (
 )
 
 func main() {
+	styleName := flag.String("style", os.Getenv("DURST_STYLE"),
+		"HD art style: default | gameboy | neon (or set DURST_STYLE)")
+	flag.Parse()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "2222"
 	}
+
+	// One server-wide art style for the HD/sixel renderer, resolved at startup.
+	style := game.StyleByName(*styleName)
+	log.Printf("HD art style: %s", style.Palette.Name)
 
 	w := world.New()
 	st := store.Open("./data/durstworld.db")
@@ -53,7 +62,7 @@ func main() {
 			bm.Middleware(teaHandler(w, st)),
 			// HD ("real pixel" sixel) mode: `ssh -t … hd` serves the experimental
 			// renderer instead of bubbletea. Sits inside activeterm so it has a PTY.
-			hdMiddleware(w, st),
+			hdMiddleware(w, st, style),
 			activeterm.Middleware(), // require a TTY
 			logging.Middleware(),
 		),

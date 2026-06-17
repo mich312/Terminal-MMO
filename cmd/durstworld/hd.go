@@ -30,10 +30,17 @@ import (
 // so you and bubbletea players see each other. The point is to feel real SSH
 // performance: latency, bandwidth, and framerate on an actual connection.
 const (
-	hdScale   = 12 // pixels per tile
+	hdScale   = 36 // pixels per tile — larger on-screen tiles
 	hdFPS     = 12
 	hdRefresh = 48 // frames between full repaints
 	hdMaxTile = 140
+	// Cap the rendered buffer so per-frame cost (render + dirty-diff + encode +
+	// bandwidth) doesn't scale with window size — the work is ~width·height
+	// pixels, and at hdScale=24 a full-screen buffer is huge. This bounds it to
+	// ≈hdMaxPxW×hdMaxPxH regardless of terminal size; a bigger window just shows
+	// the same world slice at the same cost, not more.
+	hdMaxPxW = 1024
+	hdMaxPxH = 640
 )
 
 // setupAvatar restores a player's persisted color/style/accessory, or — on a
@@ -68,12 +75,12 @@ func isHD(s ssh.Session) bool {
 
 // hdMiddleware intercepts HD sessions and serves the sixel renderer instead of
 // bubbletea; everything else falls through unchanged. Placed inside activeterm
-// so a PTY is guaranteed.
-func hdMiddleware(w *world.World, st store.Store) wish.Middleware {
+// so a PTY is guaranteed. style is the server-wide art style for HD frames.
+func hdMiddleware(w *world.World, st store.Store, style *game.Style) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
 			if isHD(s) {
-				runHD(s, w, st)
+				runHD(s, w, st, style)
 				return
 			}
 			next(s)
@@ -81,17 +88,41 @@ func hdMiddleware(w *world.World, st store.Store) wish.Middleware {
 	}
 }
 
-func runHD(s ssh.Session, w *world.World, st store.Store) {
+// preferKitty decides whether to drive the session with the kitty graphics
+// protocol instead of sixel. An explicit `hd kitty` / `hd sixel` argument wins;
+// otherwise we infer from TERM — kitty and ghostty speak the kitty protocol and
+// ghostty has no sixel, so they default to kitty; everything else to sixel.
+func preferKitty(term string, cmd []string) bool {
+	for _, a := range cmd {
+		switch a {
+		case "kitty":
+			return true
+		case "sixel":
+			return false
+		}
+	}
+	return strings.Contains(term, "kitty") || strings.Contains(term, "ghostty")
+}
+
+func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	ptyReq, winCh, ok := s.Pty()
 	if !ok {
 		fmt.Fprint(s, "HD mode needs a PTY — use: ssh -t -p 2222 you@host hd\r\n")
 		return
 	}
+	// Ghostty/kitty speak the kitty graphics protocol and have no sixel; other
+	// terminals (iTerm2, WezTerm, xterm) use sixel. Pick from the forwarded TERM,
+	// overridable with an explicit `hd kitty` / `hd sixel` argument.
+	useKitty := preferKitty(ptyReq.Term, s.Command())
+	proto := "sixel"
+	if useKitty {
+		proto = "kitty"
+	}
 
 	name, events := w.Join(s.User())
 	st.RecordVisit(name)
 	setupAvatar(w, st, name)
-	log.Printf("%s connected (HD/sixel)", name)
+	log.Printf("%s connected (HD/%s, TERM=%s)", name, proto, ptyReq.Term)
 	defer func() {
 		w.Leave(name)
 		st.RecordDisconnect(name)
@@ -142,12 +173,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 		if cols < 8 || rows < 6 {
 			return
 		}
-		vw := clamp(cols*cellW/hdScale, 8, hdMaxTile)
-		vh := clamp((rows-1)*cellH/hdScale, 8, hdMaxTile)
+		vw := clamp(cols*cellW/hdScale, 8, min(hdMaxTile, hdMaxPxW/hdScale))
+		vh := clamp((rows-1)*cellH/hdScale, 8, min(hdMaxTile, hdMaxPxH/hdScale))
 		ox, oy := px-vw/2, py-vh/2
 		tm := hdWindow(gen, ox, oy, vw, vh)
 		cam := game.Camera{W: vw, H: vh}
-		img := game.RenderRGBA(nil, tm, w.PlayersInArea("wilds"), name, frame, cam, game.Light{}, ox, oy, hdScale, false)
+		img := game.RenderRGBA(nil, tm, w.PlayersInArea("wilds"), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
 		W, H := img.Bounds().Dx(), img.Bounds().Dy()
 
 		doFull := prev == nil || W != pw || H != ph || frame%hdRefresh == 0
@@ -158,7 +189,13 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 				doFull = true
 			} else {
 				sr := pixel.SnapToCells(r, cellW, cellH, W, H)
-				sub := pixel.EncodeSixel(pixel.Crop(img, sr), false)
+				crop := pixel.Crop(img, sr)
+				var sub []byte
+				if useKitty {
+					sub = pixel.EncodeKitty(crop, 0, 0)
+				} else {
+					sub = pixel.EncodeSixel(crop, false)
+				}
 				out.WriteString("\x1b7")
 				fmt.Fprintf(out, "\x1b[%d;%dH", sr.Min.Y/cellH+1, sr.Min.X/cellW+1)
 				out.Write(sub)
@@ -167,11 +204,18 @@ func runHD(s ssh.Session, w *world.World, st store.Store) {
 			}
 		}
 		if doFull {
-			full := pixel.EncodeSixel(img, false)
 			out.WriteString("\x1b7\x1b[H")
-			out.Write(full)
+			if useKitty {
+				out.WriteString("\x1b_Ga=d\x1b\\") // reclaim prior placements before the full repaint
+				full := pixel.EncodeKitty(img, 0, 0)
+				out.Write(full)
+				sent += len(full)
+			} else {
+				full := pixel.EncodeSixel(img, false)
+				out.Write(full)
+				sent += len(full)
+			}
 			out.WriteString("\x1b8")
-			sent += len(full)
 		}
 		out.Flush()
 
