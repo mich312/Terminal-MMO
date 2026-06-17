@@ -107,6 +107,13 @@ Direction agreed with the team. Decisions locked:
   gone for that player, and toasts the find. `/inventory` (`/i`) lists the haul.
 - ✅ Persistence: per-item counts and harvested cells survive disconnects
   (store `inventory` + `collected` tables), loaded into `Ctx.Inventory` at join.
+- ✅ Wearable hats as gated loot: the 5 accessories are now **found**, not free —
+  each `♚` hat hides in a themed biome (crown in hills, halo in snow, …). Pick
+  one up (`e`) to unlock and equip it; ownership persists (`hats` table) and
+  `/avatar` only lets you wear what you've found. New players start hatless.
+- ✅ Interactive character panel (`/character`): a live avatar preview over
+  cycleable Style / Color / Hat fields (↑↓ pick, ←→ change), persisting each
+  change. Hat cycling is limited to unlocked hats.
 
 ## Parked polish
 

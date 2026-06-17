@@ -78,6 +78,8 @@ type Model struct {
 	showInfo    bool // generic info panel (/help, /who)
 	infoTitle   string
 	infoLines   []string
+	showChar    bool // interactive character panel (/character)
+	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
 	quitArmed   bool
 }
 
@@ -246,6 +248,68 @@ func (m *Model) showInfoPanel(title string, lines []string) {
 	m.showInfo = true
 }
 
+// handleCharKey drives the interactive character panel: ↑↓ pick a field, ←→
+// change it live (persisting the avatar), esc/enter/q close.
+func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "enter", "q":
+		m.showChar = false
+	case "up", "k":
+		m.charField = (m.charField + 2) % 3
+	case "down", "j", "tab":
+		m.charField = (m.charField + 1) % 3
+	case "left", "h":
+		m.charAdjust(-1)
+	case "right", "l":
+		m.charAdjust(1)
+	}
+	return nil
+}
+
+// charAdjust cycles the selected field by d and persists the change. Hats cycle
+// only through the ones the player has unlocked.
+func (m *Model) charAdjust(d int) {
+	cur, ok := m.ctx.World.Self(m.ctx.Name)
+	if !ok {
+		return
+	}
+	switch m.charField {
+	case 0:
+		m.ctx.World.SetAvatar(m.ctx.Name, wrapIdx(cur.Style+d, NumAvatarStyles()), cur.Accessory)
+	case 1:
+		idx := wrapIdx(ui.AvatarColorIndex(cur.Color)+d, ui.NumAvatarColors())
+		m.ctx.World.SetColor(m.ctx.Name, ui.AvatarColorByIndex(idx))
+	case 2:
+		m.ctx.World.SetAvatar(m.ctx.Name, cur.Style, m.cycleHat(cur.Accessory, d))
+	}
+	m.persistAvatar()
+}
+
+// ownedHatList is the accessory indices the player can wear: none (0) plus
+// every hat they've found, in order.
+func (m *Model) ownedHatList() []int {
+	list := []int{0}
+	for i := 1; i < NumAccessories(); i++ {
+		if m.ctx.Hats[i] {
+			list = append(list, i)
+		}
+	}
+	return list
+}
+
+// cycleHat steps to the next/previous owned hat, wrapping.
+func (m *Model) cycleHat(cur, d int) int {
+	list := m.ownedHatList()
+	pos := 0
+	for i, v := range list {
+		if v == cur {
+			pos = i
+		}
+	}
+	pos = ((pos+d)%len(list) + len(list)) % len(list)
+	return list[pos]
+}
+
 // updateArea runs the area's Update and handles a possible transition.
 func (m *Model) updateArea(msg tea.Msg) tea.Cmd {
 	next, cmd := m.area.Update(msg)
@@ -319,6 +383,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// any key dismisses the info panel and is otherwise swallowed
 		m.showInfo = false
 		return m, nil
+	}
+
+	if m.showChar {
+		return m, m.handleCharKey(msg)
 	}
 
 	if m.showPlayers {
@@ -475,6 +543,11 @@ func (m *Model) playView() string {
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showChar {
+		panel := m.charPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	} else if m.showPlayers {
 		panel := m.playerListPanel()
 		pw := lipgloss.Width(panel)
@@ -482,6 +555,43 @@ func (m *Model) playView() string {
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	}
 	return view
+}
+
+// charPanel renders the interactive character editor: a live avatar preview
+// over three cycleable fields (style, color, hat). The hat row hints how to
+// unlock more when the player only has the default.
+func (m *Model) charPanel() string {
+	cur, ok := m.ctx.World.Self(m.ctx.Name)
+	if !ok {
+		return ""
+	}
+	rows := []string{m.theme.PanelTitle.Render("Character"), ""}
+	for _, line := range AvatarPreview(m.theme, cur.Style, cur.Accessory, cur.Color) {
+		rows = append(rows, "   "+line)
+	}
+	rows = append(rows, "")
+
+	hat := AccessoryName(cur.Accessory)
+	if len(m.ownedHatList()) == 1 {
+		hat += m.theme.Dim.Render("  (find hats in the Wilds)")
+	}
+	fields := []struct{ label, val string }{
+		{"Style", AvatarStyleName(cur.Style)},
+		{"Color", fmt.Sprintf("#%d", ui.AvatarColorIndex(cur.Color))},
+		{"Hat", hat},
+	}
+	for i, f := range fields {
+		label := m.theme.Dim.Render(padRight(f.label, 6))
+		if i == m.charField {
+			rows = append(rows, fmt.Sprintf("%s %s %s",
+				m.theme.Accent.Render("►"), label,
+				m.theme.Bright.Render("◄ "+f.val+" ►")))
+		} else {
+			rows = append(rows, fmt.Sprintf("  %s %s", label, m.theme.ChatText.Render(f.val)))
+		}
+	}
+	rows = append(rows, "", m.theme.Dim.Render("↑↓ field · ←→ change · esc close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 
 func (m *Model) infoPanel() string {

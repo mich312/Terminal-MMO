@@ -73,3 +73,44 @@ func TestItemPickupAndPersist(t *testing.T) {
 		t.Fatal("harvested cell should stay empty after reconnect")
 	}
 }
+
+// Finding a hat unlocks it, equips it, and persists ownership across a
+// reconnect — the gated find-to-wear mechanic.
+func TestHatPickupUnlocksAndEquips(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	st := store.Open(t.TempDir() + "/w.db")
+	ctx := &game.Ctx{World: w, Store: st, Name: name, Theme: ui.Default, Hats: map[int]bool{}}
+	a := game.NewArea("wilds", ctx).(*area)
+	self, _ := w.Self(name)
+	a.Init(&self)
+
+	// Locate a hat somewhere in the world (rare, so scan wide).
+	var hx, hy, hidx int
+	found := false
+	for r := 1; r < 320 && !found; r++ {
+		for x := -r; x <= r && !found; x++ {
+			for y := -r; y <= r && !found; y++ {
+				if h, ok := hatAt(a.gen.At(x, y), x, y); ok {
+					hx, hy, hidx, found = x, y, h.idx, true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Skip("no hat within scan radius for this seed")
+	}
+
+	a.wx, a.wy = hx, hy
+	a.pickUp()
+	if !ctx.Hats[hidx] {
+		t.Fatalf("hat %d should be unlocked after pickup", hidx)
+	}
+	if cur, _ := w.Self(name); cur.Accessory != hidx {
+		t.Fatalf("avatar accessory = %d, want equipped %d", cur.Accessory, hidx)
+	}
+	if !st.LoadHats(name)[hidx] {
+		t.Fatal("hat ownership should persist to the store")
+	}
+}

@@ -54,14 +54,20 @@ func setupAvatar(w *world.World, st store.Store, name string) {
 			w.SetColor(name, lipgloss.Color(color))
 		}
 		w.SetAvatar(name, style, accessory)
+		// Grandfather a hat the player is already wearing into their owned set,
+		// so gating stays consistent for anyone from before hats were earned.
+		if accessory != 0 {
+			st.UnlockHat(name, accessory)
+		}
 		return
 	}
+	// New players spawn with a random body/color but no hat — hats are earned by
+	// exploring the Wilds.
 	color := ui.AvatarColorByIndex(rand.Intn(ui.NumAvatarColors()))
 	style := rand.Intn(game.NumAvatarStyles())
-	accessory := rand.Intn(game.NumAccessories())
 	w.SetColor(name, color)
-	w.SetAvatar(name, style, accessory)
-	st.SaveAvatar(name, string(color), style, accessory)
+	w.SetAvatar(name, style, 0)
+	st.SaveAvatar(name, string(color), style, 0)
 }
 
 // wantsClassic reports whether a session asked for the classic glyph client
@@ -134,7 +140,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 	}()
 
-	ctx := &game.Ctx{World: w, Store: st, Name: name, Inventory: st.LoadInventory(name)}
+	ctx := &game.Ctx{World: w, Store: st, Name: name,
+		Inventory: st.LoadInventory(name), Hats: st.LoadHats(name)}
 	areaID, area, hv := enterHD(ctx, "", "wilds")
 
 	cellW, cellH := hdCellSize(ptyReq.Window)

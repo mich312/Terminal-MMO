@@ -140,6 +140,16 @@ var propArt = map[TileProp][]string{
 		"PPppPP",
 		"PPppPP",
 	},
+	// PropHat is a wearable lying on the ground — a little brimmed hat that
+	// glints (W) so it reads as special loot, not terrain.
+	PropHat: {
+		"......",
+		"..WP..",
+		".PPPP.",
+		"PPPPPP",
+		".pppp.",
+		"......",
+	},
 	// PropPortal is drawn by the multi-tile structure pass, not here.
 
 	// Indoor furniture, drawn with the richer prop palette: o outline, p/D shade,

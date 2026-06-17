@@ -71,6 +71,9 @@ type Ctx struct {
 	// Inventory is the session's collected items (id → count), shared between
 	// the Wilds pickup logic and the /inventory command. Loaded at join.
 	Inventory map[string]int
+	// Hats is the set of accessory indices the player has unlocked (found in the
+	// world). Index 0 ("none") is always available. Loaded at join.
+	Hats map[int]bool
 }
 
 // Transition is a sentinel Area: returning it from Update tells the root

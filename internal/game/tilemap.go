@@ -54,6 +54,7 @@ const (
 	PropStump
 	PropHouse  // decorative multi-tile building
 	PropPortal // animated area-entrance gate
+	PropHat    // a wearable hat lying in the world (found, then equipped)
 	// Indoor furniture for the hand-built rooms.
 	PropMachine  // boxy machine / plotter
 	PropScreen   // wall-mounted display panel (animated)

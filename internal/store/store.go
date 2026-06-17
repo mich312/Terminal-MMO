@@ -73,6 +73,10 @@ type Store interface {
 	MarkCollected(name string, x, y int)
 	// LoadCollected returns the world cells a player has already harvested.
 	LoadCollected(name string) map[[2]int]bool
+	// UnlockHat records that a player has found an accessory (by its index).
+	UnlockHat(name string, hat int)
+	// LoadHats returns the accessory indices a player owns.
+	LoadHats(name string) map[int]bool
 	Close() error
 }
 
@@ -112,4 +116,6 @@ func (noopStore) AddItem(string, string)                         {}
 func (noopStore) LoadInventory(string) map[string]int            { return map[string]int{} }
 func (noopStore) MarkCollected(string, int, int)                 {}
 func (noopStore) LoadCollected(string) map[[2]int]bool           { return nil }
+func (noopStore) UnlockHat(string, int)                          {}
+func (noopStore) LoadHats(string) map[int]bool                   { return nil }
 func (noopStore) Close() error                                   { return nil }

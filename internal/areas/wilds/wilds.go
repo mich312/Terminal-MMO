@@ -213,6 +213,9 @@ func (a *area) Hint() string {
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
 	}
+	if h, _, _, ok := a.hatUnderBody(); ok {
+		return "e — wear the " + h.name
+	}
 	if it, _, _, ok := a.itemUnderBody(); ok {
 		return "e — take " + it.Name
 	}
@@ -236,9 +239,44 @@ func (a *area) itemUnderBody() (game.Item, int, int, bool) {
 	return game.Item{}, 0, 0, false
 }
 
-// pickUp harvests an item under the player: into the inventory, marked
-// collected (so it's gone for this player), and persisted.
+// hatUnderBody returns the first uncollected hat beneath the 2×2 footprint.
+func (a *area) hatUnderBody() (hatLoot, int, int, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			x, y := a.wx+dx, a.wy+dy
+			if a.collected[[2]int{x, y}] {
+				continue
+			}
+			if h, ok := hatAt(a.gen.At(x, y), x, y); ok {
+				return h, x, y, true
+			}
+		}
+	}
+	return hatLoot{}, 0, 0, false
+}
+
+// pickUp harvests whatever lies under the player. Hats take precedence: they
+// unlock the accessory and equip it; ordinary items go into the pack. Both mark
+// the cell collected and persist.
 func (a *area) pickUp() {
+	if h, x, y, ok := a.hatUnderBody(); ok {
+		a.collected[[2]int{x, y}] = true
+		a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
+		if a.ctx.Hats == nil {
+			a.ctx.Hats = map[int]bool{}
+		}
+		if !a.ctx.Hats[h.idx] {
+			a.ctx.Hats[h.idx] = true
+			a.ctx.Store.UnlockHat(a.ctx.Name, h.idx)
+		}
+		if self, ok := a.ctx.World.Self(a.ctx.Name); ok {
+			a.ctx.World.SetAvatar(a.ctx.Name, self.Style, h.idx)
+			a.ctx.Store.SaveAvatar(a.ctx.Name, string(self.Color), self.Style, h.idx)
+		}
+		a.toast = "＋ " + h.name + " — now worn!"
+		a.toastAt = a.frame
+		return
+	}
 	it, x, y, ok := a.itemUnderBody()
 	if !ok {
 		return
@@ -267,7 +305,10 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 				cell := a.gen.At(wx, wy)
 				t := CellTile(cell)
 				if !a.collected[[2]int{wx, wy}] {
-					if it, ok := itemAt(cell, wx, wy); ok {
+					if h, ok := hatAt(cell, wx, wy); ok {
+						t.Ch, t.Color = '♚', h.hex
+						t.Prop, t.PropHex = game.PropHat, h.hex
+					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
 						t.Prop, t.PropHex = game.PropGem, it.Hex // glints in HD
 					}

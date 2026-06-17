@@ -71,6 +71,15 @@ func TestInventoryAndCollected(t *testing.T) {
 	if !s.LoadCollected("ada")[[2]int{5, -9}] {
 		t.Fatal("(5,-9) should be collected after marking")
 	}
+	// Hats unlock and round-trip.
+	if s.LoadHats("ada")[3] {
+		t.Fatal("hat 3 should not be owned yet")
+	}
+	s.UnlockHat("ada", 3)
+	s.UnlockHat("ada", 3) // idempotent
+	if !s.LoadHats("ada")[3] {
+		t.Fatal("hat 3 should be owned after unlock")
+	}
 }
 
 // RecordAreaVisit appends new areas and dedupes repeats.

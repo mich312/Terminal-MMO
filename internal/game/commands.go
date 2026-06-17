@@ -82,6 +82,11 @@ func init() {
 			run:     cmdInventory,
 		},
 		{
+			name: "character", aliases: []string{"char"}, usage: "/character",
+			summary: "preview and customize your avatar",
+			run:     cmdCharacter,
+		},
+		{
 			name: "clear", usage: "/clear",
 			summary: "clear your chat log",
 			run:     cmdClear,
@@ -239,15 +244,20 @@ func cmdAvatar(m *Model, args []string) tea.Cmd {
 	}
 	if len(args) == 0 {
 		m.addSystemLine("styles: " + listIndexed(NumAvatarStyles(), AvatarStyleName))
-		m.addSystemLine("hats:   " + listIndexed(NumAccessories(), AccessoryName))
-		m.addSystemLine(fmt.Sprintf("you: %s + %s — usage: /avatar <style> [hat]  (also /color)",
+		m.addSystemLine("hats:   " + ownedHats(m))
+		m.addSystemLine(fmt.Sprintf("you: %s + %s — usage: /avatar <style> [hat]  · /character to preview",
 			AvatarStyleName(cur.Style), AccessoryName(cur.Accessory)))
 		return nil
 	}
 	style := resolveIndex(args[0], cur.Style, NumAvatarStyles(), AvatarStyleName)
 	acc := cur.Accessory
 	if len(args) > 1 {
-		acc = resolveIndex(args[1], cur.Accessory, NumAccessories(), AccessoryName)
+		want := resolveIndex(args[1], cur.Accessory, NumAccessories(), AccessoryName)
+		if want != 0 && !m.ctx.Hats[want] {
+			m.addSystemLine("you haven't found the " + AccessoryName(want) + " yet — explore the Wilds to wear it")
+			return nil
+		}
+		acc = want
 	}
 	if m.ctx.World.SetAvatar(m.ctx.Name, style, acc) {
 		m.persistAvatar()
@@ -262,6 +272,21 @@ func (m *Model) persistAvatar() {
 	if p, ok := m.ctx.World.Self(m.ctx.Name); ok {
 		m.ctx.Store.SaveAvatar(m.ctx.Name, string(p.Color), p.Style, p.Accessory)
 	}
+}
+
+// ownedHats lists the accessories the player has unlocked (0:none is always
+// available), for the /avatar listing.
+func ownedHats(m *Model) string {
+	parts := []string{"0:none"}
+	for i := 1; i < NumAccessories(); i++ {
+		if m.ctx.Hats[i] {
+			parts = append(parts, fmt.Sprintf("%d:%s", i, AccessoryName(i)))
+		}
+	}
+	if len(parts) == 1 {
+		return "none yet — find hats out in the Wilds"
+	}
+	return strings.Join(parts, "  ")
 }
 
 // listIndexed renders "0:name  1:name  …" for a command's options listing.
@@ -330,6 +355,13 @@ func cmdInventory(m *Model, args []string) tea.Cmd {
 		return nil
 	}
 	m.showInfoPanel(fmt.Sprintf("Inventory — %d", total), lines)
+	return nil
+}
+
+func cmdCharacter(m *Model, args []string) tea.Cmd {
+	m.showInfo, m.showPlayers = false, false
+	m.showChar = true
+	m.charField = 0
 	return nil
 }
 

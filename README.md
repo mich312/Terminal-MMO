@@ -81,7 +81,11 @@ snowfields and snow-capped peaks, wetlands, sand, hills — give each direction 
 distinct look, each with its own HD pixel-art ground texture. Scattered through
 them are `◆` **collectibles** — berries and mushrooms in the woods, shells on
 the beach, crystals in the snow — that you forage by standing on one and
-pressing `e`; `/inventory` (`/i`) shows your haul. Discovery, position and pack
+pressing `e`; `/inventory` (`/i`) shows your haul. Rarer still are wearable
+`♚` **hats**, each hidden in a themed biome (a crown in the hills, a halo in
+the snow…): find one and you unlock and wear it. `/character` opens an
+interactive panel to preview your avatar and cycle body, color and the hats
+you've earned with the arrow keys. Discovery, position, pack and unlocked hats
 all persist across sessions.
 
 ### Presentation Wing

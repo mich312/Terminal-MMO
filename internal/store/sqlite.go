@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS collected (
 	y    INTEGER NOT NULL,
 	PRIMARY KEY (name, x, y)
 );
+CREATE TABLE IF NOT EXISTS hats (
+	name TEXT NOT NULL,
+	hat  INTEGER NOT NULL,
+	PRIMARY KEY (name, hat)
+);
 `
 
 type sqliteStore struct {
@@ -235,6 +240,35 @@ func (s *sqliteStore) LoadCollected(name string) map[[2]int]bool {
 		var x, y int
 		if err := rows.Scan(&x, &y); err == nil {
 			out[[2]int{x, y}] = true
+		}
+	}
+	return out
+}
+
+// UnlockHat records that a player owns an accessory.
+func (s *sqliteStore) UnlockHat(name string, hat int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO hats (name, hat) VALUES (?, ?)`, name, hat); err != nil {
+		log.Printf("store: unlock hat: %v", err)
+	}
+}
+
+// LoadHats returns the accessory indices a player owns.
+func (s *sqliteStore) LoadHats(name string) map[int]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT hat FROM hats WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[int]bool{}
+	for rows.Next() {
+		var hat int
+		if err := rows.Scan(&hat); err == nil {
+			out[hat] = true
 		}
 	}
 	return out
