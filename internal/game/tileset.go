@@ -37,6 +37,20 @@ var groundArt = map[TileTex][][]string{
 		{"BLBBBB", "BBBBDB", "DDBBBB", "BBBDBB", "BBBBBB", "BBLBBB"},
 		{"BBBLBB", "DBBBBB", "BBBBDD", "BBBBBB", "BLBBBB", "BBBBDB"},
 	},
+	// Indoor floor: a faint speckle so the surface reads as hand-pixeled.
+	TexFloor: {
+		{"BBBBBB", "BBBBBB", "BBLBBB", "BBBBBB", "BBBBBL", "BBBBBB"},
+		{"BBBBBB", "LBBBBB", "BBBBBB", "BBBLBB", "BBBBBB", "BBBBBB"},
+	},
+	// Brick wall: staggered courses with darker mortar.
+	TexBrick: {
+		{"BBBBBD", "BBBBBD", "DDDDDD", "DBBBBB", "DBBBBB", "DDDDDD"},
+	},
+	// Metal plate: riveted panels for the machine hall.
+	TexMetal: {
+		{"LBBBBB", "BBBBBB", "BBBBBB", "LBBBBB", "BBBBBB", "BBBBBB"},
+		{"BBBBBL", "BBBBBB", "BBBBBB", "BBBBBL", "BBBBBB", "BBBBBB"},
+	},
 }
 
 var propArt = map[TileProp][]string{
@@ -106,6 +120,56 @@ var propArt = map[TileProp][]string{
 		"PPppPP",
 	},
 	// PropPortal is drawn by the multi-tile structure pass, not here.
+
+	// Indoor furniture (P main color, p shade), for the hand-built rooms.
+	PropMachine: {
+		".PPPP.",
+		"PPPPPP",
+		"PpppPP",
+		"PpPPpP",
+		"PPPPPP",
+		".pppp.",
+	},
+	PropScreen: {
+		"PPPPPP",
+		"PppppP",
+		"PppppP",
+		"PppppP",
+		"PPPPPP",
+		"..PP..",
+	},
+	PropPlinth: {
+		"..PP..",
+		"..PP..",
+		".PPPP.",
+		".PppP.",
+		"PPPPPP",
+		"PppppP",
+	},
+	PropGem: {
+		"..P...",
+		".PPP..",
+		"PPPPP.",
+		".PpP..",
+		"..P...",
+		"......",
+	},
+	PropLamp: {
+		"..PP..",
+		".PPPP.",
+		".PppP.",
+		".PppP.",
+		"..PP..",
+		"..pp..",
+	},
+	PropCrate: {
+		"PPPPPP",
+		"PpPPpP",
+		"PPppPP",
+		"PPppPP",
+		"PpPPpP",
+		"PPPPPP",
+	},
 }
 
 // portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in

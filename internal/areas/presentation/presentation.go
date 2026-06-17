@@ -36,8 +36,10 @@ var rows = []string{
 
 var legend = map[rune]game.LegendEntry{
 	'0': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "lobby", Label: "Lobby"},
-	's': {Kind: game.TileDecor, Ch: '▀'},
-	't': {Kind: game.TileObject, Ch: '▣', Walkable: true, Object: "presenter"},
+	// Wall screens at the head of each meeting room (HD: mounted displays).
+	's': {Kind: game.TileDecor, Ch: '▀', Tex: game.TexBrick, Ground: "#3E4650", Prop: game.PropScreen, PropHex: "#2E8BFF"},
+	// Presenter podiums (walkable; HD: a standing display).
+	't': {Kind: game.TileObject, Ch: '▣', Walkable: true, Object: "presenter", Tex: game.TexFloor, Ground: "#2A2F37", Prop: game.PropScreen, PropHex: "#7DF0FF"},
 }
 
 // room describes one meeting room: its bounds and its shared-slide key.

@@ -25,28 +25,33 @@ var rows = []string{
 	"####################################",
 }
 
+// The legend drives both renderers: Ch/Color/Anim are the glyph look; Tex,
+// Ground and Prop are the HD pixel look (a metal hall with machine sprites).
 var legend = map[rune]game.LegendEntry{
 	'0': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "lobby", Label: "Lobby"},
+	// Metal-plate floor and walls override the default brick/stone.
+	'.': {Kind: game.TileFloor, Ch: '·', Walkable: true, Tex: game.TexMetal, Ground: "#23272E"},
+	'#': {Kind: game.TileWall, Ch: '█', Tex: game.TexMetal, Ground: "#3A424C"},
 	// Reactor core: a hot energy swirl, cold blue cycling to near-white.
-	'R': {Kind: game.TileDecor, Ch: '◉', Anim: &game.TileAnim{
+	'R': {Kind: game.TileDecor, Ch: '◉', Tex: game.TexMetal, Ground: "#2E6BFF", Anim: &game.TileAnim{
 		Frames: []rune{'◉', '◎', '●', '◎'}, ColorA: "#2E6BFF", ColorB: "#EAFBFF", Speed: 1}},
 	// Reactor casing: the steel shell around the core.
-	'C': {Kind: game.TileDecor, Ch: '▒', Color: "#566372"},
+	'C': {Kind: game.TileDecor, Ch: '▒', Color: "#566372", Tex: game.TexMetal, Ground: "#566372"},
 	// Casing corners: bolted plates.
-	'r': {Kind: game.TileDecor, Ch: '▚', Color: "#6B7480"},
-	// Turbine banks hum: glyph pulses through block shades, color cycles cold→hot.
-	'm': {Kind: game.TileDecor, Ch: '▓', Anim: &game.TileAnim{
+	'r': {Kind: game.TileDecor, Ch: '▚', Color: "#6B7480", Tex: game.TexMetal, Ground: "#6B7480"},
+	// Turbine banks: riveted steel housings (glyph pulses cold→hot).
+	'm': {Kind: game.TileDecor, Ch: '▓', Tex: game.TexMetal, Ground: "#46566B", Anim: &game.TileAnim{
 		Frames: []rune{'▓', '▒', '░', '▒'}, ColorA: "#3A4654", ColorB: "#7DF0FF", Speed: 2}},
 	// Control consoles: blinking panels, green/amber telemetry.
-	'k': {Kind: game.TileDecor, Ch: '▦', Anim: &game.TileAnim{
+	'k': {Kind: game.TileDecor, Ch: '▦', Tex: game.TexMetal, Ground: "#2A2F38", Prop: game.PropScreen, PropHex: "#7BD88F", Anim: &game.TileAnim{
 		Frames: []rune{'▦', '▩', '▦', '▣'}, ColorA: "#7BD88F", ColorB: "#FFC861", Speed: 3}},
 	// Steam pipes overhead.
-	'=': {Kind: game.TileDecor, Ch: '═', Color: "#6B7480"},
-	// Coolant channel: flowing water glyphs in blues.
-	'~': {Kind: game.TileDecor, Ch: '~', Anim: &game.TileAnim{
+	'=': {Kind: game.TileDecor, Ch: '═', Color: "#6B7480", Tex: game.TexMetal, Ground: "#6B7480"},
+	// Coolant channel: real flowing water in HD.
+	'~': {Kind: game.TileDecor, Ch: '~', Tex: game.TexWater, Ground: "#2E6BFF", Anim: &game.TileAnim{
 		Frames: []rune{'~', '≈', '~', '≋'}, ColorA: "#2E6BFF", ColorB: "#56E1FF", Speed: 3}},
 	// Catwalk lamps: warm flicker, the hall's working light.
-	'o': {Kind: game.TileObject, Ch: '◉', Anim: &game.TileAnim{
+	'o': {Kind: game.TileObject, Ch: '◉', Tex: game.TexMetal, Ground: "#2A2F38", Prop: game.PropLamp, PropHex: "#FFC861", Anim: &game.TileAnim{
 		ColorA: "#FF8A4C", ColorB: "#FFC861", Speed: 2}},
 }
 

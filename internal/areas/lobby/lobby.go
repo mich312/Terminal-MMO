@@ -42,11 +42,12 @@ var legend = map[rune]game.LegendEntry{
 	'3': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "democenter", Label: "Demo Center"},
 	'4': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "arcade", Label: "Arcade"},
 	'5': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds"},
-	'g': {Kind: game.TileObject, Ch: '≡', Object: "guestbook"},
-	'-': {Kind: game.TileDecor, Ch: '▀'},
-	'=': {Kind: game.TileDecor, Ch: '▄'},
+	'g': {Kind: game.TileObject, Ch: '≡', Object: "guestbook", Tex: game.TexFloor, Ground: "#2A2F37", Prop: game.PropPlinth, PropHex: "#C2CBD6"},
+	// Reception desk: top and base rows (HD: a wooden counter).
+	'-': {Kind: game.TileDecor, Ch: '▀', Tex: game.TexFloor, Ground: "#5A4A30", Prop: game.PropCrate, PropHex: "#A8854C"},
+	'=': {Kind: game.TileDecor, Ch: '▄', Tex: game.TexFloor, Ground: "#4A3D28", Prop: game.PropCrate, PropHex: "#8A6E3C"},
 	// Lobby plants breathe with a soft teal→green shimmer.
-	'*': {Kind: game.TileDecor, Ch: '♣', Anim: &game.TileAnim{
+	'*': {Kind: game.TileDecor, Ch: '♣', Tex: game.TexGrass, Ground: "#3F8A5A", Prop: game.PropBush, PropHex: "#7BD88F", Anim: &game.TileAnim{
 		ColorA: "#4FD6BE", ColorB: "#7BD88F", Speed: 3}},
 }
 
