@@ -51,12 +51,16 @@ const (
 	PropHouse  // decorative multi-tile building
 	PropPortal // animated area-entrance gate
 	// Indoor furniture for the hand-built rooms.
-	PropMachine // boxy machine / plotter
-	PropScreen  // wall-mounted display panel
-	PropPlinth  // exhibit pedestal
-	PropGem     // small showcased item
-	PropLamp    // light fixture / spotlight
-	PropCrate   // crate / desk block
+	PropMachine  // boxy machine / plotter
+	PropScreen   // wall-mounted display panel (animated)
+	PropPlinth   // exhibit pedestal
+	PropGem      // small showcased item (glints)
+	PropLamp     // light fixture / spotlight (glows)
+	PropCrate    // crate / desk block
+	PropCore     // reactor energy orb (glows, hero feature)
+	PropTurbine  // turbine / generator unit (glows)
+	PropPipe     // pipe segment with a valve light
+	PropFountain // water feature centerpiece (glows)
 )
 
 // Tile is one cell of a parsed map.

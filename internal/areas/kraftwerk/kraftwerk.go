@@ -1,56 +1,64 @@
-// Package kraftwerk is a placeholder area: the Durst power hall — a glowing
-// reactor core you can circle, flanked by turbine banks, coolant lines and a
-// console bay, with a portal back to the lobby. Built as a game.FlavorArea
-// (map data plus a single RegisterFlavor call).
+// Package kraftwerk is the Durst power hall: a turbine gallery with raised
+// machine alcoves, a console bank and a coolant sump, opening through a corridor
+// into a round reactor chamber whose core pulses with energy. A portal returns
+// to the lobby. Built as a game.FlavorArea (map data plus one RegisterFlavor
+// call); the legend drives both the glyph and HD pixel renderers.
 package kraftwerk
 
 import "github.com/durst-group/durstworld/internal/game"
 
 var rows = []string{
-	"####################################",
-	"#..=============....=============..#",
-	"#..mmmmmmmm..............mmmmmmmm..#",
-	"#..mmmmmmmm..............mmmmmmmm..#",
-	"#..................................#",
-	"#............o........o............#",
-	"#..............rCCCCr...~~~~~~~~~..#",
-	"#..............CRRRRC...~~~~~~~~~..#",
-	"0..............CRRRRC............o.#",
-	"#..............rCCCCr..............#",
-	"#..................................#",
-	"#..kkkkkk....o........o............#",
-	"#..mmmmmmmm..............mmmmmmmm..#",
-	"#..mmmmmmmm..............mmmmmmmm..#",
-	"#..................................#",
-	"####################################",
+	"######################################################",
+	"#######.....###.....###.....##########################",
+	"#######.mmm.###.mmm.###.mmm.##########################",
+	"#######.mmm.###.mmm.###.mmm.##########################",
+	"######.........................#######################",
+	"#####...........................######################",
+	"####.=.........................=.#####################",
+	"###........o........o.......o.....######CCC.o.CCC#####",
+	"###...............................#####CC.......CC####",
+	"###..=.........................=..####C...........C###",
+	"###...............................###C....rrrrr....C##",
+	"#....................................C...rr...rr...C##",
+	"#....=.........................=.........r.RRR.r...C##",
+	"0.......................................rrRRRRRrr..CC#",
+	"#........................................r.RRR.r...C##",
+	"#....=.........................=.....C...rr...rr...C##",
+	"###.................o.......o.....###C....rrrrr....C##",
+	"###...............................####C...........C###",
+	"###..=.........................=..#####CC.......CC####",
+	"####..kkkkkkkkkk.................#######CCC.o.CCC#####",
+	"#####.kkkkkkkkkk................######################",
+	"######.........................#######################",
+	"##########.~~~~~~~~~.#################################",
+	"##########.~~~~~~~~~.#################################",
+	"##########...........#################################",
+	"######################################################",
 }
 
-// The legend drives both renderers: Ch/Color/Anim are the glyph look; Tex,
-// Ground and Prop are the HD pixel look (a metal hall with machine sprites).
 var legend = map[rune]game.LegendEntry{
 	'0': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "lobby", Label: "Lobby"},
-	// Metal-plate floor and walls override the default brick/stone.
+	// Metal-plate floor and walls.
 	'.': {Kind: game.TileFloor, Ch: '·', Walkable: true, Tex: game.TexMetal, Ground: "#23272E"},
 	'#': {Kind: game.TileWall, Ch: '█', Tex: game.TexMetal, Ground: "#3A424C"},
-	// Reactor core: a hot energy swirl, cold blue cycling to near-white.
-	'R': {Kind: game.TileDecor, Ch: '◉', Tex: game.TexMetal, Ground: "#2E6BFF", Anim: &game.TileAnim{
+	// Reactor core: a white-hot orb that pulses (HD: PropCore glow).
+	'R': {Kind: game.TileDecor, Ch: '◉', Tex: game.TexMetal, Ground: "#16345E", Prop: game.PropCore, PropHex: "#7DF0FF", Anim: &game.TileAnim{
 		Frames: []rune{'◉', '◎', '●', '◎'}, ColorA: "#2E6BFF", ColorB: "#EAFBFF", Speed: 1}},
-	// Reactor casing: the steel shell around the core.
+	// Reactor casing shell and inner ring.
 	'C': {Kind: game.TileDecor, Ch: '▒', Color: "#566372", Tex: game.TexMetal, Ground: "#566372"},
-	// Casing corners: bolted plates.
 	'r': {Kind: game.TileDecor, Ch: '▚', Color: "#6B7480", Tex: game.TexMetal, Ground: "#6B7480"},
-	// Turbine banks: riveted steel housings (glyph pulses cold→hot).
-	'm': {Kind: game.TileDecor, Ch: '▓', Tex: game.TexMetal, Ground: "#46566B", Anim: &game.TileAnim{
+	// Turbine units in the raised alcoves (HD: PropTurbine glow band).
+	'm': {Kind: game.TileDecor, Ch: '▓', Tex: game.TexMetal, Ground: "#46566B", Prop: game.PropTurbine, PropHex: "#6FA8D8", Anim: &game.TileAnim{
 		Frames: []rune{'▓', '▒', '░', '▒'}, ColorA: "#3A4654", ColorB: "#7DF0FF", Speed: 2}},
-	// Control consoles: blinking panels, green/amber telemetry.
-	'k': {Kind: game.TileDecor, Ch: '▦', Tex: game.TexMetal, Ground: "#2A2F38", Prop: game.PropScreen, PropHex: "#7BD88F", Anim: &game.TileAnim{
+	// Console / machine bank.
+	'k': {Kind: game.TileDecor, Ch: '▦', Tex: game.TexMetal, Ground: "#2A2F38", Prop: game.PropMachine, PropHex: "#7BD88F", Anim: &game.TileAnim{
 		Frames: []rune{'▦', '▩', '▦', '▣'}, ColorA: "#7BD88F", ColorB: "#FFC861", Speed: 3}},
-	// Steam pipes overhead.
-	'=': {Kind: game.TileDecor, Ch: '═', Color: "#6B7480", Tex: game.TexMetal, Ground: "#6B7480"},
-	// Coolant channel: real flowing water in HD.
+	// Steam pipes with glowing valves.
+	'=': {Kind: game.TileDecor, Ch: '═', Color: "#8A93A0", Tex: game.TexMetal, Ground: "#2A2F38", Prop: game.PropPipe, PropHex: "#9AA3AD"},
+	// Coolant sump: real flowing water in HD.
 	'~': {Kind: game.TileDecor, Ch: '~', Tex: game.TexWater, Ground: "#2E6BFF", Anim: &game.TileAnim{
 		Frames: []rune{'~', '≈', '~', '≋'}, ColorA: "#2E6BFF", ColorB: "#56E1FF", Speed: 3}},
-	// Catwalk lamps: warm flicker, the hall's working light.
+	// Catwalk lamps: warm flicker (HD: PropLamp glow).
 	'o': {Kind: game.TileObject, Ch: '◉', Tex: game.TexMetal, Ground: "#2A2F38", Prop: game.PropLamp, PropHex: "#FFC861", Anim: &game.TileAnim{
 		ColorA: "#FF8A4C", ColorB: "#FFC861", Speed: 2}},
 }
@@ -59,10 +67,10 @@ func init() {
 	game.RegisterFlavor(game.FlavorConfig{
 		ID: "kraftwerk", Display: "Kraftwerk",
 		Rows: rows, Legend: legend,
-		SpawnX: 2, SpawnY: 8, Jitter: 0,
+		SpawnX: 6, SpawnY: 12, Jitter: 0,
 		Title: "⚡ Durst Kraftwerk",
-		Body:  "Home of spin-offs and experiments.\n\nThe reactor's warming up — mind the coolant.",
-		// The hall sits in shadow; the player's lamp reaches 11 tiles.
-		Light: 11,
+		Body:  "Home of spin-offs and experiments.\n\nFollow the corridor to the reactor — mind the coolant.",
+		// The hall sits in shadow; the player's lamp reaches into it.
+		Light: 13,
 	})
 }

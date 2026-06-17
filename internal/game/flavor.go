@@ -82,9 +82,17 @@ func (a *FlavorArea) View(width, height int) string {
 	panel := th.Panel.Width(a.panelWidth).Render(
 		th.PanelTitle.Render(a.title) + "\n\n" + th.ChatText.Render(a.body))
 
-	mapView := a.Render()
+	// Camera-follow the player through a viewport in the space the panel leaves,
+	// so rooms can be larger than the screen (and irregularly shaped) instead of
+	// being shown whole.
+	const gap = 3
+	mapW := width - lipgloss.Width(panel) - gap
+	if mapW < 24 {
+		mapW = 24
+	}
+	mapView := a.RenderViewport(mapW, height)
 	if a.light > 0 {
-		mapView = a.RenderLit(a.Map.W, a.Map.H, a.light)
+		mapView = a.RenderLit(mapW, height, a.light)
 	}
 
 	if a.panelLeft {
