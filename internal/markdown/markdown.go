@@ -18,6 +18,8 @@ import (
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+
+	"github.com/durst-group/durstworld/internal/palette"
 )
 
 // Span is a run of text with a uniform style. Color is a "#rrggbb" hex, or ""
@@ -52,16 +54,16 @@ func (l Line) IsCode() bool {
 	return code
 }
 
-// Semantic colors, matching the ui palette so both backends agree.
+// Semantic colors, drawn from the shared palette so both backends agree.
 const (
-	colHeading1 = "#F5F7FA"
-	colHeading2 = "#7DF0FF"
-	colHeading3 = "#C2CBD6"
-	colAccent   = "#2E8BFF"
-	colLink     = "#6FB7FF"
-	colCode     = "#7DF0FF"
-	colQuote    = "#8A93A0"
-	colRule     = "#6B7480"
+	colHeading1 = palette.Bright
+	colHeading2 = palette.Accent2
+	colHeading3 = palette.Text
+	colAccent   = palette.Accent
+	colLink     = palette.Link
+	colCode     = palette.Accent2
+	colQuote    = palette.Toast
+	colRule     = palette.Dim
 )
 
 // SplitSlides splits a deck on a line of three or more dashes (---).
