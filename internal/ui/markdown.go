@@ -6,6 +6,65 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// SlidePlain renders a markdown slide to plain (unstyled) wrapped lines, for
+// the HD pixel renderer's bitmap-font screen. Headings keep their text, bullets
+// become "• ", quotes "| ", and inline **bold**/*italic*/`code` markers are
+// stripped.
+func SlidePlain(src string, width int) []string {
+	var out []string
+	code := false
+	for _, raw := range strings.Split(src, "\n") {
+		t := strings.TrimSpace(raw)
+		if strings.HasPrefix(t, "```") {
+			code = !code
+			continue
+		}
+		if code {
+			out = append(out, "  "+raw)
+			continue
+		}
+		switch {
+		case t == "":
+			out = append(out, "")
+		case strings.HasPrefix(t, "### "):
+			out = append(out, wrapWords(stripInline(t[4:]), width)...)
+		case strings.HasPrefix(t, "## "):
+			out = append(out, wrapWords(stripInline(t[3:]), width)...)
+		case strings.HasPrefix(t, "# "):
+			out = append(out, wrapWords(stripInline(t[2:]), width)...)
+		case strings.HasPrefix(t, "> "):
+			out = append(out, prefixWrap("| ", stripInline(t[2:]), width)...)
+		case strings.HasPrefix(t, "- "), strings.HasPrefix(t, "* "):
+			out = append(out, prefixWrap("• ", stripInline(t[2:]), width)...)
+		default:
+			out = append(out, wrapWords(stripInline(t), width)...)
+		}
+	}
+	return out
+}
+
+// stripInline removes markdown emphasis markers, leaving the text.
+func stripInline(s string) string {
+	return strings.NewReplacer("**", "", "`", "", "*", "", "_", "").Replace(s)
+}
+
+// prefixWrap wraps body to width and indents continuation lines under prefix.
+func prefixWrap(prefix, body string, width int) []string {
+	indent := strings.Repeat(" ", len([]rune(prefix)))
+	var out []string
+	for i, l := range wrapWords(body, width-len([]rune(prefix))) {
+		if i == 0 {
+			out = append(out, prefix+l)
+		} else {
+			out = append(out, indent+l)
+		}
+	}
+	if len(out) == 0 {
+		out = []string{prefix}
+	}
+	return out
+}
+
 // SplitSlides splits a markdown deck into slide sources on a line of three or
 // more dashes (---). Leading/trailing blank slides are kept so the author's
 // structure is preserved; an empty deck yields one empty slide.

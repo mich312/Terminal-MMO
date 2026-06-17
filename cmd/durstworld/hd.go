@@ -178,6 +178,14 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		cam := game.Camera{W: vw, H: vh}
 		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, game.Light{}, ox, oy, hdScale, false, style)
 
+		// Draw an area's on-screen text (a presentation slide) into the frame —
+		// HD has no glyph layer, so slides are rasterized straight onto the image.
+		if ov, ok := area.(game.HDOverlayer); ok {
+			if title, lines, footer, show := ov.HDSlide(); show {
+				pixel.DrawSlidePanel(img, title, lines, footer)
+			}
+		}
+
 		sent += fw.WriteFrame(out, img, frame%hdRefresh == 0)
 		out.Flush()
 		framesSent++

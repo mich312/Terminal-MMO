@@ -42,6 +42,14 @@ type HDViewer interface {
 	HDView(vw, vh int) (window *TileMap, originX, originY int)
 }
 
+// HDOverlayer lets an area draw a text panel over the HD pixel frame. The
+// Presentation Wing uses it to show the current slide on screen in HD (there
+// are no terminal cells in HD, so text is drawn into the image). It returns the
+// title, the slide's plain wrapped lines, a footer, and whether to show it.
+type HDOverlayer interface {
+	HDSlide() (title string, lines []string, footer string, show bool)
+}
+
 // Ctx is everything an area needs: shared world, persistence, and who the
 // local player is. From is the area id the player came from ("" on a fresh
 // connect) so areas can spawn players next to the right portal.
