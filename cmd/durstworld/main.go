@@ -60,6 +60,7 @@ func main() {
 	w.SetDeckPersist(func(d world.Deck) {
 		st.SaveDeck(d.ID, d.Owner, d.Title, d.Source, d.Created.Unix())
 	})
+	w.SetDeckRemove(st.DeleteDeck)
 
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),

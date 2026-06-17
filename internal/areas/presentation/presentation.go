@@ -98,7 +98,11 @@ func buildWing(decks []world.Deck) ([]string, []game.MapText, []stage) {
 		if i == len(decks) { // the create booth
 			set(dcx, ly, '+')
 			set(dcx+1, ly, '+')
-			texts = append(texts, centered("＋ New presentation", x0, x1, stageH))
+			plate := "＋ New presentation"
+			if len(decks) >= world.MaxDecks {
+				plate = fmt.Sprintf("Wing full %d/%d", len(decks), world.MaxDecks)
+			}
+			texts = append(texts, centered(plate, x0, x1, stageH))
 			stages = append(stages, stage{booth: true, x0: x0, y0: 1, x1: x1, y1: stageH, lx: dcx, ly: ly})
 			continue
 		}
@@ -157,6 +161,7 @@ type area struct {
 	editor       ui.Editor
 	editID       string // deck being edited; "" when creating
 	pendingTitle string
+	retireArmed  bool // a retire keypress is awaiting confirmation
 }
 
 func (a *area) Name() string { return "Presentation Wing" }
@@ -211,9 +216,15 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	}
 
 	if key, ok := msg.(tea.KeyMsg); ok {
+		if key.String() != "x" { // any other key cancels a pending retire
+			a.retireArmed = false
+		}
 		if st, ok := a.onLectern(); ok {
 			if st.booth {
 				if s := key.String(); s == "e" || s == "enter" {
+					if a.Ctx.World.DeckCount() >= world.MaxDecks {
+						return a, nil // wing full — the Hint explains
+					}
 					a.openTitle()
 					return a, nil
 				}
@@ -228,13 +239,22 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				case "p":
 					a.Ctx.World.AdvanceDeck(st.deckID, a.Ctx.Name, -1)
 					return a, nil
+				case "x":
+					if a.retireArmed {
+						a.Ctx.World.RemoveDeck(st.deckID, a.Ctx.Name)
+						a.retireArmed = false
+						a.rebuildSafe()
+					} else {
+						a.retireArmed = true
+					}
+					return a, nil
 				}
 			}
 		}
 	}
 
 	if wm, ok := msg.(game.WorldEventMsg); ok && world.Event(wm).Type == world.EventDeck {
-		a.rebuild()
+		a.rebuildSafe()
 	}
 	if portal, handled := a.HandleCommon(msg); handled {
 		if portal != "" {
@@ -291,7 +311,7 @@ func (a *area) editKey(key tea.KeyMsg) {
 		}
 		a.editor.Blur()
 		a.mode = modeWalk
-		a.rebuild()
+		a.rebuildSafe()
 	case tea.KeyEsc:
 		a.editor.Blur()
 		a.mode = modeWalk
@@ -300,17 +320,52 @@ func (a *area) editKey(key tea.KeyMsg) {
 	}
 }
 
+// rebuildSafe regenerates the map and keeps the local player on walkable ground
+// — retiring a deck shifts later bays left, so a player may need nudging to the
+// concourse.
+func (a *area) rebuildSafe() {
+	a.rebuild()
+	if a.fits(a.X, a.Y) {
+		return
+	}
+	cy := stageH + 3 // a concourse row
+	for x := 1; x <= a.Map.W-2; x++ {
+		if a.fits(x, cy) {
+			a.X, a.Y = x, cy
+			a.Ctx.World.Move(a.Ctx.Name, x, cy)
+			return
+		}
+	}
+}
+
+func (a *area) fits(x, y int) bool {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			if !a.Map.Walkable(x+dx, y+dy) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (a *area) Hint() string {
 	if a.mode != modeWalk {
 		return ""
 	}
 	if st, ok := a.onLectern(); ok {
 		if st.booth {
+			if a.Ctx.World.DeckCount() >= world.MaxDecks {
+				return fmt.Sprintf("wing full (%d/%d) — a presenter must retire a talk", world.MaxDecks, world.MaxDecks)
+			}
 			return "press e — author a presentation"
 		}
 		if d, ok := a.Ctx.World.GetDeck(st.deckID); ok {
 			if d.Owner == a.Ctx.Name {
-				return "n/p — slides · e — edit deck"
+				if a.retireArmed {
+					return "press x again to retire “" + d.Title + "” · move to cancel"
+				}
+				return "n/p — slides · e — edit · x — retire"
 			}
 			return "presented by " + d.Owner
 		}

@@ -25,12 +25,51 @@ type Deck struct {
 // there so their stage view stays in sync.
 const presentArea = "presentation"
 
+// MaxDecks caps how many presentation stages can exist at once. The wing is a
+// fixed set of rooms: once full, new decks are refused until an owner retires
+// one. Tunable.
+const MaxDecks = 8
+
 // SetDeckPersist registers a callback that saves a deck whenever it is created
 // or edited (main wires this to the SQLite store). nil disables persistence.
 func (w *World) SetDeckPersist(fn func(Deck)) {
 	w.mu.Lock()
 	w.persist = fn
 	w.mu.Unlock()
+}
+
+// SetDeckRemove registers a callback that deletes a persisted deck by id (main
+// wires this to the SQLite store). nil disables deletion persistence.
+func (w *World) SetDeckRemove(fn func(id string)) {
+	w.mu.Lock()
+	w.removeFn = fn
+	w.mu.Unlock()
+}
+
+// RemoveDeck retires a deck and its stage. Only the owner may retire it; the
+// wing is rebuilt for everyone and the deck is deleted from storage. Returns
+// false if the caller isn't the owner or the deck is gone.
+func (w *World) RemoveDeck(id, by string) bool {
+	w.mu.Lock()
+	d, ok := w.decks[id]
+	if !ok || d.Owner != by {
+		w.mu.Unlock()
+		return false
+	}
+	delete(w.decks, id)
+	for i, x := range w.deckOrder {
+		if x == id {
+			w.deckOrder = append(w.deckOrder[:i], w.deckOrder[i+1:]...)
+			break
+		}
+	}
+	w.broadcastToArea(presentArea, Event{Type: EventDeck, Player: by, Area: presentArea, Detail: id})
+	remove := w.removeFn
+	w.mu.Unlock()
+	if remove != nil {
+		remove(id)
+	}
+	return true
 }
 
 // LoadDeck inserts a persisted deck at startup without re-saving or
@@ -51,13 +90,25 @@ func (w *World) LoadDeck(id, owner, title, source string, created time.Time) {
 	w.deckOrder = append(w.deckOrder, id)
 }
 
-// CreateDeck stores a new deck authored by owner and returns its id. The slide
-// index starts at 0. Everyone in the Presentation Wing is told to rebuild, and
-// the deck is persisted (if a store is wired).
+// DeckCount returns how many decks currently exist (for the wing's cap check).
+func (w *World) DeckCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.decks)
+}
+
+// CreateDeck stores a new deck authored by owner and returns its id, or "" if
+// the wing is full (MaxDecks reached). The slide index starts at 0. Everyone in
+// the Presentation Wing is told to rebuild, and the deck is persisted (if a
+// store is wired).
 func (w *World) CreateDeck(owner, title, source string) string {
 	w.mu.Lock()
 	if w.decks == nil {
 		w.decks = make(map[string]*Deck)
+	}
+	if len(w.decks) >= MaxDecks {
+		w.mu.Unlock()
+		return ""
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {

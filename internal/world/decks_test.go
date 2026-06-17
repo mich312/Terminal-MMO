@@ -1,9 +1,43 @@
 package world
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
+
+// The wing caps at MaxDecks: creation is refused when full, and an owner
+// retiring a deck frees a slot (non-owners can't).
+func TestDeckCapAndRetire(t *testing.T) {
+	w := New()
+	defer w.Close()
+	var ids []string
+	for i := 0; i < MaxDecks; i++ {
+		id := w.CreateDeck("anna", fmt.Sprintf("Talk %d", i), "x")
+		if id == "" {
+			t.Fatalf("create %d refused before the cap", i)
+		}
+		ids = append(ids, id)
+	}
+	if w.DeckCount() != MaxDecks {
+		t.Fatalf("count = %d, want %d", w.DeckCount(), MaxDecks)
+	}
+	if over := w.CreateDeck("bob", "One Too Many", "x"); over != "" {
+		t.Fatalf("create past the cap should be refused, got %q", over)
+	}
+	if w.RemoveDeck(ids[0], "bob") {
+		t.Error("a non-owner retired someone else's deck")
+	}
+	if !w.RemoveDeck(ids[0], "anna") {
+		t.Fatal("owner retire failed")
+	}
+	if w.DeckCount() != MaxDecks-1 {
+		t.Fatalf("count after retire = %d, want %d", w.DeckCount(), MaxDecks-1)
+	}
+	if id := w.CreateDeck("bob", "Now It Fits", "x"); id == "" {
+		t.Fatal("create after a retire should be allowed")
+	}
+}
 
 // CreateDeck and UpdateDeck fire the persist callback with a snapshot; LoadDeck
 // restores a persisted deck without re-persisting.

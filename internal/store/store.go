@@ -55,6 +55,8 @@ type Store interface {
 	SaveDeck(id, owner, title, source string, createdUnix int64)
 	// LoadDecks returns every persisted deck, oldest first.
 	LoadDecks() []DeckRecord
+	// DeleteDeck removes a persisted deck by id.
+	DeleteDeck(id string)
 	Close() error
 }
 
@@ -85,4 +87,5 @@ func (noopStore) LoadAvatar(string) (string, int, int, bool) {
 }
 func (noopStore) SaveDeck(string, string, string, string, int64) {}
 func (noopStore) LoadDecks() []DeckRecord                        { return nil }
+func (noopStore) DeleteDeck(string)                              {}
 func (noopStore) Close() error                                   { return nil }

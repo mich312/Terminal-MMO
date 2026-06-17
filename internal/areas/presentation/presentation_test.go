@@ -3,8 +3,33 @@ package presentation
 import (
 	"testing"
 
+	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/world"
 )
+
+// Retiring an earlier deck shifts later bays left; rebuildSafe must keep the
+// local player on walkable ground rather than stranding them in a wall.
+func TestRetireRepositionsPlayer(t *testing.T) {
+	w := world.New()
+	defer w.Close()
+	name, _ := w.Join("anna")
+	ctx := &game.Ctx{World: w, Name: name}
+	w.CreateDeck("anna", "A", "x")
+	w.CreateDeck("anna", "B", "x")
+	w.CreateDeck("anna", "C", "x")
+
+	a := &area{Walker: game.Walker{Ctx: ctx, AreaID: "presentation"}}
+	a.rebuild()
+	last := a.stages[2] // deck C's bay (deepest to the right)
+	a.X, a.Y = last.lx, last.ly
+	w.EnterArea(name, "presentation", a.X, a.Y, "Presentation Wing")
+
+	w.RemoveDeck("a", "anna") // retire the first deck → everything shifts left
+	a.rebuildSafe()
+	if !a.fits(a.X, a.Y) {
+		t.Errorf("player stranded off walkable ground at (%d,%d) after retire", a.X, a.Y)
+	}
+}
 
 // The wing always has at least the create booth, and grows one bay per deck.
 func TestBuildWingGrowsWithDecks(t *testing.T) {

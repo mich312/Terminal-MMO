@@ -242,6 +242,15 @@ func (s *sqliteStore) SaveDeck(id, owner, title, source string, createdUnix int6
 	}
 }
 
+// DeleteDeck removes a persisted deck by id.
+func (s *sqliteStore) DeleteDeck(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM decks WHERE id = ?`, id); err != nil {
+		log.Printf("store: delete deck: %v", err)
+	}
+}
+
 // LoadDecks returns every persisted deck, oldest first.
 func (s *sqliteStore) LoadDecks() []DeckRecord {
 	s.mu.Lock()

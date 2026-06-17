@@ -75,6 +75,10 @@ drives it with `n`/`p` from the `▟` lectern and can re-edit with `e`. Decks ar
 owned by their author (your SSH username) and saved to SQLite, so your talks
 come back after a restart — only the live slide index resets.
 
+The wing holds a fixed number of stages (8). When it's full the `＋` booth says
+so; a presenter has to retire one of their own talks (`x`, then `x` again to
+confirm, at their lectern) before a new one can be added.
+
 Minimum terminal size is 80×24.
 
 ### Chat commands

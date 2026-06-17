@@ -74,6 +74,17 @@ func TestDeckSaveLoad(t *testing.T) {
 	}
 }
 
+func TestDeleteDeck(t *testing.T) {
+	s := openTemp(t)
+	s.SaveDeck("d1", "anna", "T", "x", 1)
+	s.SaveDeck("d2", "bob", "U", "y", 2)
+	s.DeleteDeck("d1")
+	decks := s.LoadDecks()
+	if len(decks) != 1 || decks[0].ID != "d2" {
+		t.Errorf("after delete, decks = %+v, want just d2", decks)
+	}
+}
+
 // A corrupt areas_visited blob is preserved, not silently overwritten.
 func TestRecordAreaVisitPreservesCorruptBlob(t *testing.T) {
 	s := openTemp(t)
