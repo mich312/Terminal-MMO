@@ -32,6 +32,7 @@ const (
 	HexBarText = "#C2CBD6"
 	HexToast   = "#8A93A0" // join/leave one-liners
 	HexPanelBg = "#11151B"
+	HexCodeBg  = "#171C28" // code-block / inline-code background
 )
 
 // Back-compat color vars used by a few callers directly.

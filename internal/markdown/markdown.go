@@ -32,6 +32,26 @@ type Span struct {
 // Line is one rendered output line.
 type Line []Span
 
+// IsCode reports whether a line is a fenced-code line (every non-blank span is
+// code), so a backend can give it a block background. Blank lines and ordinary
+// paragraphs with inline code are not code lines.
+func (l Line) IsCode() bool {
+	if len(l) == 0 {
+		return false
+	}
+	code := false
+	for _, sp := range l {
+		if sp.Code {
+			code = true
+			continue
+		}
+		if strings.TrimSpace(sp.Text) != "" {
+			return false
+		}
+	}
+	return code
+}
+
 // Semantic colors, matching the ui palette so both backends agree.
 const (
 	colHeading1 = "#F5F7FA"
@@ -262,7 +282,7 @@ func highlight(code, lang string) []Line {
 		style = styles.Fallback
 	}
 	var lines []Line
-	cur := Line{{Text: "  "}} // 2-space gutter
+	cur := Line{{Text: "  ", Code: true}} // 2-space gutter
 	for _, tok := range it.Tokens() {
 		hex := ""
 		if c := style.Get(tok.Type).Colour; c != 0 {
@@ -271,7 +291,7 @@ func highlight(code, lang string) []Line {
 		for k, part := range strings.Split(tok.Value, "\n") {
 			if k > 0 {
 				lines = append(lines, cur)
-				cur = Line{{Text: "  "}}
+				cur = Line{{Text: "  ", Code: true}}
 			}
 			if part != "" {
 				cur = append(cur, Span{Text: part, Color: hex, Code: true})

@@ -15,7 +15,16 @@ func (t *Theme) RenderSlide(src string, width, height int) string {
 	lines := markdown.Render(src, width)
 	rendered := make([]string, 0, len(lines))
 	for _, ln := range lines {
-		rendered = append(rendered, t.styleLine(ln))
+		s := t.styleLine(ln)
+		if ln.IsCode() {
+			// fill the whole line with the code background + a left accent bar
+			bar := t.r.NewStyle().Background(lipgloss.Color(HexAccent)).Render(" ")
+			body := t.r.NewStyle().Background(lipgloss.Color(HexCodeBg)).Width(width - 1).Render(s)
+			s = bar + body
+		} else {
+			s = lipgloss.PlaceHorizontal(width, lipgloss.Left, s)
+		}
+		rendered = append(rendered, s)
 	}
 	if len(rendered) > height {
 		rendered = rendered[:height]
@@ -31,9 +40,6 @@ func (t *Theme) RenderSlide(src string, width, height int) string {
 	out = append(out, rendered...)
 	for len(out) < height {
 		out = append(out, "")
-	}
-	for i, l := range out {
-		out[i] = lipgloss.PlaceHorizontal(width, lipgloss.Left, l)
 	}
 	return strings.Join(out, "\n")
 }
@@ -59,6 +65,9 @@ func (t *Theme) styleLine(ln markdown.Line) string {
 		}
 		if sp.Underline {
 			st = st.Underline(true)
+		}
+		if sp.Code {
+			st = st.Background(lipgloss.Color(HexCodeBg))
 		}
 		b.WriteString(st.Render(sp.Text))
 	}

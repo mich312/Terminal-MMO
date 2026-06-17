@@ -140,10 +140,25 @@ func DrawSlidePanel(img *image.RGBA, src, footer string) {
 	}
 	fillCard(img, ox, oy, pw, ph)
 
+	codeBg := color.RGBA{24, 30, 44, 255}
+	bar := color.RGBA{0x2E, 0x8B, 0xFF, 255}
+	ix0, ix1 := ox+3, ox+pw-3
 	ty := oy + pad
 	for _, ln := range lines {
+		if ln.IsCode() {
+			fillRect(img, ix0, ty-2, ix1-ix0, lh, codeBg)
+			fillRect(img, ix0, ty-2, scale, lh, bar)
+		}
 		drawSpanLine(img, ox+pad, ty, scale, ln)
 		ty += lh
+	}
+}
+
+func fillRect(img *image.RGBA, x, y, w, h int, c color.RGBA) {
+	for j := 0; j < h; j++ {
+		for i := 0; i < w; i++ {
+			setIfInside(img, x+i, y+j, c)
+		}
 	}
 }
 
@@ -164,6 +179,9 @@ func drawSpanLine(img *image.RGBA, x, y, scale int, ln markdown.Line) {
 			col = hexRGBA(sp.Color)
 		}
 		DrawText(img, x, y, scale, txt, col)
+		if sp.Bold { // the bitmap font is single-weight — thicken to fake bold
+			DrawText(img, x+1, y, scale, txt, col)
+		}
 		w := TextWidth(txt, scale)
 		if sp.Strike {
 			sy := y + (13*scale)/2
