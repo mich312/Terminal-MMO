@@ -152,7 +152,12 @@ func (s *sqliteStore) RecordAreaVisit(name, area string) {
 		return // player row missing or unreadable; not worth fighting
 	}
 	var areas []string
-	_ = json.Unmarshal([]byte(raw), &areas)
+	if err := json.Unmarshal([]byte(raw), &areas); err != nil {
+		// Corrupt blob: log and leave it untouched rather than silently
+		// overwriting it with a fresh single-element list.
+		log.Printf("store: areas_visited for %q is corrupt (%v); leaving it", name, err)
+		return
+	}
 	for _, a := range areas {
 		if a == area {
 			return
