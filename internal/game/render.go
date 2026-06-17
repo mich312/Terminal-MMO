@@ -4,7 +4,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
@@ -111,7 +110,7 @@ func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, f
 
 // buildGrid lays the terrain into a cell grid with day/night tint and lighting.
 func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) [][]rcell {
-	ambHex, ambStr := ui.Ambient(time.Now())
+	ambHex, ambStr := ui.Ambient(ui.Now())
 	amb := mustHex(ambHex)
 	base := map[TileKind]colorful.Color{
 		TileWall:   tint(mustHex(ui.HexDim), amb, ambStr),
@@ -258,7 +257,7 @@ func portalColor(frame int) colorful.Color {
 // by the HD renderer to color a tile's ground surface the same way buildGrid
 // tints terrain.
 func tintedHex(hex string) colorful.Color {
-	ambHex, ambStr := ui.Ambient(time.Now())
+	ambHex, ambStr := ui.Ambient(ui.Now())
 	return tint(mustHex(hex), mustHex(ambHex), ambStr)
 }
 

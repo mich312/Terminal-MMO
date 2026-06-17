@@ -2,6 +2,10 @@ package ui
 
 import "time"
 
+// Now is the clock the renderer reads for the day/night cycle. It defaults to
+// the wall clock; tests and art tools override it to sample a fixed hour.
+var Now = time.Now
+
 // dayKey is one anchor in the 24-hour ambient cycle: at hour H the world is
 // tinted toward Hex by Strength (0 = untinted, 1 = fully the tint color).
 // Values between anchors are interpolated, and the ring wraps midnight.
