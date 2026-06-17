@@ -81,6 +81,9 @@ type Ctx struct {
 	// Hats is the set of accessory indices the player has unlocked (found in the
 	// world). Index 0 ("none") is always available. Loaded at join.
 	Hats map[int]bool
+	// FixedGates is the set of personal gate ids this player has repaired.
+	// Loaded at join. Co-op gate state lives in the shared World instead.
+	FixedGates map[string]bool
 }
 
 // Transition is a sentinel Area: returning it from Update tells the root

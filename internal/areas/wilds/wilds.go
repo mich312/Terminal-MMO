@@ -90,6 +90,12 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	if a.ctx.Inventory == nil {
 		a.ctx.Inventory = map[string]int{}
 	}
+	if a.ctx.FixedGates == nil {
+		a.ctx.FixedGates = a.ctx.Store.LoadPersonalGates(a.ctx.Name)
+		if a.ctx.FixedGates == nil {
+			a.ctx.FixedGates = map[string]bool{}
+		}
+	}
 	a.wx, a.wy = a.resume()
 	a.reveal()
 	a.persist()
@@ -169,19 +175,97 @@ func (a *area) fits(x, y int) bool { return footprintWalkable(a.gen, x, y) }
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
-			if c := a.gen.At(x+dx, y+dy); c.Portal != "" {
+			cx, cy := x+dx, y+dy
+			if c := a.gen.At(cx, cy); c.Portal != "" {
 				return c.Portal, true
+			}
+			// An opened gate behaves like a portal; a sealed one does not.
+			if g, ok := gateAtCell(cx, cy); ok && a.gateOpen(g) {
+				return g.Portal, true
 			}
 		}
 	}
 	return "", false
 }
 
+// gateOpen reports whether a gate is repaired for this player (personal) or for
+// everyone (co-op).
+func (a *area) gateOpen(g gate) bool {
+	if g.kind == gateCoop {
+		return a.ctx.World.GateFixed(g.Portal)
+	}
+	return a.ctx.FixedGates[g.Portal]
+}
+
+// sealedGateUnderBody returns the sealed gate the player is standing on, if any.
+func (a *area) sealedGateUnderBody() (gate, bool) {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			if g, ok := gateAtCell(a.wx+dx, a.wy+dy); ok && !a.gateOpen(g) {
+				return g, true
+			}
+		}
+	}
+	return gate{}, false
+}
+
+// offerToGate spends the required item to repair a personal gate or contribute
+// to a co-op gate's pool.
+func (a *area) offerToGate(g gate) {
+	if a.ctx.Inventory[g.item] <= 0 {
+		a.setToast("the " + g.Name + " needs a " + itemName(g.item))
+		return
+	}
+	a.ctx.Inventory[g.item]--
+	if a.ctx.Inventory[g.item] <= 0 {
+		delete(a.ctx.Inventory, g.item)
+	}
+	a.ctx.Store.SpendItem(a.ctx.Name, g.item)
+
+	if g.kind == gateCoop {
+		pool, fixed := a.ctx.World.OfferToGate(g.Portal, g.need)
+		if fixed {
+			a.setToast("the " + g.Name + " roars to life!")
+		} else {
+			a.setToast(fmt.Sprintf("offered a %s — %d/%d", itemName(g.item), pool, g.need))
+		}
+		return
+	}
+	a.fixPersonalGate(g)
+}
+
+// fixPersonalGate marks a personal gate repaired for this player.
+func (a *area) fixPersonalGate(g gate) {
+	a.ctx.FixedGates[g.Portal] = true
+	a.ctx.Store.FixPersonalGate(a.ctx.Name, g.Portal)
+	a.setToast("the " + g.Name + " opens for you!")
+}
+
+// gatePrompt is the status-bar hint shown while standing at a sealed gate.
+func (a *area) gatePrompt(g gate) string {
+	if g.kind == gateCoop {
+		return fmt.Sprintf("%s [SEALED] — e: offer a %s  (%d/%d given)",
+			g.Name, itemName(g.item), a.ctx.World.GatePool(g.Portal), g.need)
+	}
+	return fmt.Sprintf("%s [SEALED] — riddle: %s  (say the answer, or e: offer a %s)",
+		g.Name, g.riddle, itemName(g.item))
+}
+
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	switch msg := msg.(type) {
 	case game.WorldEventMsg:
-		if ev := world.Event(msg); ev.Type == world.EventTick {
+		ev := world.Event(msg)
+		switch ev.Type {
+		case world.EventTick:
 			a.frame = int(ev.Frame)
+		case world.EventChat:
+			// Answer a personal gate's riddle by saying it aloud at the gate.
+			if ev.Player == a.ctx.Name {
+				if g, ok := a.sealedGateUnderBody(); ok && g.kind == gatePersonal &&
+					g.answer != "" && normalizeAnswer(ev.Detail) == normalizeAnswer(g.answer) {
+					a.fixPersonalGate(g)
+				}
+			}
 		}
 		return a, nil
 
@@ -191,7 +275,11 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			return a, nil
 		}
 		if msg.String() == "e" {
-			a.pickUp()
+			if g, ok := a.sealedGateUnderBody(); ok {
+				a.offerToGate(g)
+			} else {
+				a.pickUp()
+			}
 			return a, nil
 		}
 		if a.showMap {
@@ -226,6 +314,9 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 func (a *area) Hint() string {
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
+	}
+	if g, ok := a.sealedGateUnderBody(); ok {
+		return a.gatePrompt(g)
 	}
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name
@@ -316,7 +407,13 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 			if a.seen(wx, wy) {
 				cell := a.gen.At(wx, wy)
 				t := CellTile(cell)
-				if !a.collected[[2]int{wx, wy}] {
+				if g, ok := gateAtCell(wx, wy); ok {
+					if !a.gateOpen(g) { // sealed: a dull, broken arch (no swirl)
+						t.Ch, t.Color = '⊘', "#8A8A98"
+						t.Prop, t.PropHex = game.PropSealed, "#7A7A88"
+						t.Tex, t.Ground = game.TexRock, "#33363E"
+					}
+				} else if !a.collected[[2]int{wx, wy}] {
 					if h, ok := hatAt(cell, wx, wy); ok {
 						t.Ch, t.Color = '♚', h.hex
 						t.Prop, t.PropHex = game.PropHat, h.hex

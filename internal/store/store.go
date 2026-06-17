@@ -67,6 +67,8 @@ type Store interface {
 	LoadDiscovery(name string) map[[2]int]uint64
 	// AddItem increments a player's count of one inventory item by one.
 	AddItem(name, item string)
+	// SpendItem decrements a player's count of one item by one (floor 0).
+	SpendItem(name, item string)
 	// LoadInventory returns a player's item counts (id → count), never nil.
 	LoadInventory(name string) map[string]int
 	// MarkCollected records that a player has picked up the item at (x,y).
@@ -77,6 +79,14 @@ type Store interface {
 	UnlockHat(name string, hat int)
 	// LoadHats returns the accessory indices a player owns.
 	LoadHats(name string) map[int]bool
+	// FixPersonalGate records that a player has repaired a personal gate.
+	FixPersonalGate(name, gate string)
+	// LoadPersonalGates returns the personal gates a player has repaired.
+	LoadPersonalGates(name string) map[string]bool
+	// SaveGateWorld upserts a co-op gate's shared pool count and fixed flag.
+	SaveGateWorld(gate string, pool int, fixed bool)
+	// LoadGateWorld returns the shared co-op gate pools and fixed flags.
+	LoadGateWorld() (pools map[string]int, fixed map[string]bool)
 	Close() error
 }
 
@@ -113,9 +123,16 @@ func (noopStore) LoadPosition(string, string) (int, int, bool)   { return 0, 0, 
 func (noopStore) SaveDiscovery(string, int, int, uint64)         {}
 func (noopStore) LoadDiscovery(string) map[[2]int]uint64         { return nil }
 func (noopStore) AddItem(string, string)                         {}
+func (noopStore) SpendItem(string, string)                       {}
 func (noopStore) LoadInventory(string) map[string]int            { return map[string]int{} }
 func (noopStore) MarkCollected(string, int, int)                 {}
 func (noopStore) LoadCollected(string) map[[2]int]bool           { return nil }
 func (noopStore) UnlockHat(string, int)                          {}
 func (noopStore) LoadHats(string) map[int]bool                   { return nil }
-func (noopStore) Close() error                                   { return nil }
+func (noopStore) FixPersonalGate(string, string)                 {}
+func (noopStore) LoadPersonalGates(string) map[string]bool       { return nil }
+func (noopStore) SaveGateWorld(string, int, bool)                {}
+func (noopStore) LoadGateWorld() (map[string]int, map[string]bool) {
+	return map[string]int{}, map[string]bool{}
+}
+func (noopStore) Close() error { return nil }

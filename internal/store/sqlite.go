@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS hats (
 	hat  INTEGER NOT NULL,
 	PRIMARY KEY (name, hat)
 );
+CREATE TABLE IF NOT EXISTS gates_personal (
+	name TEXT NOT NULL,
+	gate TEXT NOT NULL,
+	PRIMARY KEY (name, gate)
+);
+CREATE TABLE IF NOT EXISTS gates_world (
+	gate  TEXT PRIMARY KEY,
+	pool  INTEGER NOT NULL DEFAULT 0,
+	fixed INTEGER NOT NULL DEFAULT 0
+);
 `
 
 type sqliteStore struct {
@@ -195,6 +205,17 @@ func (s *sqliteStore) AddItem(name, item string) {
 	}
 }
 
+// SpendItem decrements a player's count of one item (never below zero).
+func (s *sqliteStore) SpendItem(name, item string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`UPDATE inventory SET count = count - 1 WHERE name = ? AND item = ? AND count > 0`,
+		name, item); err != nil {
+		log.Printf("store: spend item: %v", err)
+	}
+}
+
 // LoadInventory returns a player's item counts.
 func (s *sqliteStore) LoadInventory(name string) map[string]int {
 	out := map[string]int{}
@@ -272,6 +293,72 @@ func (s *sqliteStore) LoadHats(name string) map[int]bool {
 		}
 	}
 	return out
+}
+
+// FixPersonalGate records that a player repaired a personal gate.
+func (s *sqliteStore) FixPersonalGate(name, gate string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO gates_personal (name, gate) VALUES (?, ?)`, name, gate); err != nil {
+		log.Printf("store: fix personal gate: %v", err)
+	}
+}
+
+// LoadPersonalGates returns the personal gates a player has repaired.
+func (s *sqliteStore) LoadPersonalGates(name string) map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT gate FROM gates_personal WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var gate string
+		if err := rows.Scan(&gate); err == nil {
+			out[gate] = true
+		}
+	}
+	return out
+}
+
+// SaveGateWorld upserts a co-op gate's shared pool and fixed flag.
+func (s *sqliteStore) SaveGateWorld(gate string, pool int, fixed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f := 0
+	if fixed {
+		f = 1
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO gates_world (gate, pool, fixed) VALUES (?, ?, ?)
+		 ON CONFLICT(gate) DO UPDATE SET pool = excluded.pool, fixed = excluded.fixed`,
+		gate, pool, f); err != nil {
+		log.Printf("store: save gate world: %v", err)
+	}
+}
+
+// LoadGateWorld returns the shared co-op gate pools and fixed flags.
+func (s *sqliteStore) LoadGateWorld() (map[string]int, map[string]bool) {
+	pools, fixed := map[string]int{}, map[string]bool{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT gate, pool, fixed FROM gates_world`)
+	if err != nil {
+		return pools, fixed
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var gate string
+		var pool, f int
+		if err := rows.Scan(&gate, &pool, &f); err == nil {
+			pools[gate] = pool
+			fixed[gate] = f != 0
+		}
+	}
+	return pools, fixed
 }
 
 // LoadAvatar returns a player's saved avatar customization.

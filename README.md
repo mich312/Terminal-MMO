@@ -88,7 +88,11 @@ them are `◆` **collectibles** — berries and mushrooms in the woods, shells o
 the beach, crystals in the snow — that you forage by standing on one and
 pressing `e`; `/inventory` (`/i`) shows your haul. Rarer still are wearable
 `♚` **hats**, each hidden in a themed biome (a crown in the hills, a halo in
-the snow…): find one and you unlock and wear it. `/character` opens an
+the snow…): find one and you unlock and wear it. Out past the hub stand
+**sealed gates** — broken arches to hidden areas. The *Whispering Gate* is
+personal: answer its riddle in chat (or offer an item) and it opens for you.
+The *Sunken Gate* is cooperative: the whole community pools offerings (`e`)
+until it opens for everyone. `/character` opens an
 interactive panel to preview your avatar and cycle body, color and the hats
 you've earned with the arrow keys. Discovery, position, pack and unlocked hats
 all persist across sessions.

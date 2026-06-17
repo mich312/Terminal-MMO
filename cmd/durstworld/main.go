@@ -29,10 +29,12 @@ import (
 
 	// areas register themselves with the game registry
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
+	_ "github.com/durst-group/durstworld/internal/areas/grove"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
 	_ "github.com/durst-group/durstworld/internal/areas/stub"
+	_ "github.com/durst-group/durstworld/internal/areas/vault"
 	_ "github.com/durst-group/durstworld/internal/areas/wilds"
 )
 
@@ -60,6 +62,10 @@ func main() {
 		st.SaveDeck(d.ID, d.Owner, d.Title, d.Source, d.Created.Unix())
 	})
 	w.SetDeckRemove(st.DeleteDeck)
+
+	// Restore shared co-op gate progress (contribution pools + which are open).
+	w.LoadGates(st.LoadGateWorld())
+	w.SetGatePersist(st.SaveGateWorld)
 
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
@@ -123,9 +129,10 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			Name:  name,
 			// per-session renderer: auto-detects the client's terminal and
 			// downsamples truecolor → 256 → 16 as needed.
-			Theme:     ui.NewTheme(bm.MakeRenderer(s)),
-			Inventory: st.LoadInventory(name),
-			Hats:      st.LoadHats(name),
+			Theme:      ui.NewTheme(bm.MakeRenderer(s)),
+			Inventory:  st.LoadInventory(name),
+			Hats:       st.LoadHats(name),
+			FixedGates: st.LoadPersonalGates(name),
 		}
 		m := game.NewModel(ctx, events, visit)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}

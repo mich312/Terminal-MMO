@@ -55,6 +55,7 @@ const (
 	PropHouse  // decorative multi-tile building
 	PropPortal // animated area-entrance gate
 	PropHat    // a wearable hat lying in the world (found, then equipped)
+	PropSealed // a broken/dormant gate arch (a sealed portal, before repair)
 	// Indoor furniture for the hand-built rooms.
 	PropMachine  // boxy machine / plotter
 	PropScreen   // wall-mounted display panel (animated)

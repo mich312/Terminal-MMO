@@ -150,6 +150,17 @@ var propArt = map[TileProp][]string{
 		".pppp.",
 		"......",
 	},
+	// PropSealed is a broken stone gate arch — a dormant portal. Cracked ring
+	// (P stone, p shade) with a dark, empty centre; reads as "sealed" vs the
+	// glowing portal swirl it becomes once repaired.
+	PropSealed: {
+		".pPPp.",
+		"pP..Pp",
+		"P....P",
+		"P.  .P",
+		"pp..pp",
+		"..pp..",
+	},
 	// PropPortal is drawn by the multi-tile structure pass, not here.
 
 	// Indoor furniture, drawn with the richer prop palette: o outline, p/D shade,

@@ -100,8 +100,9 @@ func TestSpawnReachesEveryLandmark(t *testing.T) {
 				}
 			}
 		}
-		// Every landmark must have a reachable footprint cell touching it.
-		for _, lm := range Landmarks {
+		// Every landmark and sealed gate must have a reachable footprint cell
+		// touching it — the trails wire them all to spawn.
+		for _, lm := range append(append([]Landmark{}, Landmarks...), Gates...) {
 			ok := false
 			for dy := -body; dy <= 0 && !ok; dy++ {
 				for dx := -body; dx <= 0 && !ok; dx++ {

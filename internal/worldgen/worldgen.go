@@ -79,6 +79,15 @@ var Landmarks = []Landmark{
 	{0, 12, "democenter", "Demo Center", 'D', "#C792EA", 3},
 }
 
+// Gates are sealed portals out past the hub — optional, riddle/offering-gated
+// doors to hidden areas. worldgen only fixes their position, clearing and a
+// dormant marker; the Wilds decides (from world/player state) whether each is
+// sealed or open, and what repairs it. Portal holds the destination area id.
+var Gates = []Landmark{
+	{22, 0, "grove", "Whispering Gate", '◈', "#C792EA", 2},
+	{0, 18, "vault", "Sunken Gate", '◈', "#56E1FF", 2},
+}
+
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
 func (g *Generator) At(x, y int) Cell {
 	for _, lm := range Landmarks {
@@ -87,9 +96,21 @@ func (g *Generator) At(x, y int) Cell {
 				Walkable: true, Object: true, Portal: lm.Portal}
 		}
 	}
-	// Forced grassy clearings around each landmark keep the plaza walkable.
+	// A sealed gate renders as a dormant marker on walkable ground; the Wilds
+	// turns it into an open portal (or keeps it sealed) from live state.
+	for _, gt := range Gates {
+		if x == gt.X && y == gt.Y {
+			return Cell{Biome: Grass, Glyph: gt.Glyph, Color: gt.Color, Walkable: true, Object: true}
+		}
+	}
+	// Forced grassy clearings around each landmark and gate keep them walkable.
 	for _, lm := range Landmarks {
 		if abs(x-lm.X) <= lm.Clear && abs(y-lm.Y) <= lm.Clear {
+			return grassCell(g, x, y)
+		}
+	}
+	for _, gt := range Gates {
+		if abs(x-gt.X) <= gt.Clear && abs(y-gt.Y) <= gt.Clear {
 			return grassCell(g, x, y)
 		}
 	}
@@ -226,10 +247,10 @@ func swampCell(g *Generator, x, y int) Cell {
 // along the axes between the origin (Durst HQ) and each landmark, so the spawn
 // plaza is always connected to every wing's door regardless of seed.
 func onPath(x, y int) bool {
-	if abs(y) <= 1 && x >= -16 && x <= 16 { // HQ ↔ Kraftwerk / Presentation
+	if abs(y) <= 1 && x >= -16 && x <= 22 { // HQ ↔ Kraftwerk / Presentation / Whispering Gate
 		return true
 	}
-	if abs(x) <= 1 && y >= 0 && y <= 12 { // HQ ↔ Demo Center
+	if abs(x) <= 1 && y >= 0 && y <= 18 { // HQ ↔ Demo Center / Sunken Gate
 		return true
 	}
 	return false

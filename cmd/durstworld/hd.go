@@ -144,7 +144,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		log.Printf("%s disconnected (HD)", name)
 	}()
 	ctx := &game.Ctx{World: w, Store: st, Name: name,
-		Inventory: st.LoadInventory(name), Hats: st.LoadHats(name)}
+		Inventory: st.LoadInventory(name), Hats: st.LoadHats(name),
+		FixedGates: st.LoadPersonalGates(name)}
 	areaID, area, hv := enterHD(ctx, "", "wilds")
 
 	cellW, cellH := hdCellSize(ptyReq.Window)
@@ -440,9 +441,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				appendChat(ln)
 				draw()
 			}
-			// Presentation needs slide/deck events to rebuild; other areas poll
-			// the world each frame, so they don't.
-			if ev.Type == world.EventSlide || ev.Type == world.EventDeck {
+			// Presentation needs slide/deck events to rebuild; the Wilds needs
+			// chat to catch a gate riddle answered aloud. Other areas poll the
+			// world each frame, so they don't need the rest.
+			if ev.Type == world.EventSlide || ev.Type == world.EventDeck || ev.Type == world.EventChat {
 				area, _ = area.Update(game.WorldEventMsg(ev))
 				draw()
 			}

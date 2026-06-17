@@ -135,6 +135,24 @@ straight onto the RGBA frame with basicfont (ASCII).
   the HD select loop instead of being drained, so HD players see joins, chat,
   emotes and whispers — full UI parity with the glyph client.
 
+## Phase 7 — Sealed gates ✅
+
+Optional, riddle/offering-gated doors out past the hub (the four landmark
+doors stay open). Two kinds, to exercise both solo and social play:
+
+- ✅ **Personal gates** (the Whispering Gate → The Grove): each player repairs
+  it themselves — say the riddle's answer in chat at the gate, or press `e` to
+  offer the required item. Per-player state (`Ctx.FixedGates`, `gates_personal`).
+- ✅ **Co-op gates** (the Sunken Gate → The Vault): a shared community effort —
+  anyone presses `e` to contribute an item into a pool; when it fills, the gate
+  opens for everyone. Global state lives in the shared `World`
+  (`OfferToGate`/`GateFixed`), persisted (`gates_world`) and live across sessions.
+- ✅ Sealed gates render as a dull broken arch (`PropSealed`) that becomes a
+  glowing portal once repaired; the status/HUD hint shows the riddle or the
+  pool progress. Works in both clients (chat answer + `e` offer). Destinations
+  are `game.FlavorArea` reward rooms; worldgen places the gates on extended
+  trails with clearings, so they're always reachable.
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**
