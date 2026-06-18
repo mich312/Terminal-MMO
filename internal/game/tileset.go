@@ -94,14 +94,6 @@ var propArt = map[TileProp][]string{
 		"......",
 		"......",
 	},
-	PropTree: {
-		"..PP..",
-		".PpPP.",
-		"PPPPPP",
-		".PpPP.",
-		"..TT..",
-		"..TT..",
-	},
 	PropBoulder: {
 		"......",
 		".PPPp.",
@@ -274,3 +266,46 @@ var portalArt = []string{
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').
 var trunkColor = mustHex("#6B4A2B")
+
+// treeArt holds the canopy sprites for forest trees. Unlike single-tile props
+// these are taller than one tile and drawn in a back-to-front structure pass so
+// they overhang upward and overlap their neighbors — a stand of them reads as a
+// continuous canopy rather than a grid of identical stamps. Codes: P canopy
+// (the tree's color), p canopy shade, L sun-dapple highlight, T trunk. Variants
+// give size/shape variety; the live color (incl. autumn) adds the rest.
+var treeArt = [][]string{
+	{ // broad oak
+		"..ppp..",
+		".pPPPp.",
+		"pPPPPPp",
+		"pPPLPPp",
+		"pLPPPPp",
+		"pPPPPPp",
+		"pPPPPpp",
+		".pPPPp.",
+		"...T...",
+		"...T...",
+	},
+	{ // young/small tree
+		".ppp.",
+		"pPPPp",
+		"pPLPp",
+		"pPPPp",
+		".ppp.",
+		"..T..",
+		"..T..",
+	},
+	{ // conifer / pine
+		"...P...",
+		"..ppp..",
+		"..PPP..",
+		".pPPPp.",
+		".PPLPP.",
+		"pPPPPPp",
+		".PPPPP.",
+		"pPPPPPp",
+		"PPPPPPP",
+		"...T...",
+		"...T...",
+	},
+}

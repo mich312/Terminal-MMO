@@ -132,12 +132,17 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style, nbr)
 			}
 		}
-		// Portals are multi-tile animated gates drawn over the terrain so they can
-		// overhang upward. (Houses are single-tile props, drawn by paintTile.)
+		// Tall props (trees, portals) are drawn over the terrain in a second pass,
+		// top rows first, so each overhangs upward and a lower (nearer) one overlaps
+		// the canopy of the one behind it — turning a scatter of trees into a layered
+		// canopy. (Single-tile props were already drawn by paintTile.)
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
-				if props[vy][vx] == PropPortal {
+				switch props[vy][vx] {
+				case PropPortal:
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
+				case PropTree:
+					drawTree(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy))
 				}
 			}
 		}
@@ -299,6 +304,17 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 	dark := base.BlendLab(shadowColor, style.GroundDarkMix).Clamped()
 	blitGround(img, ox, oy, scale, art, base, light, dark, nbr, wx, wy)
 
+	// Ground a few bulky props with a soft contact shadow so they don't look
+	// pasted onto the terrain (trees get theirs in drawTree).
+	if prop == PropHouse || prop == PropBoulder {
+		apx := scale / tileArtN
+		if apx < 1 {
+			apx = 1
+		}
+		drawShadow(img, float64(ox+scale/2), float64(oy+scale)-float64(apx),
+			float64(scale)*0.4, float64(apx)*1.3)
+	}
+
 	if art, ok := style.Props[prop]; ok {
 		// A richer prop palette than plain fill/shade: outline (o), shades (p, D),
 		// highlights (L, W), trunk (T) and an animated emissive glow (G) that
@@ -372,6 +388,64 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
 			}
 		}
+	}
+}
+
+// drawTree renders a forest tree's canopy (art) centered on tile (vx,vy),
+// bottom-aligned so the trunk sits on the tile and the crown overhangs upward.
+// It first lays a soft contact shadow on the ground so the tree feels planted,
+// then the canopy in the tree's color (P body, p shade, L dapple, T trunk).
+func drawTree(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	w := len(art[0])
+	left := vx*scale + scale/2 - (w*apx)/2
+	top := (vy+1)*scale - len(art)*apx
+
+	// Contact shadow under the trunk, sized to the canopy width.
+	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
+		float64(w*apx)*0.38, float64(apx)*1.4)
+
+	body := colorfulToRGBA(col)
+	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
+	dapple := colorfulToRGBA(col.BlendLab(spriteWhite, 0.30).Clamped())
+	trunk := colorfulToRGBA(trunkColor)
+	for ay, row := range art {
+		for ax := 0; ax < len(row); ax++ {
+			var c color.RGBA
+			ok := true
+			switch row[ax] {
+			case 'P':
+				c = body
+			case 'p':
+				c = shade
+			case 'L':
+				c = dapple
+			case 'T':
+				c = trunk
+			default:
+				ok = false
+			}
+			if ok {
+				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+			}
+		}
+	}
+}
+
+// pickTreeArt chooses a tree variant deterministically by world position, so a
+// stand mixes broad, young and conifer shapes without flicker as the camera
+// scrolls. Oaks dominate, conifers are common, small trees fill in.
+func pickTreeArt(wx, wy int) []string {
+	switch r := hashNoise(wx, wy, 0x7733); {
+	case r < 0.55:
+		return treeArt[0] // broad oak
+	case r < 0.80:
+		return treeArt[2] // conifer
+	default:
+		return treeArt[1] // small
 	}
 }
 

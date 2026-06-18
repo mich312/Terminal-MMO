@@ -190,13 +190,21 @@ func grassCell(g *Generator, x, y int) Cell {
 	return c
 }
 
+// forestSalt separates the tree-clustering field from the other noise.
+const forestSalt uint64 = 0x0F0235713EE50000
+
 func forestCell(g *Generator, x, y int) Cell {
+	// Cluster trees into stands: a low-frequency density field thickens the
+	// canopy in the heart of a wood and thins it toward the edges, so forests
+	// read as groves with clearings rather than an even scatter.
+	density := g.fbmAt(float64(x), float64(y), forestSalt, 0.07, 2)
+	tree := 0.16 + 0.46*density // ~16% at edges … ~62% in dense cores
 	switch r := g.prop(x, y); {
-	case r < 0.28: // a tree — blocks movement (color varies; some autumn)
+	case r < tree: // a tree — blocks movement (color varies; some autumn)
 		return Cell{Biome: Forest, Glyph: '♣', Color: treeColor(g.prop2(x, y))}
-	case r < 0.36: // a stump
+	case r < tree+0.07: // a stump
 		return Cell{Biome: Forest, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
-	case r < 0.50: // undergrowth bush
+	case r < tree+0.22: // undergrowth bush
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
 	return Cell{Biome: Forest, Glyph: '·', Color: "#2E6B40", Walkable: true}
