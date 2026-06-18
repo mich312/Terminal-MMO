@@ -541,6 +541,10 @@ func CellTile(c worldgen.Cell) game.Tile {
 			t.Prop = game.PropFenceH
 		}
 		t.PropHex, t.Ground = c.Color, groundColor(c.Biome)
+	case '#': // a town's stone curtain wall (blocks)
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropStoneWall, c.Color, "#6E7077", game.TexRock
+	case 'I': // a town's stone wall tower (blocks, overhangs upward)
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTower, c.Color, "#6E7077", game.TexRock
 	case '"': // a cultivated field — crop rows (walkable)
 		t.Tex, t.Ground = game.TexField, "#86974A"
 	case '%': // a covered building footprint tile — drawn by its anchor (blocks)

@@ -94,6 +94,8 @@ const (
 	PropStone        // cut-stone rubble at a quarry (harvestable)
 	PropLog          // a stack of logs at a lumber camp (harvestable)
 	PropFish         // a fish by a jetty (harvestable)
+	PropStoneWall    // a stone curtain wall segment, for towns (blocks)
+	PropTower        // a stone wall tower, for towns (blocks, overhangs upward)
 )
 
 // Tile is one cell of a parsed map.

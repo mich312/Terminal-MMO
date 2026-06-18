@@ -206,6 +206,16 @@ var propArt = map[TileProp][]string{
 		".PPp..",
 		"......",
 	},
+	// Stone curtain wall: a thick coursed-block wall with battlement notches
+	// along the top. Reads as solid masonry whichever way it runs.
+	PropStoneWall: {
+		"P.PP.P",
+		"PPPPPP",
+		"PppPpP",
+		"PPPPPP",
+		"PppPpP",
+		"PPPPPP",
+	},
 	// Palisade rails: rough timber stakes. The horizontal run shows a long rail
 	// across two posts; the vertical run shows stakes along the line of travel;
 	// the post is a stout corner/junction upright. Autotiling picks between them.
@@ -386,6 +396,24 @@ var buildingArt = map[TileProp][][]string{
 	PropBldLonghouse: bldVariants(3, 2, bldDwelling),
 	PropBldBarn:      bldVariants(2, 2, bldBarn),
 	PropBldChurch:    bldVariants(2, 3, bldChurch),
+	PropTower:        {towerArt},
+}
+
+// towerArt is a stone wall tower: one tile wide, two tall, with a battlemented
+// crown and an arrow slit, drawn bottom-anchored so it rises above the wall.
+var towerArt = []string{
+	"P.PP.P",
+	"PPPPPP",
+	"PPPPPP",
+	"PPDDPP",
+	"PPPPPP",
+	"PpPPpP",
+	"PPPPPP",
+	"PpPPpP",
+	"PPPPPP",
+	"PpPPpP",
+	"PPPPPP",
+	"DDDDDD",
 }
 
 type bldKind uint8

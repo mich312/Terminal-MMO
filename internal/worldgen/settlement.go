@@ -27,6 +27,7 @@ const (
 	settleHubKeep         = 76    // keep settlement centres this far from the origin hub
 	settleHalf            = 44    // layout grid half-extent (grid is 2*half+1 square)
 	settleMaxReach        = 22    // the village *core* (roads, wall, fields) stays within this
+	townReach             = 31    // a town's core is larger
 	outpostReach          = 42    // worksites may sit this far out, to reach a distant biome
 	linkMax               = 168.0 // longest village-to-village connecting road
 	linkFade              = 96.0  // beyond this a connecting road dwindles to a trail
@@ -38,6 +39,7 @@ type settlement struct {
 	mx, my int    // macro-cell
 	id     uint64 // identity hash — seeds the whole layout
 	cx, cy int    // centre, world coordinates
+	town   bool   // a larger, stone-walled town (vs a timber-palisade village)
 	valid  bool
 }
 
@@ -74,6 +76,7 @@ func (g *Generator) computeSettlement(mx, my int) settlement {
 		return s
 	}
 	s.id = h
+	s.town = unit(hashCoord(h, 0x707, 0x777)) < 0.22 // ~1 in 5 settlements is a town
 	s.valid = true
 	return s
 }
@@ -136,6 +139,9 @@ const (
 	lClearing                 // a cleared worksite floor — packed earth (walkable)
 	lStump                    // a cut stump / log at a lumber camp (walkable)
 	lJetty                    // a wooden jetty out over the water (walkable)
+	lWall                     // a stone curtain wall, for towns (blocks)
+	lTower                    // a stone wall tower, for towns (blocks)
+	lPlaza                    // a cobbled market square, for towns (walkable)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -252,6 +258,9 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// rather than strung out along one street.
 	type seg struct{ ax, ay, bx, by float64 }
 	reach := float64(settleMaxReach)
+	if s.town {
+		reach = townReach // a town spreads wider, behind a bigger wall
+	}
 	dx, dy := math.Cos(axis), math.Sin(axis)
 	px, py := -dy, dx // perpendicular
 	off := rng.rng(-1.5, 1.5)
@@ -318,13 +327,17 @@ func (g *Generator) genLayout(s settlement) *layout {
 			break
 		}
 	}
+	squareR, squareKind := 2.4, lGreen
+	if s.town { // a town has a broad cobbled market square, not a little green
+		squareR, squareKind = 4.2, lPlaza
+	}
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			if l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
 				continue
 			}
-			if math.Hypot(float64(gx)-gpx, float64(gy)-gpy) < 2.4 {
-				l.at(gx, gy).kind = lGreen
+			if math.Hypot(float64(gx)-gpx, float64(gy)-gpy) < squareR {
+				l.at(gx, gy).kind = squareKind
 			}
 		}
 	}
@@ -348,10 +361,14 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 
 	buildR := reach - 4 // buildings stay inside this; the wall encloses them
+	base, slope, floor := 0.95, 0.6, 0.22
+	if s.town { // a town is packed tight with houses, edge to edge
+		base, slope, floor = 1.1, 0.5, 0.45
+	}
 	density := func(r float64) float64 {
-		p := 0.95 - 0.6*(r/buildR) // dense core, thinning toward the edge
-		if p < 0.22 {
-			p = 0.22
+		p := base - slope*(r/buildR) // dense core, thinning toward the edge
+		if p < floor {
+			p = floor
 		}
 		return p
 	}
@@ -394,7 +411,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
 			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
 			setback := 2.0 + cellHash.f()*1.6 // 2.0 … 3.6 tiles off the street
-			if !((roadD >= 0.9 && roadD <= setback) || (greenD >= 2.6 && greenD <= 5)) {
+			if !((roadD >= 0.9 && roadD <= setback) || (greenD >= squareR+0.2 && greenD <= squareR+2.8)) {
 				continue
 			}
 			if cellHash.f() > density(r) {
@@ -438,6 +455,10 @@ func (g *Generator) genLayout(s settlement) *layout {
 		r := sectorR[i%sectors]
 		return cgx + int(math.Round(math.Cos(a)*r)), cgy + int(math.Round(math.Sin(a)*r))
 	}
+	wallKind := lFence // timber palisade
+	if s.town {
+		wallKind = lWall // stone curtain wall
+	}
 	for i := 0; i < sectors; i++ {
 		x0, y0 := vert(i)
 		x1, y1 := vert(i + 1)
@@ -451,12 +472,34 @@ func (g *Generator) genLayout(s settlement) *layout {
 				c.kind = lGate // a road crossing the wall is a gateway
 			case lEmpty, lYard, lField:
 				if canBuild(gx, gy) {
-					c.kind = lFence
+					c.kind = wallKind
 				}
 			}
 		})
 	}
 	autotileFences(l)
+
+	// A town's wall is studded with towers — at the polygon's corners and
+	// flanking each gate, so every entrance reads as a gatehouse.
+	if s.town {
+		for i := 0; i < sectors; i += 2 {
+			if vx, vy := vert(i); l.in(vx, vy) && l.at(vx, vy).kind == lWall {
+				l.at(vx, vy).kind = lTower
+			}
+		}
+		for gy := 0; gy < n; gy++ {
+			for gx := 0; gx < n; gx++ {
+				if l.at(gx, gy).kind != lGate {
+					continue
+				}
+				for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+					if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && l.at(nx, ny).kind == lWall {
+						l.at(nx, ny).kind = lTower
+					}
+				}
+			}
+		}
+	}
 
 	wallRad := func(ang float64) float64 {
 		si := int((ang+math.Pi)/(2*math.Pi)*sectors) % sectors
@@ -724,11 +767,11 @@ func occupied(k lkind) bool {
 	return false
 }
 
-// builtUp is the occupied set the wall hugs: houses and the green, but not the
-// roads (which run out to the gates).
+// builtUp is the occupied set the wall hugs: houses and the central square, but
+// not the roads (which run out to the gates).
 func builtUp(k lkind) bool {
 	switch k {
-	case lGreen, lWell, lBuildAnchor, lBuildBody:
+	case lGreen, lPlaza, lWell, lBuildAnchor, lBuildBody:
 		return true
 	}
 	return false
@@ -867,6 +910,12 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Path, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
 	case lJetty:
 		return Cell{Biome: Path, Glyph: '·', Color: "#7A5A38", Walkable: true} // dock planks
+	case lWall:
+		return Cell{Biome: Hill, Glyph: '#', Color: "#8E9099"} // stone curtain wall (blocks)
+	case lTower:
+		return Cell{Biome: Hill, Glyph: 'I', Color: "#9A9CA6"} // stone tower (blocks)
+	case lPlaza:
+		return Cell{Biome: Path, Glyph: '·', Color: "#A89B82", Walkable: true} // cobbled square
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:
