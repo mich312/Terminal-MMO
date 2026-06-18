@@ -135,6 +135,15 @@ var propArt = map[TileProp][]string{
 		".pp.p.",
 		"......",
 	},
+	// A traveler's campfire: an animated flame (G, pulses) over charred logs.
+	PropCampfire: {
+		"..G...",
+		".GGG..",
+		"GGWGG.",
+		".GGG..",
+		"DppD..",
+		".DD...",
+	},
 	// PropHouse is a single-tile cottage: roof (p), walls (P), a dark door (p).
 	PropHouse: {
 		"..PP..",

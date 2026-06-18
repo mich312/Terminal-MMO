@@ -528,6 +528,8 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropReed, c.Color, groundColor(worldgen.Swamp), game.TexSwamp
 	case 'Δ': // rocky crag on the hills
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCrag, c.Color, groundColor(worldgen.Hill), game.TexDirt
+	case 'Λ': // a traveler's campfire
+		t.Prop, t.PropHex, t.Ground = game.PropCampfire, c.Color, groundColor(c.Biome)
 	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
 		if c.Biome == worldgen.Hill {
 			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt

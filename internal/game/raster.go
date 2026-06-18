@@ -137,6 +137,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style, nbr)
 			}
 		}
+		// Sun-glint / moon-glitter shimmering across water.
+		waterGlint(img, texs, cam, scale, frame, originX, originY)
 		// Tall props (trees, portals) are drawn over the terrain in a second pass,
 		// top rows first, so each overhangs upward and a lower (nearer) one overlaps
 		// the canopy of the one behind it — turning a scatter of trees into a layered
@@ -159,6 +161,24 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				}
 			}
 		}
+		// Night point lights: emissive props (campfires, portals, lamps, the
+		// reactor core, gem loot…) bloom a warm/cool glow pool on the scene after
+		// dusk, scaled by how dark it is.
+		if _, _, night := sunState(); night > 0.03 {
+			apx := scale / tileArtN
+			if apx < 1 {
+				apx = 1
+			}
+			for vy := 0; vy < cam.H; vy++ {
+				for vx := 0; vx < cam.W; vx++ {
+					if col, rad, mult, ok := emitterGlow(props[vy][vx], propCols[vy][vx], frame, originX+vx, originY+vy); ok {
+						drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, night*mult, apx)
+					}
+				}
+			}
+		}
+		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
+		drawFireflies(img, texs, cam, scale, frame, originX, originY)
 	}
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
@@ -223,7 +243,7 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 	// soft elliptical contact shadow at the feet (stays planted while the body
 	// bobs, so the step reads as a bounce rather than a slide)
 	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
-		float64(destW)*0.42, float64(k)*1.3, k)
+		float64(destW)*0.42, float64(k)*1.3, k, float64(destH))
 
 	if wf == 1 { // mid-stride: lift the body a touch
 		bob := k / 2
@@ -263,10 +283,20 @@ func fillRect(img *image.RGBA, x0, y0, w, h int, c color.RGBA) {
 // drawShadow darkens an elliptical patch toward black. It snaps to a px-sized
 // block grid with two alpha steps (a solid core and a lighter rim) so the
 // shadow stays crisply pixelated like the rest of the art rather than a smooth
-// anti-aliased blob. px is the art-pixel size of the thing casting it.
-func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int) {
+// anti-aliased blob. px is the art-pixel size of the caster; height is the
+// caster's height in pixels, used to stretch the shadow long and away from a low
+// sun at golden hour (short at noon, soft/short at night).
+func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int, height float64) {
 	if px < 1 {
 		px = 1
+	}
+	// Golden-hour stretch: a low-but-still-up sun throws a long shadow along its
+	// azimuth; peaks at dawn/dusk, vanishes at noon and after dark.
+	if elev, azX, _ := sunState(); elev > 0 {
+		golden := (1 - elev) * math.Min(1, elev*4)
+		off := azX * height * golden
+		cx += off / 2
+		rx += math.Abs(off) / 2
 	}
 	bx0 := int(math.Floor((cx-rx)/float64(px))) * px
 	bx1 := int(math.Floor((cx+rx)/float64(px))) * px
@@ -342,7 +372,7 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 			apx = 1
 		}
 		drawShadow(img, float64(ox+scale/2), float64(oy+scale)-float64(apx),
-			float64(scale)*0.4, float64(apx)*1.3, apx)
+			float64(scale)*0.4, float64(apx)*1.3, apx, float64(scale))
 	}
 
 	if art, ok := style.Props[prop]; ok {
@@ -435,9 +465,10 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 	left := vx*scale + scale/2 - (w*apx)/2
 	top := (vy+1)*scale - len(art)*apx
 
-	// Contact shadow under the trunk, sized to the canopy width.
+	// Contact shadow under the trunk, sized to the canopy width and stretched by
+	// the sun (tall canopies throw the longest golden-hour shadows).
 	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
-		float64(w*apx)*0.38, float64(apx)*1.4, apx)
+		float64(w*apx)*0.38, float64(apx)*1.4, apx, float64(len(art)*apx))
 
 	body := colorfulToRGBA(col)
 	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())

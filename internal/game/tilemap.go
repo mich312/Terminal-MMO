@@ -71,8 +71,9 @@ const (
 	PropAcacia // savanna: flat-topped umbrella tree (tall, blocks)
 	PropPalm   // beach: fronds on a leaning trunk (tall, blocks)
 	PropFir    // snow: snow-tipped conifer (tall, blocks)
-	PropReed   // swamp: a clump of thin cattail reeds (in-tile)
-	PropCrag   // hill: a jagged rock spire (in-tile, blocks)
+	PropReed     // swamp: a clump of thin cattail reeds (in-tile)
+	PropCrag     // hill: a jagged rock spire (in-tile, blocks)
+	PropCampfire // a traveler's campfire — flickers and casts warm light at night
 )
 
 // Tile is one cell of a parsed map.

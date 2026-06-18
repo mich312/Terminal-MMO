@@ -182,6 +182,8 @@ func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 func grassCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Grass, Glyph: '·', Color: "#5EAE63", Walkable: true}
 	switch r := g.prop(x, y); {
+	case r < 0.0016: // a traveler's campfire — blocks, glows warm at night
+		c.Glyph, c.Color, c.Walkable = 'Λ', "#FF7A1E", false
 	case r < 0.006: // a rare homestead — blocks movement
 		c.Glyph, c.Color, c.Walkable = 'H', houseColor(g.prop2(x, y)), false
 	case r < 0.056:
