@@ -180,6 +180,11 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
   procedural `buildingArt`), oriented palisade sprites, and a furrowed `TexField`.
 - ✅ Tests assert determinism, hub protection, and that a village's centre is
   always reachable on foot from outside the wall (the roads really do gate it).
+- ✅ Lived-in detail: planted yards (bushes, flowers, tufts, orchard trees) and
+  kitchen gardens between the houses, a duck pond by the green in some villages,
+  per-building roof/colour variety, and **harvestable grain** standing in the
+  fields and gardens — a new collectible that hooks straight into the existing
+  pickup + inventory (`e` to harvest, persists like other forage).
 
 ## Parked polish
 

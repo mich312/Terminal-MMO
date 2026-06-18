@@ -169,6 +169,16 @@ var propArt = map[TileProp][]string{
 		"PLppLP",
 		".pPPp.",
 	},
+	// Ripe grain: a little stand of golden stalks with heavy seed-heads (W),
+	// standing in a field — reads as a crop ready to harvest.
+	PropCrop: {
+		"W.W.W.",
+		"PWPWPW",
+		"PPPPPP",
+		".PPPP.",
+		".PPPP.",
+		"..pp..",
+	},
 	// Palisade rails: rough timber stakes. The horizontal run shows a long rail
 	// across two posts; the vertical run shows stakes along the line of travel;
 	// the post is a stout corner/junction upright. Autotiling picks between them.

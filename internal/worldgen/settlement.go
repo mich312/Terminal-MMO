@@ -129,6 +129,7 @@ const (
 	lGate                     // opening where a road crosses the palisade (walkable)
 	lField                    // cultivated field (walkable)
 	lGarden                   // a small kitchen garden inside the village (walkable)
+	lPond                     // a village pond by the green (blocks)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -322,6 +323,24 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
+	// A duck pond beside the green, in some villages — placed before the houses
+	// so they build around it.
+	if rng.f() < 0.4 {
+		pcx := gpx + rng.rng(-2, 2)
+		pcy := gpy + rng.rng(2.5, 4.5)
+		pr := rng.rng(1.6, 2.6)
+		for gy := 0; gy < n; gy++ {
+			for gx := 0; gx < n; gx++ {
+				if k := l.at(gx, gy).kind; k != lEmpty && k != lYard && k != lGreen {
+					continue
+				}
+				if math.Hypot(float64(gx)-pcx, float64(gy)-pcy) < pr {
+					l.at(gx, gy).kind = lPond
+				}
+			}
+		}
+	}
+
 	buildR := reach - 4 // buildings stay inside this; the wall encloses them
 	density := func(r float64) float64 {
 		p := 0.95 - 0.6*(r/buildR) // dense core, thinning toward the edge
@@ -504,11 +523,13 @@ func (g *Generator) genLayout(s settlement) *layout {
 				continue
 			}
 			switch h := unit(hashCoord(s.id^0xDEC04, l.ox+gx, l.oy+gy)); {
-			case h < 0.10:
+			case h < 0.03:
+				c.decor = 4 // an orchard/yard tree
+			case h < 0.13:
 				c.decor = 1 // bush
-			case h < 0.22:
+			case h < 0.25:
 				c.decor = 2 // flower
-			case h < 0.40:
+			case h < 0.43:
 				c.decor = 3 // grass tuft
 			}
 		}
@@ -664,13 +685,15 @@ func cellFor(c *lcell) Cell {
 	switch c.kind {
 	case lYard:
 		y := Cell{Biome: c.biome, Glyph: '·', Color: ground, Walkable: true}
-		switch c.decor { // scattered greenery — gardens, hedges, tufts
+		switch c.decor { // scattered greenery — orchard trees, hedges, flowers
 		case 1:
 			y.Glyph, y.Color = 'o', "#3E8F57" // bush
 		case 2:
 			y.Glyph, y.Color = '*', "#FF6B6B" // flower
 		case 3:
 			y.Glyph, y.Color = ',', "#4F9460" // grass tuft
+		case 4:
+			y.Glyph, y.Color, y.Walkable = 'Y', "#2F7D4F", false // an orchard tree (blocks)
 		}
 		return y
 	case lGreen:
@@ -685,6 +708,9 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Grass, Glyph: '"', Color: "#86974A", Walkable: true}
 	case lGarden:
 		return Cell{Biome: Grass, Glyph: '"', Color: "#7FA64B", Walkable: true}
+	case lPond:
+		return Cell{Biome: Water, Glyph: '~', Color: "#3F9AE0",
+			AnimA: "#2E6BD0", AnimB: "#5BB0E0", Frames: []rune{'~', '≈', '~', '≋'}}
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:

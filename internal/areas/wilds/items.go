@@ -25,7 +25,12 @@ const itemRate = 0.018
 const (
 	itemSalt  uint64 = 0x1726E_17E45_C0DE1
 	itemSalt2 uint64 = 0x5A1771_C0FFEE_2B0B
+	cropSalt  uint64 = 0xC0FFEE_F1E1D_5EED
 )
+
+// cropRate is how much of a village field stands ripe — dense, since a field is
+// meant to be harvested, not stumbled upon.
+const cropRate = 0.4
 
 // itemAt returns the item scattered at (x,y), if any: a sparse, deterministic
 // roll on walkable, biome-appropriate ground (never on a portal). Like the
@@ -33,6 +38,12 @@ const (
 // same loot in the same place until they personally harvest it.
 func itemAt(c worldgen.Cell, x, y int) (game.Item, bool) {
 	if !c.Walkable || c.Portal != "" {
+		return game.Item{}, false
+	}
+	if c.Glyph == '"' { // a cultivated field or garden — ripe grain to harvest
+		if hash01(x, y, cropSalt) < cropRate {
+			return game.ItemByID("grain")
+		}
 		return game.Item{}, false
 	}
 	ids, ok := biomeItems[c.Biome]

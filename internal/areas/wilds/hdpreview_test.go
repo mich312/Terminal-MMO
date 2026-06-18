@@ -52,7 +52,18 @@ func renderSettlementPNG(t *testing.T, cx, cy, win, scale int, path string) {
 	for ly := 0; ly < win; ly++ {
 		row := make([]game.Tile, win)
 		for lx := 0; lx < win; lx++ {
-			row[lx] = CellTile(g.At(ox+lx, oy+ly))
+			wx, wy := ox+lx, oy+ly
+			cell := g.At(wx, wy)
+			t := CellTile(cell)
+			// Overlay world loot the way the live area does, so crops show.
+			if it, ok := itemAt(cell, wx, wy); ok {
+				if it.ID == "grain" {
+					t.Prop, t.PropHex, t.Tex, t.Ground = game.PropCrop, it.Hex, game.TexField, "#86974A"
+				} else {
+					t.Prop, t.PropHex, t.Ground = game.PropGem, it.Hex, groundColor(cell.Biome)
+				}
+			}
+			row[lx] = t
 		}
 		tiles[ly] = row
 	}

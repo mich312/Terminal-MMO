@@ -90,6 +90,7 @@ const (
 	PropBldBarn      // 2×2 barn
 	PropBldChurch    // 2×3 church with a steeple
 	PropBldBody      // a covered footprint tile (no draw)
+	PropCrop         // ripe grain standing in a field (harvestable)
 )
 
 // Tile is one cell of a parsed map.

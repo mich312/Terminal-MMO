@@ -19,6 +19,7 @@ var Items = []Item{
 	{"shell", "Sea Shell", '◆', "#F2E9A0", false},
 	{"crystal", "Ice Crystal", '◆', "#7DF0FF", true},
 	{"nugget", "Gold Nugget", '◆', "#FFC861", false},
+	{"grain", "Sheaf of Grain", 'ψ', "#E6C84B", false},
 }
 
 var itemIndex = func() map[string]Item {

@@ -422,11 +422,15 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
-						prop := game.PropGem
-						if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
-							prop = game.PropGemGlow
+						if it.ID == "grain" { // standing crop, over the field's furrows
+							t.Prop, t.PropHex, t.Tex, t.Ground = game.PropCrop, it.Hex, game.TexField, "#86974A"
+						} else {
+							prop := game.PropGem
+							if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
+								prop = game.PropGemGlow
+							}
+							t.Prop, t.PropHex, t.Ground = prop, it.Hex, groundColor(cell.Biome)
 						}
-						t.Prop, t.PropHex, t.Ground = prop, it.Hex, groundColor(cell.Biome)
 					}
 				}
 				row[lx] = t
@@ -540,6 +544,8 @@ func CellTile(c worldgen.Cell) game.Tile {
 		if t.Prop == game.PropHouse { // a lone wilderness cabin keeps its biome ground
 			t.Ground = groundColor(c.Biome)
 		}
+	case 'Y': // an orchard/yard tree in a village — a real tree, but over grass
+		t.Prop, t.PropHex, t.Ground = game.PropTree, c.Color, groundColor(c.Biome)
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
 	case 'ϒ': // acacia on savanna
