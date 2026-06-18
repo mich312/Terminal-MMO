@@ -422,9 +422,16 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
-						if it.ID == "grain" { // standing crop, over the field's furrows
+						switch it.ID {
+						case "grain": // standing crop, over the field's furrows
 							t.Prop, t.PropHex, t.Tex, t.Ground = game.PropCrop, it.Hex, game.TexField, "#86974A"
-						} else {
+						case "stone": // cut stone on the quarry floor (keep the floor under it)
+							t.Prop, t.PropHex = game.PropStone, it.Hex
+						case "wood": // a log pile by the stump
+							t.Prop, t.PropHex = game.PropLog, it.Hex
+						case "fish": // a catch on the jetty planks
+							t.Prop, t.PropHex = game.PropFish, it.Hex
+						default:
 							prop := game.PropGem
 							if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
 								prop = game.PropGemGlow

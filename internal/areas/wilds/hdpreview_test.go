@@ -36,6 +36,26 @@ func findWells(g *worldgen.Generator, n int) [][2]int {
 	return out
 }
 
+// findWorksite locates a worksite tile (quarry floor, lumber stump, or jetty)
+// near a village centre, for a close-up of the harvest sprites.
+func findWorksite(g *worldgen.Generator, cx, cy int) (int, int, bool) {
+	for r := 8; r < 32; r++ {
+		for dy := -r; dy <= r; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if abs(dx) != r && abs(dy) != r {
+					continue
+				}
+				c := g.At(cx+dx, cy+dy)
+				if (c.Biome == worldgen.Mountain && c.Glyph == '·') ||
+					(c.Biome == worldgen.Path && c.Glyph == 'u') {
+					return cx + dx, cy + dy, true
+				}
+			}
+		}
+	}
+	return 0, 0, false
+}
+
 func abs(n int) int {
 	if n < 0 {
 		return -n
@@ -57,9 +77,16 @@ func renderSettlementPNG(t *testing.T, cx, cy, win, scale int, path string) {
 			t := CellTile(cell)
 			// Overlay world loot the way the live area does, so crops show.
 			if it, ok := itemAt(cell, wx, wy); ok {
-				if it.ID == "grain" {
+				switch it.ID {
+				case "grain":
 					t.Prop, t.PropHex, t.Tex, t.Ground = game.PropCrop, it.Hex, game.TexField, "#86974A"
-				} else {
+				case "stone":
+					t.Prop, t.PropHex = game.PropStone, it.Hex
+				case "wood":
+					t.Prop, t.PropHex = game.PropLog, it.Hex
+				case "fish":
+					t.Prop, t.PropHex = game.PropFish, it.Hex
+				default:
 					t.Prop, t.PropHex, t.Ground = game.PropGem, it.Hex, groundColor(cell.Biome)
 				}
 			}
@@ -98,7 +125,11 @@ func TestHDPreview(t *testing.T) {
 	if len(wells) == 0 {
 		t.Fatal("no settlements found")
 	}
-	renderSettlementPNG(t, wells[0][0], wells[0][1], 40, 30, "/tmp/village_closeup_hd.png")
+	renderSettlementPNG(t, wells[0][0], wells[0][1], 56, 22, "/tmp/village_closeup_hd.png")
+	// A tight view on the first worksite found, to check the harvest sprites.
+	if qx, qy, ok := findWorksite(g, wells[0][0], wells[0][1]); ok {
+		renderSettlementPNG(t, qx, qy, 18, 48, "/tmp/worksite_hd.png")
+	}
 	names := []string{"/tmp/village_hd.png", "/tmp/village2_hd.png", "/tmp/village3_hd.png"}
 	for i, w := range wells {
 		renderSettlementPNG(t, w[0], w[1], 60, 20, names[i])

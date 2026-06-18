@@ -179,6 +179,33 @@ var propArt = map[TileProp][]string{
 		".PPPP.",
 		"..pp..",
 	},
+	// Cut-stone rubble: a little heap of squared blocks at the quarry.
+	PropStone: {
+		"......",
+		".PPp..",
+		"PPpp..",
+		".PPpP.",
+		"PppppP",
+		"......",
+	},
+	// A stack of logs, seen end-on (dark bark rings around pale cores).
+	PropLog: {
+		"......",
+		"DPPDP.",
+		"DppDp.",
+		"DPPDP.",
+		"DppDp.",
+		"......",
+	},
+	// A fish lying by the jetty: body, tail and a glint of an eye (W).
+	PropFish: {
+		"......",
+		"..PPp.",
+		".PPPPp",
+		"WPPPp.",
+		".PPp..",
+		"......",
+	},
 	// Palisade rails: rough timber stakes. The horizontal run shows a long rail
 	// across two posts; the vertical run shows stakes along the line of travel;
 	// the post is a stout corner/junction upright. Autotiling picks between them.
