@@ -92,6 +92,13 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// A street brazier: a warm, flickering pool of firelight at the gates and
 		// squares — a touch smaller and steadier than a campfire.
 		return whiten(colorful.Color{R: 1, G: 0.55, B: 0.2}, 0.12), 2.6 * flame, 0.9 * flame, true
+	case PropBldSmithy:
+		// A blacksmith's forge: a strong, warm glow spilling from the forge mouth,
+		// flickering as the fire is worked — the brightest window on a night street.
+		return whiten(colorful.Color{R: 1, G: 0.45, B: 0.13}, 0.1), 2.4 * flame, 0.85 * flame, true
+	case PropBldTavern:
+		// A tavern: cosy lamplight from its windows, steady and inviting.
+		return whiten(colorful.Color{R: 1, G: 0.78, B: 0.42}, 0.3), 2.0 * gentle, 0.6 * gentle, true
 	case PropPortal:
 		return whiten(propCol, 0.6), 2.8, 0.6, true
 	case PropCore, PropFountain:

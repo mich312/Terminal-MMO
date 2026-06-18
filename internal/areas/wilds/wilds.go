@@ -533,6 +533,8 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropWell, c.Color, groundColor(c.Biome)
 	case 'i': // a city brazier — glows warm at night (blocks)
 		t.Prop, t.PropHex, t.Ground = game.PropBrazier, c.Color, "#9A8E78"
+	case 's': // a market stall on the square (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropStall, c.Color, packedEarth
 	case '=': // a palisade segment (blocks) — orientation carried in Variant
 		switch c.Variant {
 		case 1:
@@ -551,7 +553,7 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Tex, t.Ground = game.TexField, "#86974A"
 	case '%': // a covered building footprint tile — drawn by its anchor (blocks)
 		t.Prop, t.Ground = game.PropBldBody, packedEarth
-	case 'h', 'H', 'L', 'B', 'C', 'K', 'T', 'M': // a settlement building anchor (blocks)
+	case 'h', 'H', 'L', 'B', 'C', 'K', 'T', 'M', 'S', 'V': // a settlement building anchor (blocks)
 		t.Prop = buildingProp(c.Variant)
 		t.PropHex, t.Ground = c.Color, packedEarth
 		if t.Prop == game.PropHouse { // a lone wilderness cabin keeps its biome ground
@@ -606,6 +608,10 @@ func buildingProp(variant uint8) game.TileProp {
 		return game.PropBldTownhouse
 	case 9:
 		return game.PropBldMarketHall
+	case 10:
+		return game.PropBldSmithy
+	case 11:
+		return game.PropBldTavern
 	default:
 		return game.PropHouse
 	}

@@ -161,7 +161,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
-					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs)
+					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs, frame)
 				}
 			}
 		}
@@ -486,8 +486,8 @@ func bldHash(wx, wy int) uint32 {
 // tile (vx,vy) so it rises up and extends right from its base. It picks one of
 // the type's variants and nudges the color, both keyed on world position (wx,wy)
 // so the same building always looks the same. Codes: P wall, p roof, D
-// base/door, L window, R trim/cross.
-func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color, variants [][]string) {
+// base/door, L window, R trim/cross, F glowing forge mouth.
+func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color, variants [][]string, frame int) {
 	hsh := bldHash(wx, wy)
 	art := variants[hsh%uint32(len(variants))]
 	if j := float64(int((hsh>>5)%7)-3) * 0.022; j >= 0 { // ±~7% lightness per building
@@ -506,6 +506,10 @@ func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color
 	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.62).Clamped())
 	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.6).Clamped())
 	trim := colorfulToRGBA(col.BlendLab(spriteWhite, 0.32).Clamped())
+	// A forge mouth glows warm orange independent of the building's stone, pulsing
+	// gently on the frame so a smithy reads as fire-lit even by day.
+	forge := colorfulToRGBA(colorful.Color{R: 1, G: 0.46, B: 0.12}.
+		BlendLab(spriteWhite, 0.12+0.1*math.Sin(float64(frame)*0.3+float64(wx*7+wy*3))).Clamped())
 	for ay, row := range art {
 		for ax := 0; ax < len(row); ax++ {
 			var c color.RGBA
@@ -521,6 +525,8 @@ func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color
 				c = win
 			case 'R':
 				c = trim
+			case 'F':
+				c = forge
 			default:
 				ok = false
 			}

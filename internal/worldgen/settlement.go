@@ -166,6 +166,7 @@ const (
 	lPaved                    // packed/cobbled ground between city buildings (walkable)
 	lCourtyard                // the open bailey inside a city's citadel (walkable)
 	lBrazier                  // a fire brazier lighting a city's gates/squares (blocks)
+	lStall                    // a market stall on a city's square (blocks)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -183,6 +184,8 @@ const (
 	btCathedral            // 3×4 (a city's great church)
 	btTownhouse            // 2×3 (tall, multi-storey — a city's wealthy core)
 	btMarketHall           // 3×3 (a city's market hall)
+	btSmithy               // 2×2 (a blacksmith's forge, glows warm at night)
+	btTavern               // 2×2 (a tavern, warm lit windows)
 )
 
 // footprint reports a building's width and height in tiles. The anchor is the
@@ -205,6 +208,8 @@ func footprint(bt buildType) (w, h int) {
 		return 2, 3
 	case btMarketHall:
 		return 3, 3
+	case btSmithy, btTavern:
+		return 2, 2
 	default:
 		return 1, 1
 	}
@@ -529,6 +534,24 @@ func (g *Generator) genLayout(s settlement) *layout {
 			}
 		}
 	}
+	// Trades on the square: a smithy (its forge glowing after dark) and a tavern,
+	// iconic civic buildings every settlement has, fronting the central space.
+	// Search outward in rings from a preferred bearing so a lane through the middle
+	// can't crowd them out; the two start opposite each other so they don't clump.
+	placeNearGreen := func(bearing float64, bt buildType) {
+		for r := 3.0; r <= 8.0; r += 1.0 {
+			for da := 0; da < 8; da++ {
+				a := bearing + float64(da)*0.7*math.Pi // fan out around the bearing
+				gx := gx0 + int(math.Round(math.Cos(a)*r))
+				gy := gy0 + int(math.Round(math.Sin(a)*r))
+				if placeBuilding(l, canBuild, gx, gy, bt, 1) {
+					return
+				}
+			}
+		}
+	}
+	placeNearGreen(rng.f()*2*math.Pi, btSmithy)
+	placeNearGreen(rng.f()*2*math.Pi+math.Pi, btTavern)
 	squareR, squareKind := 2.4, lGreen
 	if s.town { // a city has a broad cobbled market square, not a little green
 		squareR, squareKind = 4.6, lPlaza
@@ -969,6 +992,24 @@ func (g *Generator) genLayout(s settlement) *layout {
 				}
 			}
 		}
+		// Market stalls cluster on the square: a scatter of awninged stalls on the
+		// open plaza, kept one tile apart so aisles stay walkable between them.
+		noStallNear := func(gx, gy int) bool {
+			for _, d := range nb8 {
+				if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && l.at(nx, ny).kind == lStall {
+					return false
+				}
+			}
+			return true
+		}
+		for gy := 0; gy < n; gy++ {
+			for gx := 0; gx < n; gx++ {
+				if l.at(gx, gy).kind == lPlaza &&
+					unit(hashCoord(s.id^0x57A11, gx, gy)) < 0.22 && noStallNear(gx, gy) {
+					l.at(gx, gy).kind = lStall
+				}
+			}
+		}
 	}
 	return l
 }
@@ -1286,6 +1327,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Path, Glyph: '·', Color: "#8F8576", Walkable: true} // castle bailey
 	case lBrazier:
 		return Cell{Biome: Path, Glyph: 'i', Color: "#FF7A1E"} // a street brazier (blocks, glows at night)
+	case lStall:
+		return Cell{Biome: Path, Glyph: 's', Color: "#C24A3A"} // a market stall (blocks)
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:
@@ -1302,6 +1345,10 @@ func buildingGlyph(bt buildType) rune {
 		return 'K'
 	case btMarketHall:
 		return 'M'
+	case btSmithy:
+		return 'S'
+	case btTavern:
+		return 'V'
 	case btTownhouse:
 		return 'T'
 	case btLonghouse:
@@ -1327,6 +1374,10 @@ func buildingColor(bt buildType, b Biome) string {
 		return "#CDBBA0" // pale plaster townhouse
 	case btMarketHall:
 		return "#B89A6A" // timber-framed market hall
+	case btSmithy:
+		return "#6E6A66" // dark soot-stained stone
+	case btTavern:
+		return "#A8703C" // warm timber tavern
 	case btBarn:
 		return "#7C5A38" // dark timber
 	}

@@ -93,6 +93,8 @@ const (
 	PropBldCathedral  // 3×4 great church (a city's grand centrepiece)
 	PropBldTownhouse  // 2×3 tall multi-storey townhouse
 	PropBldMarketHall // 3×3 market hall
+	PropBldSmithy     // 2×2 blacksmith's forge (glows warm at night)
+	PropBldTavern     // 2×2 tavern with warm lit windows
 	PropBldBody       // a covered footprint tile (no draw)
 	PropCrop          // ripe grain standing in a field (harvestable)
 	PropStone         // cut-stone rubble at a quarry (harvestable)
@@ -101,6 +103,7 @@ const (
 	PropStoneWall     // a stone curtain wall segment, for towns (blocks)
 	PropTower         // a stone wall tower, for towns (blocks, overhangs upward)
 	PropBrazier       // a fire brazier on a post — lights a city's gates and squares at night
+	PropStall         // a market stall with a striped awning, on a city's square (blocks)
 )
 
 // Tile is one cell of a parsed map.

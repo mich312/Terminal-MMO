@@ -151,6 +151,16 @@ var propArt = map[TileProp][]string{
 		"..P...",
 		"..D...",
 	},
+	// A market stall: a striped awning (L/W bands) on two posts (D) over a
+	// counter of wares (G goods catch the light) — clusters on a city's square.
+	PropStall: {
+		"LWLWLW",
+		"WLWLWL",
+		"D....D",
+		"DGGGGD",
+		"DGWGGD",
+		"DD..DD",
+	},
 	// A traveler's campfire: an animated flame (G, pulses) over charred logs.
 	PropCampfire: {
 		"..G...",
@@ -409,6 +419,8 @@ var buildingArt = map[TileProp][][]string{
 	PropBldCathedral:  bldVariants(3, 4, bldChurch),
 	PropBldTownhouse:  bldVariants(2, 3, bldDwelling),
 	PropBldMarketHall: bldVariants(3, 3, bldDwelling),
+	PropBldSmithy:     bldVariants(2, 2, bldSmithy),
+	PropBldTavern:     bldVariants(2, 2, bldTavern),
 	PropBldKeep:       {genKeep(3, 3)},
 	PropTower:         {towerArt},
 }
@@ -473,6 +485,8 @@ const (
 	bldDwelling bldKind = iota
 	bldBarn
 	bldChurch
+	bldSmithy
+	bldTavern
 )
 
 func bldVariants(wt, ht int, k bldKind) [][]string {
@@ -579,6 +593,33 @@ func genBuilding(wt, ht int, k bldKind, style int) []string {
 		}
 		if cx+1 < w {
 			g[1][cx+1] = 'R'
+		}
+	}
+	if k == bldSmithy { // a stout chimney with a forge-mouth glowing at the base
+		for y := 0; y < wallTop+1; y++ { // chimney rising past the roofline
+			g[y][w-2] = 'P'
+			if w-1 < w {
+				g[y][w-1] = 'D'
+			}
+		}
+		fy := baseY - max(1, (baseY-wallTop)/2) // the open forge mouth (glows 'F')
+		for y := fy; y <= baseY; y++ {
+			for x := w/2 - 1; x <= w/2; x++ {
+				if x >= 0 && x < w {
+					g[y][x] = 'F'
+				}
+			}
+		}
+	}
+	if k == bldTavern { // an extra row of warm-lit windows and a hanging sign (R)
+		wy := wallTop + 1
+		for x := 1; x < w-1; x++ {
+			if x%2 == 0 {
+				g[wy][x] = 'L'
+			}
+		}
+		if sy := baseY - 2; sy > wallTop && w >= 2 { // a sign board by the door
+			g[sy][1] = 'R'
 		}
 	}
 	out := make([]string, h)
