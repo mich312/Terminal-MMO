@@ -25,8 +25,9 @@ const (
 	settleSalt     uint64 = 0x5E771E3D0FAB12C7
 	settleCell            = 80    // macro-grid cell size, in world tiles
 	settleHubKeep         = 76    // keep settlement centres this far from the origin hub
-	settleHalf            = 30    // layout grid half-extent (grid is 2*half+1 square)
-	settleMaxReach        = 22    // a settlement's features never extend past this from centre
+	settleHalf            = 44    // layout grid half-extent (grid is 2*half+1 square)
+	settleMaxReach        = 22    // the village *core* (roads, wall, fields) stays within this
+	outpostReach          = 42    // worksites may sit this far out, to reach a distant biome
 	linkMax               = 168.0 // longest village-to-village connecting road
 	linkFade              = 96.0  // beyond this a connecting road dwindles to a trail
 )
@@ -597,7 +598,7 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wa
 				}
 				ddx, ddy := float64(gx-cgx), float64(gy-cgy)
 				r := math.Hypot(ddx, ddy)
-				if r < wallRad(math.Atan2(ddy, ddx))+3 || r > float64(settleHalf-4) {
+				if r < wallRad(math.Atan2(ddy, ddx))+3 || r > float64(outpostReach) {
 					continue
 				}
 				if r < bd {

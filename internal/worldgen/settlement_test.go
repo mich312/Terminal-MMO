@@ -62,22 +62,35 @@ func TestNoSettlementsNearHub(t *testing.T) {
 	}
 }
 
-// TestVillageReachable confirms a village's interior (its well) is reachable on
-// foot from outside the wall — the roads must punch real gates through it.
+// TestVillageReachable confirms a village's interior connects to the outside on
+// foot — i.e. the roads punch real gates through the wall. It floods walkable
+// cells from the centre and asserts some reach well past the wall.
 func TestVillageReachable(t *testing.T) {
 	g := New(worldSeed)
 	s, ok := findSettlement(g)
 	if !ok {
 		t.Fatal("no settlement found")
 	}
-	lo, hi := -settleHalf, settleHalf
-	start := [2]int{lo, lo}
-	if !g.Walkable(s.cx+start[0], s.cy+start[1]) {
-		t.Skip("grid corner not walkable (terrain-clipped); skipping")
+	// A guaranteed-walkable start: the green/yard right by the well.
+	var start [2]int
+	found := false
+	for r := 0; r <= 4 && !found; r++ {
+		for dy := -r; dy <= r && !found; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if g.Walkable(s.cx+dx, s.cy+dy) {
+					start, found = [2]int{dx, dy}, true
+					break
+				}
+			}
+		}
 	}
+	if !found {
+		t.Fatalf("village at (%d,%d) has no walkable centre", s.cx, s.cy)
+	}
+	lo, hi := -settleHalf, settleHalf
 	seen := map[[2]int]bool{}
 	stack := [][2]int{start}
-	reached := false
+	escaped := false
 	for len(stack) > 0 {
 		p := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -85,8 +98,8 @@ func TestVillageReachable(t *testing.T) {
 			continue
 		}
 		seen[p] = true
-		if abs(p[0]) <= 1 && abs(p[1]) <= 1 {
-			reached = true
+		if abs(p[0]) > settleMaxReach || abs(p[1]) > settleMaxReach {
+			escaped = true // reached well outside the wall
 		}
 		for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 			if g.Walkable(s.cx+p[0]+d[0], s.cy+p[1]+d[1]) {
@@ -94,8 +107,8 @@ func TestVillageReachable(t *testing.T) {
 			}
 		}
 	}
-	if !reached {
-		t.Fatalf("village at (%d,%d) centre unreachable from outside the wall", s.cx, s.cy)
+	if !escaped {
+		t.Fatalf("village at (%d,%d) interior is walled in — no gate out", s.cx, s.cy)
 	}
 }
 

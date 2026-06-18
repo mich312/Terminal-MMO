@@ -190,7 +190,12 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
   bitten into the forest, and a **fishing hut** with a **jetty** at the shore.
   Each only appears where that biome lies within reach; the worksite's own ground
   is carved into the real biome (rock / trees / water), with the hut on the
-  village side and a path back through a gate.
+  village side and a path back through a gate. Each worksite is harvestable
+  like the fields — **stone** at the quarry, **timber** at the lumber camp,
+  **fish** off the jetty (`e` to gather, persists in the inventory).
+- ✅ Distant reach: a village's layout extends well past its core, so a worksite
+  can sit at a biome edge ~40 tiles out and be linked by a long resource road —
+  a meadow village still reaches its far-off forest or lake.
 
 ## Parked polish
 

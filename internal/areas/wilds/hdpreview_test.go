@@ -132,6 +132,6 @@ func TestHDPreview(t *testing.T) {
 	}
 	names := []string{"/tmp/village_hd.png", "/tmp/village2_hd.png", "/tmp/village3_hd.png"}
 	for i, w := range wells {
-		renderSettlementPNG(t, w[0], w[1], 60, 20, names[i])
+		renderSettlementPNG(t, w[0], w[1], 96, 13, names[i])
 	}
 }
