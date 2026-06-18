@@ -135,15 +135,6 @@ var propArt = map[TileProp][]string{
 		".pp.p.",
 		"......",
 	},
-	// A jagged rock crag: a pointed spire with shaded faces. Blocks.
-	PropCrag: {
-		"..P...",
-		".PPp..",
-		".PPPp.",
-		"PPPppD",
-		"PpppDD",
-		".ppDD.",
-	},
 	// PropHouse is a single-tile cottage: roof (p), walls (P), a dark door (p).
 	PropHouse: {
 		"..PP..",
@@ -364,5 +355,19 @@ var (
 		"PPPPPPP",
 		"...T...",
 		"...T...",
+	}
+	// A jagged rock spire that overhangs upward, lit on the left (L), body (P),
+	// shaded right face (D). No 'p', so the canopy rim-dither leaves it solid —
+	// hard rock, not feathered foliage — and it reads as a crag, not a boulder.
+	cragArt = []string{
+		"...P...",
+		"..LPD..",
+		"..LPD..",
+		".LLPDD.",
+		".LLPDD.",
+		"LLLPDDD",
+		"LLPPDDD",
+		"LLPPPDD",
+		"LLPPPDD",
 	}
 )
