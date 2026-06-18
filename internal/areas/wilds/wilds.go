@@ -422,7 +422,11 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
-						t.Prop, t.PropHex, t.Ground = game.PropGem, it.Hex, groundColor(cell.Biome) // glints in HD
+						prop := game.PropGem
+						if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
+							prop = game.PropGemGlow
+						}
+						t.Prop, t.PropHex, t.Ground = prop, it.Hex, groundColor(cell.Biome)
 					}
 				}
 				row[lx] = t

@@ -76,7 +76,7 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 // multiplier (a campfire floods, loot only twinkles) and whether it emits at
 // all. propCol is the prop's day/night-tinted color. Flames and fixtures
 // flicker on the frame (two summed waves, so it's not a clean pulse); portals
-// and loot (items and hats) are steady.
+// and luminous loot are steady. Mundane forage and hats don't emit at all.
 func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col colorful.Color, radius, intensity float64, ok bool) {
 	h := float64(wx*7 + wy*3)
 	flame := 0.78 + 0.16*math.Sin(float64(frame)*0.7+h) + 0.06*math.Sin(float64(frame)*1.9+h*1.7)
@@ -96,10 +96,10 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		return whiten(colorful.Color{R: 1, G: 0.82, B: 0.45}, 0.4), 2.4 * gentle, 0.7 * gentle, true
 	case PropTurbine, PropScreen:
 		return whiten(colorful.Color{R: 0.5, G: 0.8, B: 1}, 0.6), 2.0, 0.6, true
-	case PropGem:
-		return whiten(propCol, 0.65), 0.9, 0.35, true
-	case PropHat:
-		return whiten(propCol, 0.55), 1.1, 0.4, true // hats glow too, a touch brighter than items
+	case PropGemGlow:
+		// Only luminous loot (crystals, mushrooms) twinkles; mundane forage and
+		// hats stay dark.
+		return whiten(propCol, 0.5), 1.1, 0.4, true
 	}
 	return colorful.Color{}, 0, 0, false
 }

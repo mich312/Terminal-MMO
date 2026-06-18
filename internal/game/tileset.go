@@ -213,6 +213,14 @@ var propArt = map[TileProp][]string{
 		"..p...",
 		"......",
 	},
+	PropGemGlow: { // same sprite as PropGem; the glow is added by the light pass
+		"..L...",
+		".LPL..",
+		"LPPPW.",
+		".LPPL.",
+		"..p...",
+		"......",
+	},
 	PropLamp: {
 		"..GG..",
 		".GWWG.",

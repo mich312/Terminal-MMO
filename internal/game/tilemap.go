@@ -60,7 +60,8 @@ const (
 	PropMachine  // boxy machine / plotter
 	PropScreen   // wall-mounted display panel (animated)
 	PropPlinth   // exhibit pedestal
-	PropGem      // small showcased item (glints)
+	PropGem      // a found item lying in the world (mundane forage — no glow)
+	PropGemGlow  // a luminous found item (crystal, mushroom) — glows at night
 	PropLamp     // light fixture / spotlight (glows)
 	PropCrate    // crate / desk block
 	PropCore     // reactor energy orb (glows, hero feature)
