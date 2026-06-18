@@ -553,9 +553,9 @@ func texForBiome(b worldgen.Biome) game.TileTex {
 func groundColor(b worldgen.Biome) string {
 	switch b {
 	case worldgen.Grass:
-		return "#5FA86B"
+		return "#5EAE63"
 	case worldgen.Forest:
-		return "#3F8A5A"
+		return "#2E6B40"
 	case worldgen.Hill:
 		return "#9C8D67"
 	case worldgen.Sand:
@@ -563,13 +563,13 @@ func groundColor(b worldgen.Biome) string {
 	case worldgen.Mountain:
 		return "#9AA0A8"
 	case worldgen.Path:
-		return "#9B8B6A"
+		return "#8C7A56"
 	case worldgen.Snow:
 		return "#E8EEF5"
 	case worldgen.Savanna:
-		return "#B8A659"
+		return "#CDBA5C"
 	case worldgen.Swamp:
-		return "#4A5A3A"
+		return "#45533C"
 	default:
 		return ""
 	}

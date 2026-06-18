@@ -115,8 +115,21 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		// ripples, sand speckles…). Hard tile edges — no blur, no all-over grain.
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
+				// Gather the 8 neighbors' lit ground colors so paintTile can dither
+				// the tile's border toward a differing biome — soft seams instead of
+				// hard grid edges. Out-of-window neighbors fall back to self (no blend).
+				at := func(x, y int) colorful.Color {
+					if x < 0 || x >= cam.W || y < 0 || y >= cam.H {
+						return cols[vy][vx]
+					}
+					return cols[y][x]
+				}
+				nbr := [8]colorful.Color{
+					at(vx, vy-1), at(vx+1, vy-1), at(vx+1, vy), at(vx+1, vy+1),
+					at(vx, vy+1), at(vx-1, vy+1), at(vx-1, vy), at(vx-1, vy-1),
+				}
 				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
-					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style)
+					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style, nbr)
 			}
 		}
 		// Portals are multi-tile animated gates drawn over the terrain so they can
@@ -273,30 +286,18 @@ const tileArtN = 6
 // paintTile draws one tile: the ground surface sprite (a shade pattern colored
 // by base) nearest-upscaled to the on-screen tile size, then an optional prop
 // sprite over it. Sharp pixels throughout.
-func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style) {
-	baseRGBA := colorfulToRGBA(base)
-	variants := style.Ground[tex]
-	if len(variants) == 0 { // flat / untextured
-		fillRect(img, ox, oy, scale, scale, baseRGBA)
-	} else {
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style, nbr [8]colorful.Color) {
+	var art []string
+	if variants := style.Ground[tex]; len(variants) > 0 {
 		idx := int(hashNoise(wx, wy) * float64(len(variants)))
 		if tex == TexWater {
 			idx = (frame / 4) % len(variants) // ripples animate
 		}
-		art := variants[idx%len(variants)]
-		light := colorfulToRGBA(base.BlendLab(spriteWhite, style.GroundLightMix).Clamped())
-		dark := colorfulToRGBA(base.BlendLab(shadowColor, style.GroundDarkMix).Clamped())
-		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
-			switch r {
-			case 'L':
-				return light, true
-			case 'D':
-				return dark, true
-			default:
-				return baseRGBA, true // 'B' and ' '
-			}
-		})
+		art = variants[idx%len(variants)]
 	}
+	light := base.BlendLab(spriteWhite, style.GroundLightMix).Clamped()
+	dark := base.BlendLab(shadowColor, style.GroundDarkMix).Clamped()
+	blitGround(img, ox, oy, scale, art, base, light, dark, nbr, wx, wy)
 
 	if art, ok := style.Props[prop]; ok {
 		// A richer prop palette than plain fill/shade: outline (o), shades (p, D),
@@ -395,6 +396,83 @@ func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(by
 			}
 		}
 	}
+}
+
+// blitGround paints a tile's ground surface like blitTileArt, but additionally
+// dithers the tile's outer art-pixels toward a neighboring biome's color when
+// it differs — the dual-grid idea (neighbors decide the seam) expressed as a
+// live per-pixel blend, so hard grid edges become soft, organic transitions
+// (coastlines, forest edges, path shoulders) with no authored transition art.
+// art may be nil for a flat, untextured surface.
+func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, dark colorful.Color, nbr [8]colorful.Color, wx, wy int) {
+	for iy := 0; iy < scale; iy++ {
+		ay := iy * tileArtN / scale
+		for ix := 0; ix < scale; ix++ {
+			ax := ix * tileArtN / scale
+			col := base
+			if art != nil {
+				switch art[ay][ax] {
+				case 'L':
+					col = light
+				case 'D':
+					col = dark
+				}
+			}
+			if target, w, ok := edgeNeighbor(ax, ay, base, nbr); ok {
+				// Stable per-world-pixel dither so the seam doesn't shimmer as the
+				// camera scrolls; heavier right at the boundary, fading one pixel in.
+				if hashNoise(wx*tileArtN+ax, wy*tileArtN+ay, 0x9E37) < w {
+					col = target
+				}
+			}
+			img.SetRGBA(ox+ix, oy+iy, colorfulToRGBA(col))
+		}
+	}
+}
+
+// edgeNeighbor picks the differing neighbor a border art-pixel (ax,ay) should
+// dither toward, and the dither weight. Returns ok=false for interior pixels or
+// when every touched neighbor is the same biome (so interiors stay seamless).
+// nbr is ordered N, NE, E, SE, S, SW, W, NW.
+func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (colorful.Color, float64, bool) {
+	lp, rp := edgeProx(ax, true), edgeProx(ax, false)
+	tp, bp := edgeProx(ay, true), edgeProx(ay, false)
+	w := [8]float64{tp, min(rp, tp), rp, min(rp, bp), bp, min(lp, bp), lp, min(lp, tp)}
+	best, bw := -1, 0.0
+	for i := 0; i < 8; i++ {
+		if w[i] <= 0 || base.DistanceLab(nbr[i]) < 0.06 {
+			continue
+		}
+		if w[i] > bw {
+			best, bw = i, w[i]
+		}
+	}
+	if best < 0 {
+		return base, 0, false
+	}
+	return nbr[best], bw, true
+}
+
+// edgeProx is how strongly an art-pixel at coordinate a (0..tileArtN-1) belongs
+// to a tile edge: strongest on the edge pixel, fading one pixel in, zero deeper.
+// low selects the 0 edge; otherwise the tileArtN-1 edge.
+func edgeProx(a int, low bool) float64 {
+	if low {
+		switch a {
+		case 0:
+			return 0.6
+		case 1:
+			return 0.28
+		}
+		return 0
+	}
+	switch a {
+	case tileArtN - 1:
+		return 0.6
+	case tileArtN - 2:
+		return 0.28
+	}
+	return 0
 }
 
 // hashNoise is a cheap deterministic [0,1) value from a few ints (FNV-ish), for

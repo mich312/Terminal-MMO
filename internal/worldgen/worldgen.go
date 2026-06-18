@@ -174,7 +174,7 @@ func (g *Generator) At(x, y int) Cell {
 func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 
 func grassCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Grass, Glyph: '·', Color: "#5FA86B", Walkable: true}
+	c := Cell{Biome: Grass, Glyph: '·', Color: "#5EAE63", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.006: // a rare homestead — blocks movement
 		c.Glyph, c.Color, c.Walkable = 'H', houseColor(g.prop2(x, y)), false
@@ -199,7 +199,7 @@ func forestCell(g *Generator, x, y int) Cell {
 	case r < 0.50: // undergrowth bush
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
-	return Cell{Biome: Forest, Glyph: '·', Color: "#3F8A5A", Walkable: true}
+	return Cell{Biome: Forest, Glyph: '·', Color: "#2E6B40", Walkable: true}
 }
 
 // snowCell is cold high ground: pale, mostly open, with the odd ice-glazed
@@ -218,7 +218,7 @@ func snowCell(g *Generator, x, y int) Cell {
 // savannaCell is warm, dry grassland: golden tufts and the occasional scrubby
 // bush. Kept free of blocking props so the dry plains stay open.
 func savannaCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Savanna, Glyph: '·', Color: "#B8A659", Walkable: true}
+	c := Cell{Biome: Savanna, Glyph: '·', Color: "#CDBA5C", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.05:
 		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
@@ -231,7 +231,7 @@ func savannaCell(g *Generator, x, y int) Cell {
 // swampCell is warm, low, waterlogged ground: murky green flats with reeds,
 // hummocks and the odd shallow pool. Stays walkable — boggy, not impassable.
 func swampCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Swamp, Glyph: '·', Color: "#4A5A3A", Walkable: true}
+	c := Cell{Biome: Swamp, Glyph: '·', Color: "#45533C", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.12:
 		c.Glyph, c.Color = ',', "#6B7A3A" // reeds
@@ -259,7 +259,7 @@ func onPath(x, y int) bool {
 // pathCell is the worn-dirt trail surface, with the occasional cobble for
 // texture. Always walkable.
 func pathCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Path, Glyph: '·', Color: "#9B8B6A", Walkable: true}
+	c := Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}
 	if g.prop(x, y) < 0.12 {
 		c.Glyph, c.Color = '∘', "#857653" // a cobble
 	}

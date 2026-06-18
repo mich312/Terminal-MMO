@@ -29,9 +29,12 @@ var groundArt = map[TileTex][][]string{
 		{"BBBBBB", "BBLBBB", "DBBBBB", "BBBBDB", "BLBBBB", "BBBBBB"},
 		{"BBBBBB", "LBBBBB", "BBBDBB", "BBBBBB", "BBLBBD", "BBBBBB"},
 	},
+	// Forest floor: dense leaf litter — clumped dark flecks (D) with the odd
+	// dapple of light (L) through the canopy. Busier than open grass.
 	TexForest: {
-		{"BBBBBB", "BLBBBB", "BBBBDB", "BBBBBB", "BDBBLB", "BBBBBB"},
-		{"BBBBBB", "BBBLBB", "DBBBBB", "BBBBDB", "BBBBBB", "BLBBBB"},
+		{"BBBBBB", "BDBBDB", "BBLBBB", "BBBDBB", "BDBBDB", "BBBBBB"},
+		{"BBBBBB", "BBDBLB", "BDBBBB", "BBBDDB", "BBLBBB", "BBBBBB"},
+		{"BBBBBB", "BLBBDB", "BBBDBB", "BDBBBB", "BBBDLB", "BBBBBB"},
 	},
 	TexRock: {
 		{"BLBBBB", "BBBBDB", "DDBBBB", "BBBDBB", "BBBBBB", "BBLBBB"},
@@ -44,12 +47,12 @@ var groundArt = map[TileTex][][]string{
 		{"BBBBBB", "BBBBLB", "BBLBBB", "BBBBBB", "BBDLBB", "BBBBBB"},
 		{"BBBBBB", "BLBBBB", "BBBBBB", "BBBLDB", "BBLBBB", "BBBBBB"},
 	},
-	// Savanna: dry, sun-bleached grass — scattered dark flecks of parched
-	// tussock, sparser than the lush grass tile.
+	// Savanna: dry, sun-bleached grass lying flat — short horizontal dashes of
+	// parched tussock (DD pairs), a distinct grain from upright lush grass.
 	TexSavanna: {
-		{"BBBBBB", "BDBBDB", "BBBBBB", "BDBBBB", "BBBDBB", "BBBBBB"},
-		{"BBBBBB", "BBBDBB", "BDBBBB", "BBBBDB", "BBDBBB", "BBBBBB"},
-		{"BBBBBB", "BBDBBD", "BBBBBB", "DBBDBB", "BBBBBB", "BBBBBB"},
+		{"BBBBBB", "BDDBBB", "BBBBDB", "BBBBBB", "BBDDBB", "BBBBBB"},
+		{"BBBBBB", "BBBDDB", "BDDBBB", "BBBBBB", "BBBDDB", "BBBBBB"},
+		{"BBBBBB", "BBDDBB", "BBBBBB", "BDDBDB", "BBBBBB", "BBBBBB"},
 	},
 	// Swamp: waterlogged muck — clumped dark mud blotches (D) with the
 	// occasional algae sheen (L) catching the light.

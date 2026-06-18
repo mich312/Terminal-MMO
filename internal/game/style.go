@@ -41,8 +41,8 @@ func DefaultStyle() *Style {
 		Props:          propArt,
 		Portal:         portalArt,
 		Trunk:          trunkColor,
-		GroundLightMix: 0.18,
-		GroundDarkMix:  0.20,
+		GroundLightMix: 0.20,
+		GroundDarkMix:  0.26,
 		PropShadeMix:   0.35,
 		Vignette:       0.35,
 	}
