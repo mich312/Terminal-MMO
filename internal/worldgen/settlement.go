@@ -22,16 +22,30 @@ import "math"
 // with gates where the roads cross it, and open fields along the approach.
 
 const (
-	settleSalt     uint64 = 0x5E771E3D0FAB12C7
-	settleCell            = 80    // macro-grid cell size, in world tiles
-	settleHubKeep         = 76    // keep settlement centres this far from the origin hub
-	settleHalf            = 44    // layout grid half-extent (grid is 2*half+1 square)
-	settleMaxReach        = 22    // the village *core* (roads, wall, fields) stays within this
-	townReach             = 31    // a town's core is larger
-	outpostReach          = 42    // worksites may sit this far out, to reach a distant biome
-	linkMax               = 168.0 // longest village-to-village connecting road
-	linkFade              = 96.0  // beyond this a connecting road dwindles to a trail
+	settleSalt    uint64 = 0x5E771E3D0FAB12C7
+	settleCell           = 96 // macro-grid cell size, in world tiles
+	settleHubKeep        = 76 // keep settlement centres this far from the origin hub
+	// Per-tier dimensions: core reach (roads/wall/fields), layout-grid half-extent
+	// (kept below settleCell so a settlement spans at most one macro), and how far
+	// out a worksite may reach. Cities are much larger than villages.
+	villageReach   = 22
+	villageHalf    = 44
+	villageOutpost = 42
+	cityReach      = 44
+	cityHalf       = 60
+	cityOutpost    = 54
+	linkMax        = 200.0 // longest village-to-village connecting road
+	linkFade       = 110.0 // beyond this a connecting road dwindles to a trail
 )
+
+// dims returns the settlement's core reach, layout-grid half-extent and worksite
+// reach, by tier.
+func (s settlement) dims() (reach, half, outpost int) {
+	if s.town {
+		return cityReach, cityHalf, cityOutpost
+	}
+	return villageReach, villageHalf, villageOutpost
+}
 
 // ── settlement identity ──────────────────────────────────────────────────────
 
@@ -76,7 +90,7 @@ func (g *Generator) computeSettlement(mx, my int) settlement {
 		return s
 	}
 	s.id = h
-	s.town = unit(hashCoord(h, 0x707, 0x777)) < 0.22 // ~1 in 5 settlements is a town
+	s.town = unit(hashCoord(h, 0x707, 0x777)) < 0.16 // ~1 in 6 settlements is a city
 	s.valid = true
 	return s
 }
@@ -220,9 +234,10 @@ func (r *srng) rng(a, b float64) float64 { return a + (b-a)*r.f() }
 // ── layout generation ─────────────────────────────────────────────────────────
 
 func (g *Generator) genLayout(s settlement) *layout {
-	n := 2*settleHalf + 1
-	l := &layout{ox: s.cx - settleHalf, oy: s.cy - settleHalf, n: n, cells: make([]lcell, n*n)}
-	cgx, cgy := settleHalf, settleHalf // centre in grid space
+	reachI, half, outpost := s.dims()
+	n := 2*half + 1
+	l := &layout{ox: s.cx - half, oy: s.cy - half, n: n, cells: make([]lcell, n*n)}
+	cgx, cgy := half, half // centre in grid space
 	rng := &srng{s: s.id ^ 0xBEEF}
 
 	// Buildable mask + underlying biome, sampled once.
@@ -257,10 +272,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// connecting lanes — so houses cluster in two dimensions around a nucleus
 	// rather than strung out along one street.
 	type seg struct{ ax, ay, bx, by float64 }
-	reach := float64(settleMaxReach)
-	if s.town {
-		reach = townReach // a town spreads wider, behind a bigger wall
-	}
+	reach := float64(reachI)
 	dx, dy := math.Cos(axis), math.Sin(axis)
 	px, py := -dy, dx // perpendicular
 	off := rng.rng(-1.5, 1.5)
@@ -271,26 +283,40 @@ func (g *Generator) genLayout(s settlement) *layout {
 		{cfx + dx*reach, cfy + dy*reach, mid[0], mid[1]},
 		{mid[0], mid[1], cfx - dx*reach, cfy - dy*reach},
 	}
-	// A loop lane around the core — an irregular ring of a few points.
-	loopR := reach * 0.42
-	const loopK = 6
-	var lp [][2]float64
-	for i := 0; i < loopK; i++ {
-		a := float64(i)/loopK*2*math.Pi + rng.rng(-0.25, 0.25)
-		rr := loopR * rng.rng(0.78, 1.18)
-		lp = append(lp, [2]float64{float64(cgx) + math.Cos(a)*rr, float64(cgy) + math.Sin(a)*rr})
-	}
-	for i := 0; i < loopK; i++ {
-		j := (i + 1) % loopK
-		segs = append(segs, seg{lp[i][0], lp[i][1], lp[j][0], lp[j][1]})
-	}
-	// One or two short lanes linking the loop back to the main road.
-	for i := 0; i < 2; i++ {
-		if i == 1 && rng.f() < 0.4 {
-			continue
+	if s.town {
+		// A city is laid out on a (jittered) grid of streets running along and
+		// across the main axis, so housing packs into proper blocks.
+		const block = 10.0
+		for d := -reach; d <= reach; d += block {
+			j := rng.rng(-1.5, 1.5)
+			ax, ay := float64(cgx)+px*(d+j), float64(cgy)+py*(d+j)
+			segs = append(segs, seg{ax - dx*reach, ay - dy*reach, ax + dx*reach, ay + dy*reach})
+			k := rng.rng(-1.5, 1.5)
+			bx, by := float64(cgx)+dx*(d+k), float64(cgy)+dy*(d+k)
+			segs = append(segs, seg{bx - px*reach, by - py*reach, bx + px*reach, by + py*reach})
 		}
-		v := lp[rng.n(loopK)]
-		segs = append(segs, seg{v[0], v[1], cfx + dx*rng.rng(-5, 5), cfy + dy*rng.rng(-5, 5)})
+	} else {
+		// A village clusters organically: a loop lane round the core with a couple
+		// of connecting lanes.
+		loopR := reach * 0.42
+		const loopK = 6
+		var lp [][2]float64
+		for i := 0; i < loopK; i++ {
+			a := float64(i)/loopK*2*math.Pi + rng.rng(-0.25, 0.25)
+			rr := loopR * rng.rng(0.78, 1.18)
+			lp = append(lp, [2]float64{float64(cgx) + math.Cos(a)*rr, float64(cgy) + math.Sin(a)*rr})
+		}
+		for i := 0; i < loopK; i++ {
+			j := (i + 1) % loopK
+			segs = append(segs, seg{lp[i][0], lp[i][1], lp[j][0], lp[j][1]})
+		}
+		for i := 0; i < 2; i++ {
+			if i == 1 && rng.f() < 0.4 {
+				continue
+			}
+			v := lp[rng.n(loopK)]
+			segs = append(segs, seg{v[0], v[1], cfx + dx*rng.rng(-5, 5), cfy + dy*rng.rng(-5, 5)})
+		}
 	}
 
 	onAnyRoad := func(gx, gy float64) float64 {
@@ -362,8 +388,8 @@ func (g *Generator) genLayout(s settlement) *layout {
 
 	buildR := reach - 4 // buildings stay inside this; the wall encloses them
 	base, slope, floor := 0.95, 0.6, 0.22
-	if s.town { // a town is packed tight with houses, edge to edge
-		base, slope, floor = 1.1, 0.5, 0.45
+	if s.town { // a city packs its blocks tight with houses, edge to edge
+		base, slope, floor = 1.4, 0.4, 0.85
 	}
 	density := func(r float64) float64 {
 		p := base - slope*(r/buildR) // dense core, thinning toward the edge
@@ -410,7 +436,10 @@ func (g *Generator) genLayout(s settlement) *layout {
 			roadD := onAnyRoad(float64(gx), float64(gy))
 			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
 			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
-			setback := 2.0 + cellHash.f()*1.6 // 2.0 … 3.6 tiles off the street
+			setback := 2.0 + cellHash.f()*1.6 // village: 2.0 … 3.6 tiles off the street
+			if s.town {
+				setback = 1.0 + cellHash.f()*4 // city: fill the whole block
+			}
 			if !((roadD >= 0.9 && roadD <= setback) || (greenD >= squareR+0.2 && greenD <= squareR+2.8)) {
 				continue
 			}
@@ -509,7 +538,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// Outlying worksites — a quarry on nearby hills, a lumber camp at the forest
 	// edge, a fishing hut on the shore — each placed in fitting terrain just past
 	// the wall and linked back through a gate by a spur road.
-	placeOutbuildings(l, canBuild, cgx, cgy, wallRad)
+	placeOutbuildings(l, canBuild, cgx, cgy, wallRad, outpost)
 
 	// Fields along the approach, just outside the wall on the road axis.
 	for gy := 0; gy < n; gy++ {
@@ -628,7 +657,7 @@ func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt build
 // placeOutbuildings sites the village's resource buildings in the surrounding
 // terrain and links each back to the village by a spur road. Each is optional —
 // it only appears if its terrain (hills / forest / water) lies within reach.
-func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wallRad func(float64) float64) {
+func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wallRad func(float64) float64, outpost int) {
 	n := l.n
 
 	// find returns the matching-biome cell nearest the village but past the wall.
@@ -641,7 +670,7 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wa
 				}
 				ddx, ddy := float64(gx-cgx), float64(gy-cgy)
 				r := math.Hypot(ddx, ddy)
-				if r < wallRad(math.Atan2(ddy, ddx))+3 || r > float64(outpostReach) {
+				if r < wallRad(math.Atan2(ddy, ddx))+3 || r > float64(outpost) {
 					continue
 				}
 				if r < bd {

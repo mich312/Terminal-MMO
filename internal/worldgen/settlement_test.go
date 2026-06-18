@@ -37,8 +37,9 @@ func TestSettlementDeterminism(t *testing.T) {
 		t.Fatal("no settlement found near origin")
 	}
 	g1, g2 := New(worldSeed), New(worldSeed)
-	for y := s.cy - settleHalf; y <= s.cy+settleHalf; y++ {
-		for x := s.cx - settleHalf; x <= s.cx+settleHalf; x++ {
+	_, half, _ := s.dims()
+	for y := s.cy - half; y <= s.cy+half; y++ {
+		for x := s.cx - half; x <= s.cx+half; x++ {
 			a := g1.At(x, y)
 			if b := g1.At(x, y); !cellEq(a, b) {
 				t.Fatalf("At(%d,%d) not deterministic within a generator", x, y)
@@ -52,7 +53,7 @@ func TestSettlementDeterminism(t *testing.T) {
 
 func TestNoSettlementsNearHub(t *testing.T) {
 	g := New(worldSeed)
-	const hubZone = settleHubKeep - settleMaxReach
+	const hubZone = 48 // no settlement cell may reach the functional hub near origin
 	for y := -hubZone; y <= hubZone; y++ {
 		for x := -hubZone; x <= hubZone; x++ {
 			if _, ok := g.settlementAt(x, y); ok {
@@ -87,7 +88,8 @@ func TestVillageReachable(t *testing.T) {
 	if !found {
 		t.Fatalf("village at (%d,%d) has no walkable centre", s.cx, s.cy)
 	}
-	lo, hi := -settleHalf, settleHalf
+	reach, half, _ := s.dims()
+	lo, hi := -half, half
 	seen := map[[2]int]bool{}
 	stack := [][2]int{start}
 	escaped := false
@@ -98,7 +100,7 @@ func TestVillageReachable(t *testing.T) {
 			continue
 		}
 		seen[p] = true
-		if abs(p[0]) > settleMaxReach || abs(p[1]) > settleMaxReach {
+		if abs(p[0]) > reach || abs(p[1]) > reach {
 			escaped = true // reached well outside the wall
 		}
 		for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
@@ -132,7 +134,8 @@ func TestPreviewVillage(t *testing.T) {
 				}
 				shown++
 				t.Logf("settlement at (%d,%d)", s.cx, s.cy)
-				t.Log(renderArea(g, s.cx, s.cy, settleHalf))
+				_, half, _ := s.dims()
+				t.Log(renderArea(g, s.cx, s.cy, half))
 			}
 		}
 	}

@@ -56,22 +56,15 @@ func findWorksite(g *worldgen.Generator, cx, cy int) (int, int, bool) {
 	return 0, 0, false
 }
 
-// findTown scans for a stone-walled town (a '#' wall cell) and returns its well.
+// findTown scans for a stone-walled city by its cobbled market square (unique to
+// cities) and returns a point at its centre.
 func findTown(g *worldgen.Generator) (int, int, bool) {
-	const span = 520
+	const span = 560
 	for cy := -span; cy <= span; cy++ {
 		for cx := -span; cx <= span; cx++ {
-			if g.At(cx, cy).Glyph != '#' {
-				continue
-			}
-			for r := 0; r < 40; r++ { // find the well near this wall
-				for dy := -r; dy <= r; dy++ {
-					for dx := -r; dx <= r; dx++ {
-						if g.At(cx+dx, cy+dy).Glyph == 'W' {
-							return cx + dx, cy + dy, true
-						}
-					}
-				}
+			c := g.At(cx, cy)
+			if c.Glyph == '·' && c.Color == "#A89B82" { // a plaza tile
+				return cx, cy, true
 			}
 		}
 	}
@@ -150,8 +143,8 @@ func TestHDPreview(t *testing.T) {
 	renderSettlementPNG(t, wells[0][0], wells[0][1], 56, 22, "/tmp/village_closeup_hd.png")
 	// Find and render a stone-walled town (well near a '#' stone wall).
 	if tx, ty, ok := findTown(g); ok {
-		renderSettlementPNG(t, tx, ty, 90, 14, "/tmp/town_hd.png")
-		renderSettlementPNG(t, tx, ty, 50, 24, "/tmp/town_closeup_hd.png")
+		renderSettlementPNG(t, tx, ty, 130, 9, "/tmp/town_hd.png")
+		renderSettlementPNG(t, tx, ty, 70, 17, "/tmp/town_closeup_hd.png")
 	} else {
 		t.Log("no town found in range")
 	}

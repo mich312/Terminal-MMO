@@ -196,11 +196,13 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
 - ✅ Distant reach: a village's layout extends well past its core, so a worksite
   can sit at a biome edge ~40 tiles out and be linked by a long resource road —
   a meadow village still reaches its far-off forest or lake.
-- ✅ **Stone-walled towns** (~1 in 5 settlements): a larger, denser tier with a
-  grey **stone curtain wall** (vs the timber palisade) studded with **towers** at
-  its corners and flanking every gate, a broad cobbled **market square** instead
-  of a green, and tightly packed blocks. Same organic generator and biome-fit;
-  the wall and towers reuse the autotiled-wall and overhanging-sprite paths.
+- ✅ **Stone-walled cities** (~1 in 6 settlements): a much larger, denser tier
+  (roughly double a village's span) laid out on a jittered **street grid** so
+  housing packs into proper **blocks**, behind a grey **stone curtain wall** with
+  **towers** at the corners and flanking every gate, around a broad cobbled
+  **market square**. Villages keep their organic loop-and-lane layout; tier sizes
+  (core reach, grid extent, worksite reach) are parameterised, and the macro
+  spacing was widened so cities have room.
 
 ## Parked polish
 
