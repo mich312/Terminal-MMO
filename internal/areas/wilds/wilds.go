@@ -414,12 +414,15 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Tex, t.Ground = game.TexRock, "#33363E"
 					}
 				} else if !a.collected[[2]int{wx, wy}] {
+					// Items/hats keep the biome ground under them; only the gem/hat on
+					// top is colored. (Without an explicit Ground the HD renderer would
+					// treat the loot color as the surface and dither a halo around it.)
 					if h, ok := hatAt(cell, wx, wy); ok {
 						t.Ch, t.Color = '♚', h.hex
-						t.Prop, t.PropHex = game.PropHat, h.hex
+						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
-						t.Prop, t.PropHex = game.PropGem, it.Hex // glints in HD
+						t.Prop, t.PropHex, t.Ground = game.PropGem, it.Hex, groundColor(cell.Biome) // glints in HD
 					}
 				}
 				row[lx] = t
