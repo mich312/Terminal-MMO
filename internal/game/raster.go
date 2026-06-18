@@ -401,10 +401,18 @@ func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(by
 // blitGround paints a tile's ground surface like blitTileArt, but additionally
 // dithers the tile's outer art-pixels toward a neighboring biome's color when
 // it differs — the dual-grid idea (neighbors decide the seam) expressed as a
-// live per-pixel blend, so hard grid edges become soft, organic transitions
+// live per-pixel blend, so hard grid edges become organic transitions
 // (coastlines, forest edges, path shoulders) with no authored transition art.
-// art may be nil for a flat, untextured surface.
+//
+// The dither threshold comes from a low-frequency coherent noise field sampled
+// in world space, not white noise: that makes the seam waver in contiguous
+// lobes (peninsulas and inlets) rather than salt-and-pepper static, while the
+// per-art-pixel blocks keep the look crisply retro. art may be nil for a flat
+// surface.
 func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, dark colorful.Color, nbr [8]colorful.Color, wx, wy int) {
+	// Coverage by penetration depth: most of the edge pixels flip, narrowing as
+	// the neighbor reaches deeper in, so lobes round off into peninsulas.
+	seamThresh := [seamBand + 1]float64{0.45, 0.68, 0.88}
 	for iy := 0; iy < scale; iy++ {
 		ay := iy * tileArtN / scale
 		for ix := 0; ix < scale; ix++ {
@@ -418,10 +426,8 @@ func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, d
 					col = dark
 				}
 			}
-			if target, w, ok := edgeNeighbor(ax, ay, base, nbr); ok {
-				// Stable per-world-pixel dither so the seam doesn't shimmer as the
-				// camera scrolls; heavier right at the boundary, fading one pixel in.
-				if hashNoise(wx*tileArtN+ax, wy*tileArtN+ay, 0x9E37) < w {
+			if target, depth, ok := edgeNeighbor(ax, ay, base, nbr); ok {
+				if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > seamThresh[depth] {
 					col = target
 				}
 			}
@@ -430,49 +436,52 @@ func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, d
 	}
 }
 
+// seamBand is how many art-pixels deep a neighboring biome can flood across a
+// tile edge (the transition width).
+const seamBand = 2
+
 // edgeNeighbor picks the differing neighbor a border art-pixel (ax,ay) should
-// dither toward, and the dither weight. Returns ok=false for interior pixels or
+// dither toward, and that pixel's penetration depth (0 = on the edge) so the
+// caller can taper coverage with depth. Returns ok=false for interior pixels or
 // when every touched neighbor is the same biome (so interiors stay seamless).
 // nbr is ordered N, NE, E, SE, S, SW, W, NW.
-func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (colorful.Color, float64, bool) {
-	lp, rp := edgeProx(ax, true), edgeProx(ax, false)
-	tp, bp := edgeProx(ay, true), edgeProx(ay, false)
-	w := [8]float64{tp, min(rp, tp), rp, min(rp, bp), bp, min(lp, bp), lp, min(lp, tp)}
-	best, bw := -1, 0.0
+func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (colorful.Color, int, bool) {
+	dN, dS, dW, dE := ay, tileArtN-1-ay, ax, tileArtN-1-ax
+	// A diagonal pixel's depth is the deeper of its two edge distances, so the
+	// flood rounds off at corners instead of squaring them.
+	depth := [8]int{dN, max(dN, dE), dE, max(dS, dE), dS, max(dS, dW), dW, max(dN, dW)}
+	best, bestDepth := -1, seamBand+1
 	for i := 0; i < 8; i++ {
-		if w[i] <= 0 || base.DistanceLab(nbr[i]) < 0.06 {
+		if depth[i] > seamBand || base.DistanceLab(nbr[i]) < 0.07 {
 			continue
 		}
-		if w[i] > bw {
-			best, bw = i, w[i]
+		if depth[i] < bestDepth {
+			best, bestDepth = i, depth[i]
 		}
 	}
 	if best < 0 {
 		return base, 0, false
 	}
-	return nbr[best], bw, true
+	return nbr[best], bestDepth, true
 }
 
-// edgeProx is how strongly an art-pixel at coordinate a (0..tileArtN-1) belongs
-// to a tile edge: strongest on the edge pixel, fading one pixel in, zero deeper.
-// low selects the 0 edge; otherwise the tileArtN-1 edge.
-func edgeProx(a int, low bool) float64 {
-	if low {
-		switch a {
-		case 0:
-			return 0.6
-		case 1:
-			return 0.28
-		}
-		return 0
-	}
-	switch a {
-	case tileArtN - 1:
-		return 0.6
-	case tileArtN - 2:
-		return 0.28
-	}
-	return 0
+// valueNoise is smooth, coherent [0,1) value noise: hashNoise on an integer
+// lattice, smoothstep-interpolated. Low frequency (one lattice cell ≈ one tile)
+// so thresholding it yields contiguous blobs — coherent terrain seams, not
+// per-pixel static.
+func valueNoise(x, y int) float64 {
+	const denom = 7.0 // lattice spacing in art-pixels; not a tile multiple, to avoid grid alignment
+	fx, fy := float64(x)/denom, float64(y)/denom
+	x0, y0 := int(math.Floor(fx)), int(math.Floor(fy))
+	tx, ty := fx-float64(x0), fy-float64(y0)
+	tx = tx * tx * (3 - 2*tx) // smoothstep
+	ty = ty * ty * (3 - 2*ty)
+	return bilerp(
+		hashNoise(x0, y0, 0x51),
+		hashNoise(x0+1, y0, 0x51),
+		hashNoise(x0, y0+1, 0x51),
+		hashNoise(x0+1, y0+1, 0x51),
+		tx, ty)
 }
 
 // hashNoise is a cheap deterministic [0,1) value from a few ints (FNV-ish), for
