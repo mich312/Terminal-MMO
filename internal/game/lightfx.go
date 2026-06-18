@@ -22,13 +22,29 @@ func sunState() (elev, azX, night float64) {
 	return
 }
 
-// drawGlow adds a warm/cool pool of light: an additive radial falloff snapped to
-// a px block grid and banded into a few steps, so it reads as retro light rather
-// than a smooth gradient. col is 0..1 linear-ish; intensity scales it.
+// Glow lights a pool by multiplying the underlying night-dark pixels back up
+// (revealing the terrain's own colors near the source — that reads as light,
+// not a white halo) plus a small colored add for the light's hue.
+const (
+	glowGain = 2.2  // how hard the light brightens the dark ground it reveals
+	glowHue  = 0.30 // how much of the light's own color it adds on top
+)
+
+// drawGlow paints one light pool: a radial falloff snapped to a px block grid
+// and banded into steps (retro), brightening the ground it covers. col is 0..1;
+// intensity scales the whole effect.
 func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, intensity float64, px int) {
 	if radius < 1 || px < 1 || intensity <= 0 {
 		return
 	}
+	// Per-channel brighten biased by the light's color, normalised so the
+	// brightest channel reveals fully — a warm campfire warms the ground it
+	// lights, a cool portal cools it, rather than just exposing the raw terrain.
+	mx := math.Max(col.R, math.Max(col.G, col.B))
+	if mx < 1e-3 {
+		mx = 1
+	}
+	cr, cg, cb := col.R/mx, col.G/mx, col.B/mx
 	r := int(radius)
 	x0 := int(math.Floor(float64(cx-r)/float64(px))) * px
 	y0 := int(math.Floor(float64(cy-r)/float64(px))) * px
@@ -38,8 +54,8 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 			if d >= 1 {
 				continue
 			}
-			w := math.Ceil((1-d)*3) / 3 * intensity * 0.6 // 3 bands, softened so centres don't clip
-			ar, ag, ab := col.R*255*w, col.G*255*w, col.B*255*w
+			w := math.Ceil((1-d)*3) / 3 * intensity * 0.6 // 3 bands
+			g := w * glowGain
 			for yy := by; yy < by+px; yy++ {
 				for xx := bx; xx < bx+px; xx++ {
 					or, og, ob, ok := getPixel(img, xx, yy)
@@ -47,9 +63,9 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 						continue
 					}
 					setPixel8(img, xx, yy,
-						math.Min(255, float64(or)+ar),
-						math.Min(255, float64(og)+ag),
-						math.Min(255, float64(ob)+ab))
+						math.Min(255, float64(or)*(1+g*cr)+col.R*255*w*glowHue),
+						math.Min(255, float64(og)*(1+g*cg)+col.G*255*w*glowHue),
+						math.Min(255, float64(ob)*(1+g*cb)+col.B*255*w*glowHue))
 				}
 			}
 		}
