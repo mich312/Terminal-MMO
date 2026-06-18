@@ -103,13 +103,17 @@ func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, f
 	if cam.W <= 0 || cam.H <= 0 {
 		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	}
-	grid := buildGrid(th, tm, cam, light, frame)
+	grid := buildGrid(th, tm, cam, light, frame, originX, originY)
 	stampPlayers(grid, th, players, self, frame, originX, originY)
 	return serializeGrid(th, grid)
 }
 
 // buildGrid lays the terrain into a cell grid with day/night tint and lighting.
-func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) [][]rcell {
+// Tile indices into tm are cam-relative (cam.X+vx), but lighting is evaluated in
+// absolute world coordinates (originX+vx) — for a window tilemap cam.X is 0
+// while originX is the window's true world origin, so the two differ and the
+// radial light must use the world origin to stay centered on its source.
+func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame, originX, originY int) [][]rcell {
 	ambHex, ambStr := ui.Ambient(ui.Now())
 	amb := mustHex(ambHex)
 	base := map[TileKind]colorful.Color{
@@ -136,7 +140,7 @@ func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) []
 				continue
 			}
 			ch, col, bold := tileLook(t, frame, base, labelC, portalC, amb, ambStr)
-			col = applyLight(col, x, y, light)
+			col = applyLight(col, originX+vx, originY+vy, light)
 			grid[vy][vx] = rcell{ch: ch, fg: col, bold: bold}
 		}
 	}
