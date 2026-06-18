@@ -2,6 +2,7 @@ package wilds
 
 import (
 	"image/png"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -57,20 +58,29 @@ func findWorksite(g *worldgen.Generator, cx, cy int) (int, int, bool) {
 }
 
 // findTown scans for a stone-walled city by its cobbled market square (unique to
-// cities) and returns a point at its centre, preferring one on dry ground.
+// cities) and returns its centre, preferring one bordered by terrain (forest or
+// water) so the way the footprint conforms to the land is visible.
 func findTown(g *worldgen.Generator) (int, int, bool) {
-	const span = 700
-	dry := func(cx, cy int) bool { // few water tiles in the central blocks
-		wet := 0
-		for dy := -16; dy <= 16; dy += 2 {
-			for dx := -16; dx <= 16; dx++ {
-				if b := g.At(cx+dx, cy+dy).Biome; b == worldgen.Water || b == worldgen.Deep {
-					wet++
+	const span = 800
+	// near reports terrain features in the surrounding ring, to favour a city
+	// whose footprint has to bend around woods or water.
+	near := func(cx, cy int) int {
+		feat := 0
+		for a := 0; a < 360; a += 6 {
+			rad := float64(a) * math.Pi / 180
+			for _, r := range []int{14, 20, 26} {
+				dx := int(float64(r) * math.Cos(rad))
+				dy := int(float64(r) * math.Sin(rad))
+				switch g.At(cx+dx, cy+dy).Biome {
+				case worldgen.Forest, worldgen.Water, worldgen.Deep, worldgen.Hill:
+					feat++
 				}
 			}
 		}
-		return wet < 12
+		return feat
 	}
+	best := [2]int{}
+	bestFeat, found := 0, false
 	seen := map[[2]int]bool{}
 	for cy := -span; cy <= span; cy++ {
 		for cx := -span; cx <= span; cx++ {
@@ -83,12 +93,15 @@ func findTown(g *worldgen.Generator) (int, int, bool) {
 				continue
 			}
 			seen[key] = true
-			if dry(cx, cy) {
-				return cx, cy, true
+			if f := near(cx, cy); f > bestFeat {
+				best, bestFeat, found = [2]int{cx, cy}, f, true
+			}
+			if bestFeat > 40 {
+				return best[0], best[1], true
 			}
 		}
 	}
-	return 0, 0, false
+	return best[0], best[1], found
 }
 
 func abs(n int) int {

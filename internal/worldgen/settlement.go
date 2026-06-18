@@ -264,6 +264,44 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 	canBuild := func(gx, gy int) bool { return l.in(gx, gy) && buildable[gy*n+gx] }
 
+	// A city is shaped by the land: its footprint is the patch of contiguous open
+	// lowland reachable from the centre, so it fills a plain, hugs a coast or a
+	// wood, and stops at water, forest and hills rather than being a disc stamped
+	// on the map. (Villages are small enough to just clip against terrain.)
+	var cityArea []bool
+	if s.town {
+		cityArea = make([]bool, n*n)
+		maxR := float64(reachI) + 4
+		open := func(gx, gy int) bool {
+			if !l.in(gx, gy) {
+				return false
+			}
+			switch l.at(gx, gy).biome { // open ground a city sprawls over
+			case Grass, Savanna, Sand, Snow, Swamp:
+				return true
+			}
+			return false
+		}
+		cityArea[cgy*n+cgx] = true // seed the centre even if it sits on an edge
+		q := [][2]int{{cgx, cgy}}
+		for len(q) > 0 {
+			p := q[0]
+			q = q[1:]
+			for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+				nx, ny := p[0]+d[0], p[1]+d[1]
+				if !l.in(nx, ny) || cityArea[ny*n+nx] {
+					continue
+				}
+				if math.Hypot(float64(nx-cgx), float64(ny-cgy)) > maxR || !open(nx, ny) {
+					continue
+				}
+				cityArea[ny*n+nx] = true
+				q = append(q, [2]int{nx, ny})
+			}
+		}
+	}
+	inCity := func(gx, gy int) bool { return cityArea == nil || (l.in(gx, gy) && cityArea[gy*n+gx]) }
+
 	// Main road axis: toward the nearest neighbour if there is one (so the road
 	// lines up with the connecting road through the gate), else a random bearing.
 	var axis float64
@@ -365,10 +403,15 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 
 	// Carve roads (skip non-buildable so a road meets water/rock instead of
-	// bridging it). Roads can extend to the grid edge so they pass through the wall.
+	// bridging it). A city's lanes stay within its terrain footprint; a village's
+	// can reach to the grid edge. Either way they pass through the wall as gates.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
-			if canBuild(gx, gy) && onAnyRoad(float64(gx), float64(gy)) < 0.8 {
+			ok := canBuild(gx, gy)
+			if s.town {
+				ok = inCity(gx, gy)
+			}
+			if ok && onAnyRoad(float64(gx), float64(gy)) < 0.8 {
 				l.at(gx, gy).kind = lRoad
 			}
 		}
@@ -475,20 +518,6 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// irregular (a few harmonics), so its wall and outskirts wobble like a real
 	// medieval town instead of forming a tidy circle.
 	buildLimit := func(float64) float64 { return buildR }
-	if s.town {
-		var amp, ph [3]float64
-		for k := 0; k < 3; k++ {
-			amp[k] = rng.rng(0.06, 0.17)
-			ph[k] = rng.f() * 2 * math.Pi
-		}
-		buildLimit = func(ang float64) float64 {
-			m := 1.0
-			for k := 0; k < 3; k++ {
-				m += amp[k] * math.Sin(float64(k+1)*ang+ph[k])
-			}
-			return buildR * m
-		}
-	}
 
 	// Houses front the streets or ring the green. The front band is wide and its
 	// acceptance is jittered per plot, so dwellings sit at varied setbacks (some
@@ -496,19 +525,22 @@ func (g *Generator) genLayout(s settlement) *layout {
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			r := math.Hypot(float64(gx-cgx), float64(gy-cgy))
-			if r > buildLimit(math.Atan2(float64(gy-cgy), float64(gx-cgx))) || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
+			if l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
 				continue
 			}
 			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
 			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
 			if s.town {
-				// A city packs solid: build on every plot that isn't a lane or the
-				// square; the lanes (already carved) and the one-tile gaps between
-				// buildings are the streets, so blocks fill edge to edge.
-				if greenD < squareR+0.6 {
+				// A city packs solid within its terrain footprint: every plot that
+				// isn't a lane or the square gets a building; the lanes and the
+				// one-tile gaps between buildings are the streets.
+				if !inCity(gx, gy) || greenD < squareR+0.6 {
 					continue
 				}
 			} else {
+				if r > buildLimit(math.Atan2(float64(gy-cgy), float64(gx-cgx))) {
+					continue
+				}
 				// A village fronts the streets or rings the green, at jittered setbacks.
 				roadD := onAnyRoad(float64(gx), float64(gy))
 				setback := 2.0 + cellHash.f()*1.6

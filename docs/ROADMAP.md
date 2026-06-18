@@ -196,13 +196,17 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
 - ✅ Distant reach: a village's layout extends well past its core, so a worksite
   can sit at a biome edge ~40 tiles out and be linked by a long resource road —
   a meadow village still reaches its far-off forest or lake.
-- ✅ **Stone-walled cities** (~1 in 6 settlements): a much larger, denser tier
-  (roughly double a village's span) laid out on a jittered **street grid** so
-  housing packs into proper **blocks**, behind a grey **stone curtain wall** with
-  **towers** at the corners and flanking every gate, around a broad cobbled
-  **market square**. Villages keep their organic loop-and-lane layout; tier sizes
-  (core reach, grid extent, worksite reach) are parameterised, and the macro
-  spacing was widened so cities have room.
+- ✅ **Tangled-medieval stone cities** (~1 in 6 settlements): a much larger,
+  denser tier (roughly double a village's span). Winding lanes radiate from the
+  market to the gates, tied by wobbly ring roads and alleys — a connected,
+  **walkable** web (a test floods from the centre and asserts it reaches a gate).
+  Buildings pack the core solid on cobbled ground, behind a grey **stone curtain
+  wall** with **towers** at corners and gates, around a market square anchored by
+  a great **cathedral** and a castle **keep**. Crucially the footprint is **built
+  to the terrain**: it's the patch of contiguous open lowland around the centre,
+  so a city fills a plain, wraps a lake and stops at forest or hills — the wall
+  conforms to that shape rather than being a disc. Villages keep their organic
+  loop-and-lane layout; tier sizes are parameterised and macro spacing widened.
 
 ## Parked polish
 
