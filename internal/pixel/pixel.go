@@ -153,6 +153,133 @@ func q6(v byte, x, y int, dither bool) int {
 	return lvl
 }
 
+// DirtyCellGap is how many clean cells may sit between two changed cells before
+// they're still merged into one delta rectangle — bridging tiny gaps trades a
+// few clean pixels for far fewer sub-images. DirtyCellRects coalesces on the
+// terminal cell grid, so scattered animation (water glint, fireflies, glow
+// pulses) costs a few small rectangles instead of one frame-spanning box.
+const DirtyCellGap = 2
+
+// DirtyCellRects diffs prev vs cur on the cell grid (cw×ch pixels per cell) and
+// returns a small set of cell-aligned, pixel-coordinate rectangles covering
+// every changed pixel — the basis for multi-region deltas. It returns
+// changed=false when the frames are identical. When the changes are too large
+// or too fragmented to beat a full repaint (covered area exceeds maxFrac of the
+// frame, or more than maxRects rectangles are needed) it returns rects=nil with
+// changed=true, signalling the caller to repaint in full.
+func DirtyCellRects(prev, cur []byte, w, h, cw, ch, maxRects int, maxFrac float64) (rects []image.Rectangle, changed bool) {
+	if cw < 1 || ch < 1 {
+		if _, ok := DirtyRect(prev, cur, w, h); !ok {
+			return nil, false
+		}
+		return nil, true
+	}
+	cols := (w + cw - 1) / cw
+	rows := (h + ch - 1) / ch
+	dirty := make([]bool, cols*rows)
+	for y := 0; y < h; y++ {
+		base := y * w * 4
+		rowOff := (y / ch) * cols
+		for x := 0; x < w; {
+			cell := rowOff + x/cw
+			if dirty[cell] {
+				x = (x/cw + 1) * cw // already dirty — skip to the next cell
+				continue
+			}
+			o := base + x*4
+			if prev[o] != cur[o] || prev[o+1] != cur[o+1] || prev[o+2] != cur[o+2] || prev[o+3] != cur[o+3] {
+				dirty[cell] = true
+				x = (x/cw + 1) * cw
+				continue
+			}
+			x++
+		}
+	}
+
+	// Coalesce dirty cells: per-row horizontal runs (bridging gaps up to
+	// DirtyCellGap), then extend a run downward whenever the row below has an
+	// identical column span — so vertical bands (a lake, a tall structure) become
+	// one rectangle rather than one per row.
+	type crect struct{ c0, c1, r0, r1 int }
+	var done, open []crect
+	for r := 0; r < rows; r++ {
+		var runs [][2]int
+		for c := 0; c < cols; {
+			if !dirty[r*cols+c] {
+				c++
+				continue
+			}
+			c0, last := c, c
+			c++
+			for c < cols {
+				if dirty[r*cols+c] {
+					last = c
+					c++
+					continue
+				}
+				g := 1
+				for c+g < cols && !dirty[r*cols+c+g] {
+					g++
+				}
+				if g <= DirtyCellGap && c+g < cols {
+					c += g // bridge a short clean gap and keep the run going
+					continue
+				}
+				break
+			}
+			runs = append(runs, [2]int{c0, last})
+		}
+		next := make([]crect, 0, len(runs))
+		used := make([]bool, len(open))
+		for _, rn := range runs {
+			ext := -1
+			for i, o := range open {
+				if !used[i] && o.c0 == rn[0] && o.c1 == rn[1] {
+					ext = i
+					break
+				}
+			}
+			if ext >= 0 {
+				used[ext] = true
+				o := open[ext]
+				o.r1 = r
+				next = append(next, o)
+			} else {
+				next = append(next, crect{rn[0], rn[1], r, r})
+			}
+		}
+		for i, o := range open {
+			if !used[i] {
+				done = append(done, o)
+			}
+		}
+		open = next
+		if len(done)+len(open) > maxRects {
+			return nil, true // too fragmented — a full repaint is cheaper
+		}
+	}
+	done = append(done, open...)
+	if len(done) == 0 {
+		return nil, false
+	}
+	if len(done) > maxRects {
+		return nil, true
+	}
+
+	area := 0
+	rects = make([]image.Rectangle, len(done))
+	for i, d := range done {
+		x0, y0 := d.c0*cw, d.r0*ch
+		x1, y1 := min((d.c1+1)*cw, w), min((d.r1+1)*ch, h)
+		rects[i] = image.Rect(x0, y0, x1, y1)
+		area += (x1 - x0) * (y1 - y0)
+	}
+	if float64(area) > float64(w*h)*maxFrac {
+		return nil, true // changed area too large — repaint in full
+	}
+	return rects, true
+}
+
 // DirtyRect returns the bounding box of pixels that differ between two RGBA
 // buffers of the same w×h, and whether anything changed.
 func DirtyRect(prev, cur []byte, w, h int) (image.Rectangle, bool) {
@@ -192,14 +319,4 @@ func Crop(img *image.RGBA, r image.Rectangle) *image.RGBA {
 		copy(out.Pix[do:do+r.Dx()*4], img.Pix[so:so+r.Dx()*4])
 	}
 	return out
-}
-
-// SnapToCells expands a pixel rect outward to the text-cell grid so a kitty/
-// sixel sub-image placed at the cell aligns exactly with the dirty region.
-func SnapToCells(r image.Rectangle, cw, ch, w, h int) image.Rectangle {
-	x0 := (r.Min.X / cw) * cw
-	y0 := (r.Min.Y / ch) * ch
-	x1 := min(((r.Max.X+cw-1)/cw)*cw, w)
-	y1 := min(((r.Max.Y+ch-1)/ch)*ch, h)
-	return image.Rect(x0, y0, x1, y1)
 }

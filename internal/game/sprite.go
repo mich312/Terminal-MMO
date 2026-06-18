@@ -53,9 +53,32 @@ func stampSprite(grid [][]rcell, th *ui.Theme, p world.Player, isSelf bool, fram
 	putCell(grid, fr, fc, cell)
 }
 
+// accessoryColors returns the main/shade colors for an accessory: its own Hex
+// (shade derived by darkening), or the default gold when unspecified. Worn
+// avatars, ground loot and inventory icons all draw through this so a hat looks
+// the same everywhere.
+func accessoryColors(accessory int) (main, shade colorful.Color) {
+	a := accessories[wrapIdx(accessory, len(accessories))]
+	if a.Hex == "" {
+		return hatMain, hatShade
+	}
+	main = mustHex(a.Hex)
+	return main, main.BlendLab(spriteBlack, 0.42).Clamped()
+}
+
+// AccessoryColor is an accessory's display hex (the default gold when it has
+// none), so other packages (the Wilds' hat loot) color it consistently.
+func AccessoryColor(accessory int) string {
+	if a := accessories[wrapIdx(accessory, len(accessories))]; a.Hex != "" {
+		return a.Hex
+	}
+	return "#FFD166"
+}
+
 // spritePixel resolves a bitmap code to a color (and whether it's opaque),
-// shading relative to the player's body color.
-func spritePixel(code rune, body colorful.Color, isSelf bool) (colorful.Color, bool) {
+// shading relative to the player's body color. accMain/accShade color the
+// accessory pixels (H/h) so each hat keeps its own hue.
+func spritePixel(code rune, body, accMain, accShade colorful.Color, isSelf bool) (colorful.Color, bool) {
 	b := body
 	if isSelf {
 		b = body.BlendLab(spriteWhite, 0.15).Clamped()
@@ -74,9 +97,9 @@ func spritePixel(code rune, body colorful.Color, isSelf bool) (colorful.Color, b
 	case 'W':
 		return spriteWhite, true
 	case 'H':
-		return hatMain, true
+		return accMain, true
 	case 'h':
-		return hatShade, true
+		return accShade, true
 	default:
 		return colorful.Color{}, false
 	}
@@ -91,6 +114,7 @@ func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []s
 		th = ui.Default
 	}
 	body := playerColor(color)
+	accMain, accShade := accessoryColors(accessory)
 	bmp := AvatarBitmap(style, accessory, world.DirS, 0)
 	bg := lipgloss.Color(ui.HexPanelBg)
 	toLip := func(c colorful.Color) lipgloss.Color { return lipgloss.Color(c.Clamped().Hex()) }
@@ -101,8 +125,8 @@ func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []s
 		bot := []rune(bmp[row+1])
 		var sb strings.Builder
 		for col := 0; col < len(top) && col < len(bot); col++ {
-			tc, topOp := spritePixel(top[col], body, false)
-			bc, botOp := spritePixel(bot[col], body, false)
+			tc, topOp := spritePixel(top[col], body, accMain, accShade, false)
+			bc, botOp := spritePixel(bot[col], body, accMain, accShade, false)
 			switch {
 			case topOp && botOp:
 				sb.WriteString(th.FgBg(toLip(tc), toLip(bc)).Render("▀"))

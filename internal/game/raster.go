@@ -226,6 +226,7 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, fram
 func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, fr int) {
 	wf := AvatarWalkFrame(p.LastMoved, frame)
 	body := playerColor(p.Color)
+	accMain, accShade := accessoryColors(p.Accessory)
 	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, wf)
 	bw, bh := len([]rune(bmp[0])), len(bmp)
 	// Integer pixel size keeps edges sharp; aim for ~2 tiles tall.
@@ -256,7 +257,7 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 	for sy := 0; sy < bh; sy++ {
 		runes := []rune(bmp[sy])
 		for sx := 0; sx < bw && sx < len(runes); sx++ {
-			col, opaque := spritePixel(runes[sx], body, isSelf)
+			col, opaque := spritePixel(runes[sx], body, accMain, accShade, isSelf)
 			if !opaque {
 				continue
 			}
@@ -634,10 +635,22 @@ func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, d
 	// Coverage by penetration depth: most of the edge pixels flip, narrowing as
 	// the neighbor reaches deeper in, so lobes round off into peninsulas.
 	seamThresh := [seamBand + 1]float64{0.45, 0.68, 0.88}
-	for iy := 0; iy < scale; iy++ {
-		ay := iy * tileArtN / scale
-		for ix := 0; ix < scale; ix++ {
-			ax := ix * tileArtN / scale
+
+	// Resolve the tile's color at art resolution (tileArtN×tileArtN) once, then
+	// nearest-upscale into the scale×scale block. The seam test and noise lookup
+	// depend only on the art pixel, so doing this per art-pixel rather than per
+	// screen-pixel is a (scale/tileArtN)² reduction — at scale 26 that's ~19× less
+	// of the per-pixel Lab-distance math that dominated the render.
+	//
+	// Which of the 8 neighbors are a *different* biome is constant for the whole
+	// tile, so the (expensive) DistanceLab comparisons are hoisted out of the loop.
+	var diff [8]bool
+	for i := 0; i < 8; i++ {
+		diff[i] = base.DistanceLab(nbr[i]) >= 0.07
+	}
+	var cells [tileArtN][tileArtN]color.RGBA
+	for ay := 0; ay < tileArtN; ay++ {
+		for ax := 0; ax < tileArtN; ax++ {
 			col := base
 			if art != nil {
 				switch art[ay][ax] {
@@ -647,12 +660,18 @@ func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, d
 					col = dark
 				}
 			}
-			if target, depth, ok := edgeNeighbor(ax, ay, base, nbr); ok {
+			if target, depth, ok := edgeNeighbor(ax, ay, nbr, diff); ok {
 				if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > seamThresh[depth] {
 					col = target
 				}
 			}
-			img.SetRGBA(ox+ix, oy+iy, colorfulToRGBA(col))
+			cells[ay][ax] = colorfulToRGBA(col)
+		}
+	}
+	for iy := 0; iy < scale; iy++ {
+		ay := iy * tileArtN / scale
+		for ix := 0; ix < scale; ix++ {
+			img.SetRGBA(ox+ix, oy+iy, cells[ay][ix*tileArtN/scale])
 		}
 	}
 }
@@ -665,15 +684,17 @@ const seamBand = 2
 // dither toward, and that pixel's penetration depth (0 = on the edge) so the
 // caller can taper coverage with depth. Returns ok=false for interior pixels or
 // when every touched neighbor is the same biome (so interiors stay seamless).
-// nbr is ordered N, NE, E, SE, S, SW, W, NW.
-func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (colorful.Color, int, bool) {
+// nbr is ordered N, NE, E, SE, S, SW, W, NW; diff[i] reports whether nbr[i] is a
+// different biome from the tile (precomputed once per tile by the caller, since
+// the Lab-distance test is constant across the tile's pixels).
+func edgeNeighbor(ax, ay int, nbr [8]colorful.Color, diff [8]bool) (colorful.Color, int, bool) {
 	dN, dS, dW, dE := ay, tileArtN-1-ay, ax, tileArtN-1-ax
 	// A diagonal pixel's depth is the deeper of its two edge distances, so the
 	// flood rounds off at corners instead of squaring them.
 	depth := [8]int{dN, max(dN, dE), dE, max(dS, dE), dS, max(dS, dW), dW, max(dN, dW)}
 	best, bestDepth := -1, seamBand+1
 	for i := 0; i < 8; i++ {
-		if depth[i] > seamBand || base.DistanceLab(nbr[i]) < 0.07 {
+		if depth[i] > seamBand || !diff[i] {
 			continue
 		}
 		if depth[i] < bestDepth {
@@ -681,7 +702,7 @@ func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (color
 		}
 	}
 	if best < 0 {
-		return base, 0, false
+		return colorful.Color{}, 0, false
 	}
 	return nbr[best], bestDepth, true
 }

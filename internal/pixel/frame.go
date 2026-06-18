@@ -35,34 +35,49 @@ func (f *FrameWriter) Reset() { f.prev = nil }
 // allocID hands out the next kitty image id.
 func (f *FrameWriter) allocID() int { f.nextID++; return f.nextID }
 
-// WriteFrame transmits img to w. It sends a full repaint when forceFull is set,
-// on the first frame or a size change, or when the changed area exceeds half the
-// frame (a full frame is then cheaper than the delta overhead); a frame
-// identical to the last sends nothing. It returns the number of image-payload
-// bytes written (excluding the few cursor-control bytes), for bandwidth
-// accounting.
+// maxDeltaRects caps how many sub-images one delta frame may emit before a full
+// repaint is preferred; maxDeltaFrac caps their combined area as a fraction of
+// the frame. maxLiveDeltas bounds how many kitty delta images may pile up
+// (uncollected until the next full repaint) before we force one, so a long run
+// of deltas can't leak terminal image memory.
+const (
+	maxDeltaRects = 96
+	maxDeltaFrac  = 0.5
+	maxLiveDeltas = 512
+)
+
+// WriteFrame transmits img to w. A frame identical to the last sends nothing;
+// otherwise it sends only the changed regions as cell-aligned delta sub-images.
+// It falls back to a full repaint when forceFull is set, on the first frame or a
+// size change, when the changes are too large or too fragmented to beat a full
+// frame, or when too many kitty deltas have accumulated. It returns the number
+// of image-payload bytes written (excluding the few cursor-control bytes), for
+// bandwidth accounting.
 func (f *FrameWriter) WriteFrame(w io.Writer, img *image.RGBA, forceFull bool) (sent int) {
 	W, H := img.Bounds().Dx(), img.Bounds().Dy()
-	doFull := forceFull || f.prev == nil || W != f.pw || H != f.ph || f.CellW <= 0 || f.CellH <= 0
+	doFull := forceFull || f.prev == nil || W != f.pw || H != f.ph ||
+		f.CellW <= 0 || f.CellH <= 0 || len(f.liveIDs) > maxLiveDeltas
 
 	if !doFull {
-		switch r, changed := DirtyRect(f.prev, img.Pix, W, H); {
+		rects, changed := DirtyCellRects(f.prev, img.Pix, W, H, f.CellW, f.CellH, maxDeltaRects, maxDeltaFrac)
+		switch {
 		case !changed:
 			// static frame — send nothing
-		case r.Dx()*r.Dy() > W*H/2:
-			doFull = true
+		case rects == nil:
+			doFull = true // too large/fragmented — a full repaint is cheaper
 		default:
-			sr := SnapToCells(r, f.CellW, f.CellH, W, H)
-			var sub []byte
-			if f.Kitty {
-				id := f.allocID()
-				sub = EncodeKitty(Crop(img, sr), id, 0, 0)
-				f.liveIDs = append(f.liveIDs, id)
-			} else {
-				sub = EncodeSixel(Crop(img, sr), f.Dither)
+			for _, sr := range rects {
+				var sub []byte
+				if f.Kitty {
+					id := f.allocID()
+					sub = EncodeKitty(Crop(img, sr), id, 0, 0)
+					f.liveIDs = append(f.liveIDs, id)
+				} else {
+					sub = EncodeSixel(Crop(img, sr), f.Dither)
+				}
+				writeAt(w, sub, sr.Min.X/f.CellW, sr.Min.Y/f.CellH)
+				sent += len(sub)
 			}
-			writeAt(w, sub, sr.Min.X/f.CellW, sr.Min.Y/f.CellH)
-			sent += len(sub)
 		}
 	}
 	if doFull {
