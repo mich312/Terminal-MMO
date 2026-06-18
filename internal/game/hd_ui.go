@@ -28,12 +28,12 @@ var (
 
 // hudScale picks a legible text scale for the frame width.
 func hudScale(w int) int {
-	s := w / 360
+	s := w / 540
 	if s < 2 {
 		s = 2
 	}
-	if s > 4 {
-		s = 4
+	if s > 3 {
+		s = 3
 	}
 	return s
 }

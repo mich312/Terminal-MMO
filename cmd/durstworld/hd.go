@@ -33,17 +33,18 @@ import (
 // just the Wilds: walk through a portal and the destination renders in pixels
 // too. It shares the live world, so HD and bubbletea players see each other.
 const (
-	hdScale   = 36 // pixels per tile — larger on-screen tiles
-	hdFPS     = 12
-	hdRefresh = 48 // frames between full repaints
-	hdMaxTile = 140
+	hdScale    = 36 // pixels per tile — larger on-screen tiles
+	hdFPS      = 12 // tile-animation / world-reflection rate (the `frame` counter)
+	hdRenderHz = 30 // max on-screen redraw rate; input is coalesced to this cadence
+	hdRefresh  = 48 // frames between full repaints
+	hdMaxTile  = 140
 	// Cap the rendered buffer so per-frame cost (render + dirty-diff + encode +
 	// bandwidth) doesn't scale with window size — the work is ~width·height
 	// pixels, and at hdScale=24 a full-screen buffer is huge. This bounds it to
 	// ≈hdMaxPxW×hdMaxPxH regardless of terminal size; a bigger window just shows
 	// the same world slice at the same cost, not more.
-	hdMaxPxW = 1024
-	hdMaxPxH = 640
+	hdMaxPxW = 1920
+	hdMaxPxH = 1200
 )
 
 // HD UI panels reachable with single keys (HD has no command line).
@@ -193,7 +194,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		lastChat = time.Now()
 	}
 
-	draw := func() {
+	render := func() {
 		cols, rows := win.Width, win.Height
 		if cols < 8 || rows < 6 {
 			return
@@ -246,6 +247,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		out.Flush()
 		framesSent++
 	}
+
+	// Input handlers mark the frame dirty rather than rendering inline, so a slow
+	// encode never blocks key reads and a burst of movement keys collapses into a
+	// single render. The ticker below is the only thing that actually draws.
+	dirty := false
+	draw := func() { dirty = true }
 
 	hud := func() {
 		dur := time.Since(start).Seconds()
@@ -340,8 +347,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 	}
 
-	draw()
-	ticker := time.NewTicker(time.Second / hdFPS)
+	render() // first paint; thereafter the ticker renders when something is dirty
+	ticker := time.NewTicker(time.Second / hdRenderHz)
 	defer ticker.Stop()
 	// Minimal escape-sequence parser: ESC [ (or O) <params> <final>. Arrow keys
 	// are A/B/C/D; a ";2" parameter means Shift is held → run.
@@ -455,8 +462,16 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			out.WriteString("\x1b[2J")
 			draw()
 		case <-ticker.C:
-			frame++ // advance tile animation and reflect other players' movement
-			draw()
+			// Advance the animation/world-reflection counter on wall-clock time so
+			// it stays at hdFPS regardless of the (higher) render cadence.
+			if nf := int(time.Since(start) / (time.Second / hdFPS)); nf != frame {
+				frame = nf
+				dirty = true
+			}
+			if dirty {
+				render()
+				dirty = false
+			}
 		}
 	}
 }

@@ -14,11 +14,17 @@ import (
 
 // EncodeKitty transmits img as RGBA (f=32), zlib-compressed (o=z), base64'd and
 // chunked at 4096 bytes per APC escape, displayed at the cursor without moving
-// it (a=T, C=1). When cols/rows > 0 the image is display-scaled to fill that
+// it (a=T, C=1). q=2 suppresses the terminal's per-image acknowledgements so they
+// don't land in the input stream. When id > 0 the image is tagged with that id
+// (i=) so the caller can later delete it precisely — the basis for flicker-free
+// double-buffering. When cols/rows > 0 the image is display-scaled to fill that
 // many text cells (c=,r=) — the basis for a fixed internal render resolution.
-func EncodeKitty(img *image.RGBA, cols, rows int) []byte {
+func EncodeKitty(img *image.RGBA, id, cols, rows int) []byte {
 	var zb bytes.Buffer
-	zw := zlib.NewWriter(&zb)
+	// BestSpeed (level 1): a full frame re-compresses on every camera scroll, so
+	// compression time is on the hot path for movement. Flat pixel-art runs still
+	// pack well at level 1, and it's several times faster than the default level.
+	zw, _ := zlib.NewWriterLevel(&zb, zlib.BestSpeed)
 	zw.Write(img.Pix)
 	zw.Close()
 
@@ -37,7 +43,10 @@ func EncodeKitty(img *image.RGBA, cols, rows int) []byte {
 		}
 		buf.WriteString("\x1b_G")
 		if first {
-			fmt.Fprintf(&buf, "f=32,o=z,s=%d,v=%d,a=T,C=1,", bounds.Dx(), bounds.Dy())
+			fmt.Fprintf(&buf, "f=32,o=z,s=%d,v=%d,a=T,C=1,q=2,", bounds.Dx(), bounds.Dy())
+			if id > 0 {
+				fmt.Fprintf(&buf, "i=%d,", id)
+			}
 			if cols > 0 && rows > 0 {
 				fmt.Fprintf(&buf, "c=%d,r=%d,", cols, rows)
 			}
