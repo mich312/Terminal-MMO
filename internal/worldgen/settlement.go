@@ -42,6 +42,12 @@ func (s settlement) dims() (reach, half, outpost int) {
 	return s.reach, s.reach + 18, s.reach + 10
 }
 
+// nb4/nb8 are the 4- and 8-neighbour offsets used by the layout flood fills.
+var (
+	nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	nb8 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
+)
+
 // ── settlement identity ──────────────────────────────────────────────────────
 
 type settlement struct {
@@ -584,106 +590,152 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
-	// Palisade: enclose the built-up area with an irregular polygon. For each of
-	// N angular sectors, take the farthest *built* cell (houses and green, not the
-	// roads that run out to the gates) + a margin as a vertex, then connect the
-	// vertices with straight runs — so the wall hugs the houses and has real
-	// corners, not a smooth ring ballooned out along the roads.
-	const sectors = 20
-	sectorR := make([]float64, sectors)
-	for i := range sectorR {
-		sectorR[i] = 5
-	}
+	// Wall: trace the outer edge of the built-up blob. Take every settlement cell
+	// (houses, lanes, square, well), fill the gaps and any enclosed water so the
+	// interior is solid, then put the wall on the ring of ground just outside it.
+	// This hugs the real, irregular footprint — jagged, and able to follow a
+	// concave bay — instead of smoothing it into a near-circular polygon.
+	core := make([]bool, n*n)
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
-			if !builtUp(l.at(gx, gy).kind) {
+			switch l.at(gx, gy).kind {
+			case lBuildAnchor, lBuildBody, lRoad, lGate, lWell, lPlaza, lGreen, lPond:
+				core[gy*n+gx] = true
+			}
+		}
+	}
+	region := make([]bool, n*n) // core dilated one cell, so the wall sits just off the houses
+	copy(region, core)
+	for gy := 0; gy < n; gy++ {
+		for gx := 0; gx < n; gx++ {
+			if core[gy*n+gx] {
 				continue
 			}
-			ddx, ddy := float64(gx-cgx), float64(gy-cgy)
-			r := math.Hypot(ddx, ddy)
-			ang := math.Atan2(ddy, ddx)
-			si := int((ang+math.Pi)/(2*math.Pi)*sectors) % sectors
-			if r+2 > sectorR[si] {
-				sectorR[si] = r + 2
+			for _, d := range nb4 {
+				if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && core[ny*n+nx] {
+					region[gy*n+gx] = true
+					break
+				}
 			}
 		}
 	}
-	for i := range sectorR { // clamp jumps so the wall stays a simple loop
-		if sectorR[i] > reach-1 {
-			sectorR[i] = reach - 1
+	inside := make([]bool, n*n) // fill holes: cells not reachable from the border are enclosed
+	ext := make([]bool, n*n)
+	var stk [][2]int
+	for i := 0; i < n; i++ {
+		for _, p := range [][2]int{{i, 0}, {i, n - 1}, {0, i}, {n - 1, i}} {
+			if !region[p[1]*n+p[0]] && !ext[p[1]*n+p[0]] {
+				ext[p[1]*n+p[0]] = true
+				stk = append(stk, p)
+			}
 		}
 	}
-	vert := func(i int) (int, int) {
-		a := float64(i%sectors)/sectors*2*math.Pi - math.Pi
-		r := sectorR[i%sectors]
-		return cgx + int(math.Round(math.Cos(a)*r)), cgy + int(math.Round(math.Sin(a)*r))
+	for len(stk) > 0 {
+		p := stk[len(stk)-1]
+		stk = stk[:len(stk)-1]
+		for _, d := range nb4 {
+			nx, ny := p[0]+d[0], p[1]+d[1]
+			if l.in(nx, ny) && !region[ny*n+nx] && !ext[ny*n+nx] {
+				ext[ny*n+nx] = true
+				stk = append(stk, [2]int{nx, ny})
+			}
+		}
 	}
+	for i := range inside {
+		inside[i] = !ext[i]
+	}
+	insideAt := func(gx, gy int) bool { return l.in(gx, gy) && inside[gy*n+gx] }
+
 	wallKind := lFence // timber palisade
 	if s.town {
 		wallKind = lWall // stone curtain wall
 	}
-	for i := 0; i < sectors; i++ {
-		x0, y0 := vert(i)
-		x1, y1 := vert(i + 1)
-		bresenham(x0, y0, x1, y1, func(gx, gy int) {
-			if !l.in(gx, gy) {
-				return
+	// The wall ring: ground just outside the inside region. 8-adjacency leaves no
+	// diagonal gap to slip through.
+	for gy := 0; gy < n; gy++ {
+		for gx := 0; gx < n; gx++ {
+			if inside[gy*n+gx] || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
+				continue
 			}
-			c := l.at(gx, gy)
-			switch c.kind {
-			case lRoad, lGate:
-				c.kind = lGate // a road crossing the wall is a gateway
-			case lEmpty, lYard, lField:
-				if canBuild(gx, gy) {
-					c.kind = wallKind
+			for _, d := range nb8 {
+				if nx, ny := gx+d[0], gy+d[1]; insideAt(nx, ny) {
+					l.at(gx, gy).kind = wallKind
+					break
 				}
 			}
-		})
+		}
+	}
+	// Punch gates where a lane meets the wall.
+	for gy := 0; gy < n; gy++ {
+		for gx := 0; gx < n; gx++ {
+			if l.at(gx, gy).kind != lRoad {
+				continue
+			}
+			edge := false
+			for _, d := range nb8 {
+				if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && !inside[ny*n+nx] {
+					edge = true
+					break
+				}
+			}
+			if !edge {
+				continue
+			}
+			for _, d := range nb8 {
+				if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && l.at(nx, ny).kind == wallKind {
+					l.at(nx, ny).kind = lGate
+				}
+			}
+		}
 	}
 	autotileFences(l)
 
-	// A town's wall is studded with towers — at the polygon's corners and
-	// flanking each gate, so every entrance reads as a gatehouse.
+	// A city's wall is studded with towers — flanking the gates and scattered,
+	// spaced, along the curtain.
 	if s.town {
-		for i := 0; i < sectors; i += 2 {
-			if vx, vy := vert(i); l.in(vx, vy) && l.at(vx, vy).kind == lWall {
-				l.at(vx, vy).kind = lTower
-			}
-		}
 		for gy := 0; gy < n; gy++ {
 			for gx := 0; gx < n; gx++ {
-				if l.at(gx, gy).kind != lGate {
+				if l.at(gx, gy).kind != lWall {
 					continue
 				}
-				for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-					if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && l.at(nx, ny).kind == lWall {
-						l.at(nx, ny).kind = lTower
+				tower := unit(hashCoord(s.id^0x70E7, l.ox+gx, l.oy+gy)) < 0.05
+				for _, d := range nb8 {
+					if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && l.at(nx, ny).kind == lGate {
+						tower = true
 					}
+				}
+				if !tower {
+					continue
+				}
+				clash := false // keep towers from clumping
+				for dy := -2; dy <= 2 && !clash; dy++ {
+					for dx := -2; dx <= 2; dx++ {
+						if (dx != 0 || dy != 0) && l.in(gx+dx, gy+dy) && l.at(gx+dx, gy+dy).kind == lTower {
+							clash = true
+							break
+						}
+					}
+				}
+				if !clash {
+					l.at(gx, gy).kind = lTower
 				}
 			}
 		}
-	}
-
-	wallRad := func(ang float64) float64 {
-		si := int((ang+math.Pi)/(2*math.Pi)*sectors) % sectors
-		return sectorR[si]
 	}
 
 	// Outlying worksites — a quarry on nearby hills, a lumber camp at the forest
-	// edge, a fishing hut on the shore — each placed in fitting terrain just past
-	// the wall and linked back through a gate by a spur road.
-	placeOutbuildings(l, canBuild, cgx, cgy, wallRad, outpost)
+	// edge, a fishing hut on the shore — each placed in fitting terrain past the
+	// wall and linked back through a gate by a spur road.
+	placeOutbuildings(l, canBuild, insideAt, cgx, cgy, outpost)
 
-	// Fields along the approach, just outside the wall on the road axis.
+	// Fields along the approach: open ground just outside the wall on the road axis.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
-			if l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
+			if l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) || insideAt(gx, gy) {
 				continue
 			}
-			ddx, ddy := float64(gx-cgx), float64(gy-cgy)
-			r := math.Hypot(ddx, ddy)
-			ang := math.Atan2(ddy, ddx)
-			if r < wallRad(ang)+1 || r > reach-1 {
+			r := math.Hypot(float64(gx-cgx), float64(gy-cgy))
+			if r > reach+4 {
 				continue
 			}
 			if dline := distToAxis(float64(gx), float64(gy), cfx, cfy, dx, dy); dline < 6 {
@@ -704,9 +756,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if c.kind != lEmpty {
 				continue
 			}
-			r := math.Hypot(float64(gx-cgx), float64(gy-cgy))
-			ang := math.Atan2(float64(gy-cgy), float64(gx-cgx))
-			if r < wallRad(ang) && canBuild(gx, gy) {
+			if insideAt(gx, gy) && canBuild(gx, gy) {
 				c.kind = yardKind
 			}
 		}
@@ -796,20 +846,20 @@ func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt build
 // placeOutbuildings sites the village's resource buildings in the surrounding
 // terrain and links each back to the village by a spur road. Each is optional —
 // it only appears if its terrain (hills / forest / water) lies within reach.
-func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wallRad func(float64) float64, outpost int) {
+func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(int, int) bool, cgx, cgy, outpost int) {
 	n := l.n
 
-	// find returns the matching-biome cell nearest the village but past the wall.
+	// find returns the matching-biome cell nearest the village but outside its wall.
 	find := func(want func(Biome) bool) (int, int, bool) {
 		bx, by, bd, ok := 0, 0, math.MaxFloat64, false
 		for gy := 2; gy < n-2; gy++ {
 			for gx := 2; gx < n-2; gx++ {
-				if !want(l.at(gx, gy).biome) {
+				if !want(l.at(gx, gy).biome) || insideAt(gx, gy) {
 					continue
 				}
 				ddx, ddy := float64(gx-cgx), float64(gy-cgy)
 				r := math.Hypot(ddx, ddy)
-				if r < wallRad(math.Atan2(ddy, ddx))+3 || r > float64(outpost) {
+				if r > float64(outpost) {
 					continue
 				}
 				if r < bd {
@@ -830,19 +880,15 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wa
 		return 0, 0, false
 	}
 	// carveSpur runs a road from a worksite back to the village, opening a gate
-	// where it crosses the wall; inside the wall the existing lanes take over.
+	// where it crosses the wall; once it reaches the inside, the lanes take over.
 	carveSpur := func(x0, y0 int) {
 		bresenham(x0, y0, cgx, cgy, func(gx, gy int) {
-			if !l.in(gx, gy) {
-				return
-			}
-			ddx, ddy := float64(gx-cgx), float64(gy-cgy)
-			if math.Hypot(ddx, ddy) < wallRad(math.Atan2(ddy, ddx))-0.5 {
+			if !l.in(gx, gy) || insideAt(gx, gy) {
 				return
 			}
 			c := l.at(gx, gy)
 			switch c.kind {
-			case lFence:
+			case lFence, lWall:
 				c.kind = lGate
 			case lEmpty, lField:
 				if c.biome != Water && c.biome != Mountain && c.biome != Deep {
@@ -935,15 +981,6 @@ func occupied(k lkind) bool {
 	return false
 }
 
-// builtUp is the occupied set the wall hugs: houses and the central square, but
-// not the roads (which run out to the gates).
-func builtUp(k lkind) bool {
-	switch k {
-	case lGreen, lPlaza, lWell, lBuildAnchor, lBuildBody:
-		return true
-	}
-	return false
-}
 func occupiedBuilding(k lkind) bool { return k == lBuildAnchor || k == lBuildBody }
 
 // autotileFences picks each fence segment's orientation from its fence/gate
