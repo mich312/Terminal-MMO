@@ -42,6 +42,11 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	}
 
 	grid := buildGrid(th, tm, cam, light, frame, originX, originY)
+	// Day/night ambient for the ground and prop colors, so the whole HD scene
+	// (not just the base terrain that flows through buildGrid) shifts with the
+	// time of day, matching the glyph renderer.
+	ambHex, ambStr := ui.Ambient(ui.Now())
+	amb := mustHex(ambHex)
 	cols := make([][]colorful.Color, cam.H)
 	texs := make([][]TileTex, cam.H)
 	props := make([][]TileProp, cam.H)
@@ -69,14 +74,14 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			if t.Ground != "" {
 				// Lighting is evaluated in absolute world coordinates (see buildGrid):
 				// tx,ty index the window tile, originX+x/originY+y is its world cell.
-				cols[y][x] = applyLight(style.tint(t.Ground), originX+x, originY+y, light)
+				cols[y][x] = applyLight(tint(style.tint(t.Ground), amb, ambStr), originX+x, originY+y, light)
 			}
 			if t.Prop != PropNone {
 				ph := t.PropHex
 				if ph == "" {
 					ph = t.Color
 				}
-				propCols[y][x] = style.tint(ph)
+				propCols[y][x] = tint(style.tint(ph), amb, ambStr)
 			}
 		}
 	}
