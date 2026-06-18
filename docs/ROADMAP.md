@@ -206,7 +206,14 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
   to the terrain**: it's the patch of contiguous open lowland around the centre,
   so a city fills a plain, wraps a lake and stops at forest or hills — the wall
   conforms to that shape rather than being a disc. Villages keep their organic
-  loop-and-lane layout; tier sizes are parameterised and macro spacing widened.
+  loop-and-lane layout.
+- ✅ Every settlement draws its **own size** — a continuum of core reach from a
+  small hamlet up to a large city (at/above a threshold it becomes a stone city,
+  below it a timber village), so there's a full range rather than two fixed
+  tiers. Settlements sit **far apart** (macro cell widened to 168 → typically
+  200–490 tiles between neighbours), and their built-up outlines are
+  **lobed/irregular** (harmonic boundaries) so neither villages nor cities ring a
+  tidy circle.
 
 ## Parked polish
 

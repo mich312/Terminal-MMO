@@ -23,28 +23,23 @@ import "math"
 
 const (
 	settleSalt    uint64 = 0x5E771E3D0FAB12C7
-	settleCell           = 96 // macro-grid cell size, in world tiles
-	settleHubKeep        = 76 // keep settlement centres this far from the origin hub
-	// Per-tier dimensions: core reach (roads/wall/fields), layout-grid half-extent
-	// (kept below settleCell so a settlement spans at most one macro), and how far
-	// out a worksite may reach. Cities are much larger than villages.
-	villageReach   = 22
-	villageHalf    = 44
-	villageOutpost = 42
-	cityReach      = 44
-	cityHalf       = 60
-	cityOutpost    = 54
-	linkMax        = 200.0 // longest village-to-village connecting road
-	linkFade       = 110.0 // beyond this a connecting road dwindles to a trail
+	settleCell           = 168 // macro-grid cell size — settlements sit far apart
+	settleHubKeep        = 132 // keep settlement centres this far from the origin hub
+	// Each settlement draws its own core reach in [minReach, maxReach]; at or above
+	// cityThreshold it is a stone-walled city, below it a timber village. So sizes
+	// run as a continuum from a hamlet up to a large city.
+	minReach      = 15
+	maxReach      = 46
+	cityThreshold = 33
+	linkMax       = 360.0 // longest settlement-to-settlement connecting road
+	linkFade      = 200.0 // beyond this a connecting road dwindles to a trail
 )
 
 // dims returns the settlement's core reach, layout-grid half-extent and worksite
-// reach, by tier.
+// reach, scaled from its own size. The half-extent stays below settleCell so a
+// settlement spans at most one macro-cell.
 func (s settlement) dims() (reach, half, outpost int) {
-	if s.town {
-		return cityReach, cityHalf, cityOutpost
-	}
-	return villageReach, villageHalf, villageOutpost
+	return s.reach, s.reach + 18, s.reach + 10
 }
 
 // ── settlement identity ──────────────────────────────────────────────────────
@@ -53,7 +48,8 @@ type settlement struct {
 	mx, my int    // macro-cell
 	id     uint64 // identity hash — seeds the whole layout
 	cx, cy int    // centre, world coordinates
-	town   bool   // a larger, stone-walled town (vs a timber-palisade village)
+	reach  int    // core size, in tiles (its own scale)
+	town   bool   // a stone-walled city (vs a timber-palisade village)
 	valid  bool
 }
 
@@ -90,7 +86,11 @@ func (g *Generator) computeSettlement(mx, my int) settlement {
 		return s
 	}
 	s.id = h
-	s.town = unit(hashCoord(h, 0x707, 0x777)) < 0.16 // ~1 in 6 settlements is a city
+	// Every settlement gets its own size, skewed toward the small end so most are
+	// villages and a minority grow into cities — a continuum, not two fixed tiers.
+	sz := unit(hashCoord(h, 0x717, 0x727))
+	s.reach = minReach + int(sz*sz*float64(maxReach-minReach))
+	s.town = s.reach >= cityThreshold
 	s.valid = true
 	return s
 }
@@ -271,7 +271,21 @@ func (g *Generator) genLayout(s settlement) *layout {
 	var cityArea []bool
 	if s.town {
 		cityArea = make([]bool, n*n)
-		maxR := float64(reachI) + 4
+		// Lobed boundary (a few harmonics) so even a city on open ground isn't a
+		// disc; the terrain flood-fill then clips it further.
+		var amp, ph [3]float64
+		for k := 0; k < 3; k++ {
+			amp[k] = rng.rng(0.10, 0.26)
+			ph[k] = rng.f() * 2 * math.Pi
+		}
+		maxRAt := func(nx, ny int) float64 {
+			ang := math.Atan2(float64(ny-cgy), float64(nx-cgx))
+			m := 1.0
+			for k := 0; k < 3; k++ {
+				m += amp[k] * math.Sin(float64(k+1)*ang+ph[k])
+			}
+			return (float64(reachI) + 4) * m
+		}
 		open := func(gx, gy int) bool {
 			if !l.in(gx, gy) {
 				return false
@@ -292,7 +306,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 				if !l.in(nx, ny) || cityArea[ny*n+nx] {
 					continue
 				}
-				if math.Hypot(float64(nx-cgx), float64(ny-cgy)) > maxR || !open(nx, ny) {
+				if math.Hypot(float64(nx-cgx), float64(ny-cgy)) > maxRAt(nx, ny) || !open(nx, ny) {
 					continue
 				}
 				cityArea[ny*n+nx] = true
@@ -516,8 +530,23 @@ func (g *Generator) genLayout(s settlement) *layout {
 
 	// The built-up limit. A village fills a near-disc; a city's edge is lobed and
 	// irregular (a few harmonics), so its wall and outskirts wobble like a real
-	// medieval town instead of forming a tidy circle.
+	// medieval town instead of forming a tidy circle. A village's built-up edge is
+	// lobed (a few harmonics) so its wall wobbles rather than ringing a circle.
 	buildLimit := func(float64) float64 { return buildR }
+	if !s.town {
+		var amp, ph [3]float64
+		for k := 0; k < 3; k++ {
+			amp[k] = rng.rng(0.08, 0.2)
+			ph[k] = rng.f() * 2 * math.Pi
+		}
+		buildLimit = func(ang float64) float64 {
+			m := 1.0
+			for k := 0; k < 3; k++ {
+				m += amp[k] * math.Sin(float64(k+1)*ang+ph[k])
+			}
+			return buildR * m
+		}
+	}
 
 	// Houses front the streets or ring the green. The front band is wide and its
 	// acceptance is jittered per plot, so dwellings sit at varied setbacks (some

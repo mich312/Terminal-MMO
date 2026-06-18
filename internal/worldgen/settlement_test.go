@@ -53,7 +53,7 @@ func TestSettlementDeterminism(t *testing.T) {
 
 func TestNoSettlementsNearHub(t *testing.T) {
 	g := New(worldSeed)
-	const hubZone = 48 // no settlement cell may reach the functional hub near origin
+	const hubZone = 90 // no settlement cell may reach the cleared zone near origin
 	for y := -hubZone; y <= hubZone; y++ {
 		for x := -hubZone; x <= hubZone; x++ {
 			if _, ok := g.settlementAt(x, y); ok {
