@@ -171,14 +171,16 @@ const (
 type buildType uint8
 
 const (
-	btNone      buildType = iota
-	btCottage             // 1×1
-	btHouse               // 2×2
-	btLonghouse           // 3×2
-	btBarn                // 2×2
-	btChurch              // 2×3 (tall, village centrepiece)
-	btKeep                // 3×3 (a city's castle keep)
-	btCathedral           // 3×4 (a city's great church)
+	btNone       buildType = iota
+	btCottage              // 1×1
+	btHouse                // 2×2
+	btLonghouse            // 3×2
+	btBarn                 // 2×2
+	btChurch               // 2×3 (tall, village centrepiece)
+	btKeep                 // 3×3 (a city's castle keep)
+	btCathedral            // 3×4 (a city's great church)
+	btTownhouse            // 2×3 (tall, multi-storey — a city's wealthy core)
+	btMarketHall           // 3×3 (a city's market hall)
 )
 
 // footprint reports a building's width and height in tiles. The anchor is the
@@ -197,6 +199,10 @@ func footprint(bt buildType) (w, h int) {
 		return 3, 3
 	case btCathedral:
 		return 3, 4
+	case btTownhouse:
+		return 2, 3
+	case btMarketHall:
+		return 3, 3
 	default:
 		return 1, 1
 	}
@@ -514,6 +520,13 @@ func (g *Generator) genLayout(s settlement) *layout {
 			break
 		}
 	}
+	if s.town { // a market hall flanks the square, opposite the cathedral
+		for _, o := range [][2]int{{3, -1}, {4, -1}, {3, 0}, {-4, -1}, {3, 1}, {4, 0}, {-5, -1}, {4, 1}} {
+			if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], btMarketHall) {
+				break
+			}
+		}
+	}
 	squareR, squareKind := 2.4, lGreen
 	if s.town { // a city has a broad cobbled market square, not a little green
 		squareR, squareKind = 4.6, lPlaza
@@ -576,8 +589,37 @@ func (g *Generator) genLayout(s settlement) *layout {
 		return p
 	}
 	chooseType := func(r float64, rr *srng) buildType {
+		if s.town { // a city has districts: a wealthy core, plainer outskirts
+			switch {
+			case r > buildR*0.7: // outskirts: poorer housing and warehouses by the gates
+				switch rr.n(4) {
+				case 0:
+					return btBarn
+				case 1:
+					return btLonghouse
+				default:
+					return btCottage
+				}
+			case r > buildR*0.4: // middling streets: ordinary houses
+				switch rr.n(4) {
+				case 0:
+					return btCottage
+				case 1:
+					return btLonghouse
+				default:
+					return btHouse
+				}
+			default: // wealthy core: tall multi-storey townhouses
+				switch rr.n(3) {
+				case 0:
+					return btHouse
+				default:
+					return btTownhouse
+				}
+			}
+		}
 		switch {
-		case r > buildR*0.62: // outskirts: small cottages and the odd barn
+		case r > buildR*0.62: // village outskirts: small cottages and the odd barn
 			if rr.f() < 0.28 {
 				return btBarn
 			}
@@ -1207,6 +1249,10 @@ func buildingGlyph(bt buildType) rune {
 		return 'C'
 	case btKeep:
 		return 'K'
+	case btMarketHall:
+		return 'M'
+	case btTownhouse:
+		return 'T'
 	case btLonghouse:
 		return 'L'
 	case btBarn:
@@ -1226,6 +1272,10 @@ func buildingColor(bt buildType, b Biome) string {
 		return "#D6D2C4" // pale cathedral stone
 	case btKeep:
 		return "#9A9CA6" // grey castle stone
+	case btTownhouse:
+		return "#CDBBA0" // pale plaster townhouse
+	case btMarketHall:
+		return "#B89A6A" // timber-framed market hall
 	case btBarn:
 		return "#7C5A38" // dark timber
 	}

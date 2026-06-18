@@ -154,6 +154,7 @@ func TestHDPreview(t *testing.T) {
 	if tx, ty, ok := findTown(g); ok {
 		renderSettlementPNG(t, tx, ty, 130, 9, "/tmp/town_hd.png")
 		renderSettlementPNG(t, tx, ty, 70, 17, "/tmp/town_closeup_hd.png")
+		renderSettlementPNG(t, tx, ty, 38, 30, "/tmp/town_center_hd.png")
 	} else {
 		t.Log("no town found in range")
 	}

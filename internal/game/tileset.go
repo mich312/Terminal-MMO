@@ -391,14 +391,16 @@ var portalArt = []string{
 // placement, half-timbering, steeple offset). The renderer picks one per
 // instance by world position, so a street isn't lined with identical copies.
 var buildingArt = map[TileProp][][]string{
-	PropBldCottage:   bldVariants(1, 1, bldDwelling),
-	PropBldHouse:     bldVariants(2, 2, bldDwelling),
-	PropBldLonghouse: bldVariants(3, 2, bldDwelling),
-	PropBldBarn:      bldVariants(2, 2, bldBarn),
-	PropBldChurch:    bldVariants(2, 3, bldChurch),
-	PropBldCathedral: bldVariants(3, 4, bldChurch),
-	PropBldKeep:      {genKeep(3, 3)},
-	PropTower:        {towerArt},
+	PropBldCottage:    bldVariants(1, 1, bldDwelling),
+	PropBldHouse:      bldVariants(2, 2, bldDwelling),
+	PropBldLonghouse:  bldVariants(3, 2, bldDwelling),
+	PropBldBarn:       bldVariants(2, 2, bldBarn),
+	PropBldChurch:     bldVariants(2, 3, bldChurch),
+	PropBldCathedral:  bldVariants(3, 4, bldChurch),
+	PropBldTownhouse:  bldVariants(2, 3, bldDwelling),
+	PropBldMarketHall: bldVariants(3, 3, bldDwelling),
+	PropBldKeep:       {genKeep(3, 3)},
+	PropTower:         {towerArt},
 }
 
 // genKeep builds a castle keep: a solid stone block with a flat battlemented

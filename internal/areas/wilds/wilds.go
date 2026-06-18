@@ -549,7 +549,7 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Tex, t.Ground = game.TexField, "#86974A"
 	case '%': // a covered building footprint tile — drawn by its anchor (blocks)
 		t.Prop, t.Ground = game.PropBldBody, packedEarth
-	case 'h', 'H', 'L', 'B', 'C', 'K': // a settlement building anchor (blocks)
+	case 'h', 'H', 'L', 'B', 'C', 'K', 'T', 'M': // a settlement building anchor (blocks)
 		t.Prop = buildingProp(c.Variant)
 		t.PropHex, t.Ground = c.Color, packedEarth
 		if t.Prop == game.PropHouse { // a lone wilderness cabin keeps its biome ground
@@ -600,6 +600,10 @@ func buildingProp(variant uint8) game.TileProp {
 		return game.PropBldKeep
 	case 7:
 		return game.PropBldCathedral
+	case 8:
+		return game.PropBldTownhouse
+	case 9:
+		return game.PropBldMarketHall
 	default:
 		return game.PropHouse
 	}

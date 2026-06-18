@@ -70,9 +70,9 @@ const (
 	PropPipe     // pipe segment with a valve light
 	PropFountain // water feature centerpiece (glows)
 	// Signature overworld flora, one recognizable silhouette per biome.
-	PropAcacia // savanna: flat-topped umbrella tree (tall, blocks)
-	PropPalm   // beach: fronds on a leaning trunk (tall, blocks)
-	PropFir    // snow: snow-tipped conifer (tall, blocks)
+	PropAcacia   // savanna: flat-topped umbrella tree (tall, blocks)
+	PropPalm     // beach: fronds on a leaning trunk (tall, blocks)
+	PropFir      // snow: snow-tipped conifer (tall, blocks)
 	PropReed     // swamp: a clump of thin cattail reeds (in-tile)
 	PropCrag     // hill: a jagged rock spire (in-tile, blocks)
 	PropCampfire // a traveler's campfire — flickers and casts warm light at night
@@ -84,20 +84,22 @@ const (
 	// Multi-tile village buildings (drawn bottom-left-anchored, overhanging up
 	// and right). PropBldBody marks a footprint tile that the anchor's sprite
 	// covers — it blocks movement but draws nothing itself.
-	PropBldCottage   // 1×1 cottage
-	PropBldHouse     // 2×2 house
-	PropBldLonghouse // 3×2 longhouse
-	PropBldBarn      // 2×2 barn
-	PropBldChurch    // 2×3 church with a steeple
-	PropBldKeep      // 3×3 castle keep (a city's stronghold)
-	PropBldCathedral // 3×4 great church (a city's grand centrepiece)
-	PropBldBody      // a covered footprint tile (no draw)
-	PropCrop         // ripe grain standing in a field (harvestable)
-	PropStone        // cut-stone rubble at a quarry (harvestable)
-	PropLog          // a stack of logs at a lumber camp (harvestable)
-	PropFish         // a fish by a jetty (harvestable)
-	PropStoneWall    // a stone curtain wall segment, for towns (blocks)
-	PropTower        // a stone wall tower, for towns (blocks, overhangs upward)
+	PropBldCottage    // 1×1 cottage
+	PropBldHouse      // 2×2 house
+	PropBldLonghouse  // 3×2 longhouse
+	PropBldBarn       // 2×2 barn
+	PropBldChurch     // 2×3 church with a steeple
+	PropBldKeep       // 3×3 castle keep (a city's stronghold)
+	PropBldCathedral  // 3×4 great church (a city's grand centrepiece)
+	PropBldTownhouse  // 2×3 tall multi-storey townhouse
+	PropBldMarketHall // 3×3 market hall
+	PropBldBody       // a covered footprint tile (no draw)
+	PropCrop          // ripe grain standing in a field (harvestable)
+	PropStone         // cut-stone rubble at a quarry (harvestable)
+	PropLog           // a stack of logs at a lumber camp (harvestable)
+	PropFish          // a fish by a jetty (harvestable)
+	PropStoneWall     // a stone curtain wall segment, for towns (blocks)
+	PropTower         // a stone wall tower, for towns (blocks, overhangs upward)
 )
 
 // Tile is one cell of a parsed map.

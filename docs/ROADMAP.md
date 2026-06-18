@@ -217,7 +217,10 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
 - ✅ City interiors gained structure: a **citadel** — a castle keep inside its own
   small rectangular **inner wall** with corner towers and a gate, a fortified
   contrast to the organic streets — plus **secondary squares** scattered through
-  the blocks alongside the central cathedral + market.
+  the blocks alongside the central cathedral + market. Cities now read as having
+  **districts**: a wealthy core of tall multi-storey **townhouses**, ordinary
+  houses on the middling streets, and cottages + **warehouses** on the poorer
+  outskirts; a **market hall** flanks the square opposite the cathedral.
 - ✅ Settlement walls are **traced along the built-up edge** (a boundary trace of
   the hole-filled footprint) rather than an angular-sector polygon, so they're
   jagged and can follow concave bays around woods and lakes instead of rounding
