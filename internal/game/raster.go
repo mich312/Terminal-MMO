@@ -161,7 +161,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
-					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs, frame)
+					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs, frame, props[vy][vx])
 				}
 			}
 		}
@@ -486,8 +486,10 @@ func bldHash(wx, wy int) uint32 {
 // tile (vx,vy) so it rises up and extends right from its base. It picks one of
 // the type's variants and nudges the color, both keyed on world position (wx,wy)
 // so the same building always looks the same. Codes: P wall, p roof, D
-// base/door, L window, R trim/cross, F glowing forge mouth.
-func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color, variants [][]string, frame int) {
+// base/door, L window, R trim/cross, F glowing forge mouth. The roof takes a
+// material colour (thatch / tile / slate) chosen by building type and position,
+// so a street mixes golden thatch and red-tiled roofs instead of one flat tone.
+func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color, variants [][]string, frame int, prop TileProp) {
 	hsh := bldHash(wx, wy)
 	art := variants[hsh%uint32(len(variants))]
 	if j := float64(int((hsh>>5)%7)-3) * 0.022; j >= 0 { // ±~7% lightness per building
@@ -502,7 +504,7 @@ func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color
 	left := vx * scale
 	top := (vy+1)*scale - len(art)*apx
 	body := colorfulToRGBA(col)
-	roof := colorfulToRGBA(col.BlendLab(shadowColor, 0.45).Clamped())
+	roof := colorfulToRGBA(roofColor(prop, hsh, col).Clamped())
 	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.62).Clamped())
 	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.6).Clamped())
 	trim := colorfulToRGBA(col.BlendLab(spriteWhite, 0.32).Clamped())
@@ -535,6 +537,53 @@ func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color
 			}
 		}
 	}
+}
+
+// roofMaterials are the roofing palettes a settlement mixes: golden thatch on
+// humble buildings, red clay tile and blue-grey slate on grander ones.
+var (
+	roofThatch = mustHex("#A8823E")
+	roofTile   = mustHex("#9C4A33")
+	roofSlate  = mustHex("#566270")
+	roofLead   = mustHex("#6E7178")
+)
+
+// roofColor picks a building's roof material by type — thatch for cottages,
+// barns and longhouses; tile or slate for the wealthier townhouses, market
+// halls and churches; lead-grey for the castle's stone — with a little per-house
+// variation (hsh) so a district isn't uniform. The chosen material is darkened
+// toward the building's own shade so it still sits in the same light.
+func roofColor(prop TileProp, hsh uint32, body colorful.Color) colorful.Color {
+	var mat colorful.Color
+	switch prop {
+	case PropBldCottage, PropBldBarn, PropBldLonghouse, PropBldSmithy:
+		mat = roofThatch // humble buildings keep thatch
+	case PropBldTavern:
+		mat = roofTile // a prosperous tavern is tiled
+	case PropBldTownhouse, PropBldMarketHall:
+		if hsh&1 == 0 {
+			mat = roofTile
+		} else {
+			mat = roofSlate
+		}
+	case PropBldChurch, PropBldCathedral, PropBldKeep:
+		mat = roofLead // grand stone roofs in lead/slate
+	case PropBldHouse:
+		if hsh&1 == 0 {
+			mat = roofThatch
+		} else {
+			mat = roofTile
+		}
+	default:
+		return body.BlendLab(shadowColor, 0.45) // wilderness cabin: shaded body
+	}
+	// Nudge lightness per building so neighbours of the same material differ a touch.
+	if hsh&2 == 0 {
+		mat = mat.BlendLab(spriteWhite, 0.06)
+	} else {
+		mat = mat.BlendLab(shadowColor, 0.06)
+	}
+	return mat
 }
 
 // accumBuildingShadow records a building's soft contact shadow, centred under
