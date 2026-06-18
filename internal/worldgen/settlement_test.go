@@ -177,6 +177,54 @@ func TestCityWalkable(t *testing.T) {
 	}
 }
 
+// TestBridgesConnect confirms that any plank bridge a city lays across the water
+// it spans is walkable and links land on both sides — never a dead stub. It scans
+// settlements for bridge tiles and checks each is walkable with at least two
+// walkable orthogonal neighbours (the two banks it joins).
+func TestBridgesConnect(t *testing.T) {
+	g := New(worldSeed)
+	checked, bridges := 0, 0
+	for ring := 1; ring < 40 && bridges == 0; ring++ {
+		for my := -ring; my <= ring; my++ {
+			for mx := -ring; mx <= ring; mx++ {
+				if abs(mx) != ring && abs(my) != ring {
+					continue
+				}
+				s := g.settlementFor(mx, my)
+				if !s.valid {
+					continue
+				}
+				checked++
+				_, half, _ := s.dims()
+				for y := s.cy - half; y <= s.cy+half; y++ {
+					for x := s.cx - half; x <= s.cx+half; x++ {
+						if g.At(x, y).Glyph != 'b' {
+							continue
+						}
+						bridges++
+						if !g.Walkable(x, y) {
+							t.Fatalf("bridge tile at (%d,%d) is not walkable", x, y)
+						}
+						walk := 0
+						for _, d := range nb4 {
+							if g.Walkable(x+d[0], y+d[1]) {
+								walk++
+							}
+						}
+						if walk < 2 {
+							t.Fatalf("bridge at (%d,%d) connects <2 walkable cells (%d) — a stub", x, y, walk)
+						}
+					}
+				}
+			}
+		}
+	}
+	if bridges == 0 {
+		t.Skipf("no bridges found across %d settlements near origin", checked)
+	}
+	t.Logf("verified %d bridge tiles across %d settlements", bridges, checked)
+}
+
 // TestPreviewVillage renders the first few settlements as ASCII so the layout
 // can be eyeballed. Run with: go test ./internal/worldgen -run Preview -v
 //

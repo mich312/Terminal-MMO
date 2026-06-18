@@ -160,6 +160,7 @@ const (
 	lClearing                 // a cleared worksite floor — packed earth (walkable)
 	lStump                    // a cut stump / log at a lumber camp (walkable)
 	lJetty                    // a wooden jetty out over the water (walkable)
+	lBridge                   // a plank bridge spanning water inside a settlement (walkable)
 	lWall                     // a stone curtain wall, for towns (blocks)
 	lTower                    // a stone wall tower, for towns (blocks)
 	lPlaza                    // a cobbled market square, for towns (walkable)
@@ -733,12 +734,62 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// interior is solid, then put the wall on the ring of ground just outside it.
 	// This hugs the real, irregular footprint — jagged, and able to follow a
 	// concave bay — instead of smoothing it into a near-circular polygon.
+	// A settlement built across water (a stream or pond it surrounds) treats that
+	// water as part of its interior: a narrow channel with built ground on both
+	// opposite banks is "spanned", so the wall encloses it rather than running
+	// along the bank, and a plank bridge later crosses it.
+	const bridgeSpan = 7
+	isBuilt := func(gx, gy int) bool {
+		if !l.in(gx, gy) {
+			return false
+		}
+		switch l.at(gx, gy).kind {
+		case lBuildAnchor, lBuildBody, lRoad, lStreet, lGate, lWell, lPlaza, lPaved,
+			lGreen, lCourtyard, lWall, lTower:
+			return true
+		}
+		return false
+	}
+	isOpenWater := func(gx, gy int) bool {
+		if !l.in(gx, gy) {
+			return false
+		}
+		c := l.at(gx, gy)
+		return c.kind == lEmpty && (c.biome == Water || c.biome == Deep)
+	}
+	// spannedAxis: built ground lies within bridgeSpan in +dir and again in −dir of
+	// the water cell, with only water between — i.e. the city straddles it here.
+	spannedAxis := func(gx, gy, dxs, dys int) bool {
+		bank := func(sgn int) bool {
+			for k := 1; k <= bridgeSpan; k++ {
+				cx, cy := gx+dxs*k*sgn, gy+dys*k*sgn
+				if isOpenWater(cx, cy) {
+					continue
+				}
+				return isBuilt(cx, cy)
+			}
+			return false
+		}
+		return bank(1) && bank(-1)
+	}
+	spanned := make([]bool, n*n)
+	for gy := 0; gy < n; gy++ {
+		for gx := 0; gx < n; gx++ {
+			if isOpenWater(gx, gy) && (spannedAxis(gx, gy, 1, 0) || spannedAxis(gx, gy, 0, 1)) {
+				spanned[gy*n+gx] = true
+			}
+		}
+	}
+
 	core := make([]bool, n*n)
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			switch l.at(gx, gy).kind {
 			case lBuildAnchor, lBuildBody, lRoad, lStreet, lGate, lWell, lPlaza, lGreen, lPond,
 				lCourtyard, lWall, lTower: // the citadel counts as built, too
+				core[gy*n+gx] = true
+			}
+			if spanned[gy*n+gx] { // water the city straddles counts as interior
 				core[gy*n+gx] = true
 			}
 		}
@@ -857,6 +908,49 @@ func (g *Generator) genLayout(s settlement) *layout {
 				}
 				if !clash {
 					l.at(gx, gy).kind = lTower
+				}
+			}
+		}
+	}
+
+	// Bridges: where a street runs up to the bank of the water the city straddles,
+	// lay a plank bridge straight across to walkable ground on the far side, so the
+	// two banks connect. Started only from streets/roads (so crossings sit at the
+	// ends of through-routes rather than decking the whole channel) and landed only
+	// on walkable ground (never a building or the wall) so a bridge is never a stub.
+	isWalkBank := func(gx, gy int) bool {
+		if !l.in(gx, gy) || isOpenWater(gx, gy) {
+			return false
+		}
+		switch l.at(gx, gy).kind {
+		case lBuildAnchor, lBuildBody, lWall, lTower, lFence, lPond, lQuarryRock, lWell:
+			return false // a blocker — not a bank to land on
+		case lStreet, lRoad, lGate, lPlaza, lPaved, lGreen, lCourtyard, lYard:
+			return true
+		}
+		return insideAt(gx, gy) // inside, open ground becomes walkable yard later
+	}
+	for gy := 0; gy < n; gy++ {
+		for gx := 0; gx < n; gx++ {
+			switch l.at(gx, gy).kind {
+			case lStreet, lRoad, lGate, lPlaza:
+			default:
+				continue
+			}
+			for _, d := range nb4 {
+				if !isOpenWater(gx+d[0], gy+d[1]) {
+					continue
+				}
+				k := 1
+				for ; k <= bridgeSpan; k++ {
+					if !isOpenWater(gx+d[0]*k, gy+d[1]*k) {
+						break
+					}
+				}
+				if k <= bridgeSpan && isWalkBank(gx+d[0]*k, gy+d[1]*k) {
+					for j := 1; j < k; j++ {
+						l.at(gx+d[0]*j, gy+d[1]*j).kind = lBridge
+					}
 				}
 			}
 		}
@@ -1315,6 +1409,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Path, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
 	case lJetty:
 		return Cell{Biome: Path, Glyph: '·', Color: "#7A5A38", Walkable: true} // dock planks
+	case lBridge:
+		return Cell{Biome: Path, Glyph: 'b', Color: "#8A5A30", Walkable: true} // a plank bridge over water
 	case lWall:
 		return Cell{Biome: Hill, Glyph: '#', Color: "#8E9099"} // stone curtain wall (blocks)
 	case lTower:
