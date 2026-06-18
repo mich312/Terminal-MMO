@@ -61,6 +61,10 @@ type Light struct {
 
 const nightFloor = 0.12
 
+// lightBands is how many discrete brightness steps the radial light snaps to —
+// stepped rings (retro) rather than a smooth gradient.
+const lightBands = 4
+
 var shadowColor = mustHex("#05070B")
 
 // rcell is one composited screen cell: a glyph in fg, optionally over a bg
@@ -230,6 +234,11 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if f > 1 {
 		f = 1
 	}
+	// Quantize brightness into discrete bands so the light reads as stepped
+	// retro rings (lit / dim / dark) instead of a smooth modern gradient.
+	t := (f - nightFloor) / (1 - nightFloor)
+	t = math.Round(t*lightBands) / lightBands
+	f = nightFloor + t*(1-nightFloor)
 	return col.BlendLab(shadowColor, 1-f).Clamped()
 }
 

@@ -486,12 +486,20 @@ func pickTreeArt(wx, wy int) []string {
 	}
 }
 
-// portalPixel returns a swirling portal color for an art pixel at the given
-// frame — diagonal bands of the style's portal ramp drift to read as an active
-// gate.
+// portalPixel returns the color for an art pixel of an active gate's swirl. A
+// 3-arm spiral (angle + radius from the gate's centre) rotates with the frame
+// and pulses outward, banded to three flat colors of the style's portal ramp —
+// a chunky, clearly-animated retro gate rather than a smooth gradient.
 func portalPixel(ax, ay, frame int, pal ui.Palette) color.RGBA {
-	s := 0.5 + 0.5*math.Sin(float64(ax+ay)*0.7-float64(frame)*0.45)
-	return colorfulToRGBA(mustHex(string(ui.Blend(pal.PortalA, pal.PortalB, s))))
+	dx, dy := float64(ax)-5.5, float64(ay)-5.5 // portalArt is 12×12 art-pixels
+	ang := math.Atan2(dy, dx)
+	r := math.Hypot(dx, dy)
+	s := 0.5 + 0.5*math.Sin(3*ang+r*0.9-float64(frame)*0.5)
+	band := math.Floor(s * 3)
+	if band > 2 {
+		band = 2
+	}
+	return colorfulToRGBA(mustHex(string(ui.Blend(pal.PortalA, pal.PortalB, band/2))))
 }
 
 // blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale
