@@ -163,6 +163,7 @@ const (
 	lTower                    // a stone wall tower, for towns (blocks)
 	lPlaza                    // a cobbled market square, for towns (walkable)
 	lPaved                    // packed/cobbled ground between city buildings (walkable)
+	lCourtyard                // the open bailey inside a city's citadel (walkable)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -322,6 +323,60 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 	inCity := func(gx, gy int) bool { return cityArea == nil || (l.in(gx, gy) && cityArea[gy*n+gx]) }
 
+	// A city's citadel: a castle keep in a small walled bailey, placed before the
+	// streets (so the lanes route around it) as a rectangle — a sharp, fortified
+	// contrast to the organic town — with corner towers and one gate to the city.
+	if s.town {
+		for try := 0; try < 14; try++ {
+			cw, ch := 8+rng.n(4), 8+rng.n(4) // 8..11
+			a := rng.f() * 2 * math.Pi
+			dist := 8 + float64(cw+ch)/4
+			qx := cgx + int(math.Cos(a)*dist)
+			qy := cgy + int(math.Sin(a)*dist)
+			x0, y0 := qx-cw/2, qy-ch/2
+			fits := true
+			for yy := y0 - 1; yy <= y0+ch && fits; yy++ {
+				for xx := x0 - 1; xx <= x0+cw; xx++ {
+					if !inCity(xx, yy) || !canBuild(xx, yy) || l.at(xx, yy).kind != lEmpty {
+						fits = false
+						break
+					}
+				}
+			}
+			if !fits || !placeBuilding(l, canBuild, qx-1, qy+1, btKeep) {
+				continue
+			}
+			for yy := y0; yy < y0+ch; yy++ {
+				for xx := x0; xx < x0+cw; xx++ {
+					if perim := xx == x0 || xx == x0+cw-1 || yy == y0 || yy == y0+ch-1; perim {
+						l.at(xx, yy).kind = lWall
+					} else if l.at(xx, yy).kind == lEmpty {
+						l.at(xx, yy).kind = lCourtyard
+					}
+				}
+			}
+			for _, c := range [][2]int{{x0, y0}, {x0 + cw - 1, y0}, {x0, y0 + ch - 1}, {x0 + cw - 1, y0 + ch - 1}} {
+				l.at(c[0], c[1]).kind = lTower
+			}
+			ggx, ggy := qx, y0 // gate on the side facing the city centre
+			if cgy > y0+ch/2 {
+				ggy = y0 + ch - 1
+			}
+			if d := cgx - qx; d > ch/2 || d < -ch/2 {
+				ggx, ggy = x0, qy
+				if cgx > x0+cw/2 {
+					ggx = x0 + cw - 1
+				}
+			}
+			for _, o := range [][2]int{{0, 0}, {1, 0}, {0, 1}} {
+				if l.in(ggx+o[0], ggy+o[1]) && l.at(ggx+o[0], ggy+o[1]).kind == lWall {
+					l.at(ggx+o[0], ggy+o[1]).kind = lGate
+				}
+			}
+			break
+		}
+	}
+
 	// Main road axis: toward the nearest neighbour if there is one (so the road
 	// lines up with the connecting road through the gate), else a random bearing.
 	var axis float64
@@ -427,6 +482,9 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// can reach to the grid edge. Either way they pass through the wall as gates.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
+			if l.at(gx, gy).kind != lEmpty { // don't pave over the citadel
+				continue
+			}
 			ok := canBuild(gx, gy)
 			if s.town {
 				ok = inCity(gx, gy)
@@ -456,13 +514,6 @@ func (g *Generator) genLayout(s settlement) *layout {
 			break
 		}
 	}
-	if s.town { // the keep, on the far side of the square
-		for _, o := range [][2]int{{0, -4}, {1, -4}, {-1, -4}, {2, -4}, {0, -5}, {-2, -4}} {
-			if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], btKeep) {
-				break
-			}
-		}
-	}
 	squareR, squareKind := 2.4, lGreen
 	if s.town { // a city has a broad cobbled market square, not a little green
 		squareR, squareKind = 4.6, lPlaza
@@ -474,6 +525,22 @@ func (g *Generator) genLayout(s settlement) *layout {
 			}
 			if math.Hypot(float64(gx)-gpx, float64(gy)-gpy) < squareR {
 				l.at(gx, gy).kind = squareKind
+			}
+		}
+	}
+	if s.town { // secondary squares break up the dense blocks
+		for i := 0; i < 2; i++ {
+			a := rng.f() * 2 * math.Pi
+			d := float64(reach) * rng.rng(0.35, 0.7)
+			sx, sy := cgx+int(math.Cos(a)*d), cgy+int(math.Sin(a)*d)
+			sr := rng.rng(1.8, 2.8)
+			for gy := 0; gy < n; gy++ {
+				for gx := 0; gx < n; gx++ {
+					if l.at(gx, gy).kind == lEmpty && inCity(gx, gy) &&
+						math.Hypot(float64(gx-sx), float64(gy-sy)) < sr {
+						l.at(gx, gy).kind = lPlaza
+					}
+				}
 			}
 		}
 	}
@@ -599,7 +666,8 @@ func (g *Generator) genLayout(s settlement) *layout {
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			switch l.at(gx, gy).kind {
-			case lBuildAnchor, lBuildBody, lRoad, lGate, lWell, lPlaza, lGreen, lPond:
+			case lBuildAnchor, lBuildBody, lRoad, lGate, lWell, lPlaza, lGreen, lPond,
+				lCourtyard, lWall, lTower: // the citadel counts as built, too
 				core[gy*n+gx] = true
 			}
 		}
@@ -1123,6 +1191,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Path, Glyph: '·', Color: "#A89B82", Walkable: true} // cobbled square
 	case lPaved:
 		return Cell{Biome: Path, Glyph: '·', Color: "#9A8E78", Walkable: true} // packed city ground
+	case lCourtyard:
+		return Cell{Biome: Path, Glyph: '·', Color: "#8F8576", Walkable: true} // castle bailey
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:

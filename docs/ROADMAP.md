@@ -214,6 +214,14 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
   200–490 tiles between neighbours), and their built-up outlines are
   **lobed/irregular** (harmonic boundaries) so neither villages nor cities ring a
   tidy circle.
+- ✅ City interiors gained structure: a **citadel** — a castle keep inside its own
+  small rectangular **inner wall** with corner towers and a gate, a fortified
+  contrast to the organic streets — plus **secondary squares** scattered through
+  the blocks alongside the central cathedral + market.
+- ✅ Settlement walls are **traced along the built-up edge** (a boundary trace of
+  the hole-filled footprint) rather than an angular-sector polygon, so they're
+  jagged and can follow concave bays around woods and lakes instead of rounding
+  off; gates are punched where lanes meet the wall.
 
 ## Parked polish
 

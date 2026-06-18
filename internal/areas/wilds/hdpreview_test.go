@@ -56,44 +56,28 @@ func findWorksite(g *worldgen.Generator, cx, cy int) (int, int, bool) {
 	return 0, 0, false
 }
 
-// findTown scans for a stone-walled city by its cobbled market square (unique to
-// cities) and returns its centre, preferring one bordered by terrain (forest or
-// water) so the way the footprint conforms to the land is visible.
+// findTown scans for a stone-walled city by its castle keep (unique to cities)
+// and returns the keep's location, so the preview is centred on the citadel.
 func findTown(g *worldgen.Generator) (int, int, bool) {
 	const span = 800
-	// size estimates a city's footprint by counting its stone-wall cells, so the
-	// preview can pick the biggest one.
-	near := func(cx, cy int) int {
-		walls := 0
-		for dy := -56; dy <= 56; dy += 2 {
-			for dx := -56; dx <= 56; dx += 2 {
+	hasWall := func(cx, cy int) bool { // a citadel keep is ringed by stone wall
+		for dy := -6; dy <= 6; dy++ {
+			for dx := -6; dx <= 6; dx++ {
 				if g.At(cx+dx, cy+dy).Glyph == '#' {
-					walls++
+					return true
 				}
 			}
 		}
-		return walls
+		return false
 	}
-	best := [2]int{}
-	bestFeat, found := 0, false
-	seen := map[[2]int]bool{}
 	for cy := -span; cy <= span; cy++ {
 		for cx := -span; cx <= span; cx++ {
-			c := g.At(cx, cy)
-			if c.Glyph != '·' || c.Color != "#A89B82" {
-				continue
-			}
-			key := [2]int{cx / 60, cy / 60}
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			if f := near(cx, cy); f > bestFeat {
-				best, bestFeat, found = [2]int{cx, cy}, f, true
+			if g.At(cx, cy).Glyph == 'K' && hasWall(cx, cy) {
+				return cx, cy, true
 			}
 		}
 	}
-	return best[0], best[1], found
+	return 0, 0, false
 }
 
 func abs(n int) int {
