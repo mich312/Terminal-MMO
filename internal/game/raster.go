@@ -147,15 +147,15 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				case PropPortal:
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				case PropTree:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy), originX+vx, originY+vy)
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy), originX+vx, originY+vy, amb, ambStr)
 				case PropAcacia:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], acaciaArt, originX+vx, originY+vy)
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], acaciaArt, originX+vx, originY+vy, amb, ambStr)
 				case PropPalm:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], palmArt, originX+vx, originY+vy)
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], palmArt, originX+vx, originY+vy, amb, ambStr)
 				case PropFir:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], firArt, originX+vx, originY+vy)
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], firArt, originX+vx, originY+vy, amb, ambStr)
 				case PropCrag:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], cragArt, originX+vx, originY+vy)
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], cragArt, originX+vx, originY+vy, amb, ambStr)
 				}
 			}
 		}
@@ -426,7 +426,7 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 // It first lays a soft contact shadow so the plant feels planted, then the
 // canopy in its color (P body, p shade/rim, L dapple, W glint/snow, T trunk).
 // Used for forest trees and the signature biome flora (acacia, palm, fir).
-func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int) {
+func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int, amb colorful.Color, ambStr float64) {
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
@@ -464,7 +464,9 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 			case 'D':
 				c = dark // solid shadow face (no dither) — for rock crags
 			case 'W':
-				c = colorfulToRGBA(spriteWhite) // snow tip / bright glint
+				// Snow tip / glint — tinted by the day/night ambient like the rest,
+				// so fir caps don't glow pure white at night.
+				c = colorfulToRGBA(tint(spriteWhite, amb, ambStr).Clamped())
 			case 'T':
 				c = trunk
 			default:
