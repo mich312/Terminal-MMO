@@ -518,6 +518,16 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
+	case 'ϒ': // acacia on savanna
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropAcacia, c.Color, groundColor(worldgen.Savanna), game.TexSavanna
+	case 'Ψ': // palm on the beach
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPalm, c.Color, groundColor(worldgen.Sand), game.TexSand
+	case '♠': // fir in the snow
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropFir, c.Color, groundColor(worldgen.Snow), game.TexSnow
+	case '‖': // cattail reeds in the swamp
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropReed, c.Color, groundColor(worldgen.Swamp), game.TexSwamp
+	case 'Δ': // rocky crag on the hills
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCrag, c.Color, groundColor(worldgen.Hill), game.TexDirt
 	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
 		if c.Biome == worldgen.Hill {
 			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt

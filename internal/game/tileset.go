@@ -126,6 +126,24 @@ var propArt = map[TileProp][]string{
 		".PppP.",
 		"......",
 	},
+	// Cattail reeds: thin vertical stalks with darker seed-heads. Walkable.
+	PropReed: {
+		"..P.P.",
+		".PPPP.",
+		".PpPp.",
+		".PpPp.",
+		".pp.p.",
+		"......",
+	},
+	// A jagged rock crag: a pointed spire with shaded faces. Blocks.
+	PropCrag: {
+		"..P...",
+		".PPp..",
+		".PPPp.",
+		"PPPppD",
+		"PpppDD",
+		".ppDD.",
+	},
 	// PropHouse is a single-tile cottage: roof (p), walls (P), a dark door (p).
 	PropHouse: {
 		"..PP..",
@@ -312,3 +330,39 @@ var treeArt = [][]string{
 		"...T...",
 	},
 }
+
+// Signature biome canopies, drawn through the same back-to-front overhang path
+// as treeArt (P body, p rim, L dapple, W glint/snow, T trunk). One bold,
+// symmetric silhouette each, on the same 6-px grid so they stay retro.
+var (
+	acaciaArt = []string{ // flat-topped umbrella
+		"..PPPPP..",
+		".PPPPPPP.",
+		"PPPPPPPPP",
+		".pp.P.pp.",
+		"....T....",
+		"....T....",
+		"....T....",
+	}
+	palmArt = []string{ // fronds radiating from a leaning trunk
+		"P..P..P",
+		".PpPpP.",
+		"..PPP..",
+		"...T...",
+		"...T...",
+		"...T...",
+		"..T....",
+	}
+	firArt = []string{ // snow-tipped conifer (W = snow)
+		"...W...",
+		"...P...",
+		"..WPW..",
+		"..PPP..",
+		".WPPPW.",
+		".PPPPP.",
+		"WPPPPPW",
+		"PPPPPPP",
+		"...T...",
+		"...T...",
+	}
+)

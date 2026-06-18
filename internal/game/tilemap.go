@@ -67,6 +67,12 @@ const (
 	PropTurbine  // turbine / generator unit (glows)
 	PropPipe     // pipe segment with a valve light
 	PropFountain // water feature centerpiece (glows)
+	// Signature overworld flora, one recognizable silhouette per biome.
+	PropAcacia // savanna: flat-topped umbrella tree (tall, blocks)
+	PropPalm   // beach: fronds on a leaning trunk (tall, blocks)
+	PropFir    // snow: snow-tipped conifer (tall, blocks)
+	PropReed   // swamp: a clump of thin cattail reeds (in-tile)
+	PropCrag   // hill: a jagged rock spire (in-tile, blocks)
 )
 
 // Tile is one cell of a parsed map.

@@ -142,7 +142,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				case PropPortal:
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				case PropTree:
-					drawTree(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy), originX+vx, originY+vy)
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy), originX+vx, originY+vy)
+				case PropAcacia:
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], acaciaArt, originX+vx, originY+vy)
+				case PropPalm:
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], palmArt, originX+vx, originY+vy)
+				case PropFir:
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], firArt, originX+vx, originY+vy)
 				}
 			}
 		}
@@ -391,11 +397,12 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 	}
 }
 
-// drawTree renders a forest tree's canopy (art) centered on tile (vx,vy),
+// drawCanopy renders a tall flora sprite (art) centered on tile (vx,vy),
 // bottom-aligned so the trunk sits on the tile and the crown overhangs upward.
-// It first lays a soft contact shadow on the ground so the tree feels planted,
-// then the canopy in the tree's color (P body, p shade, L dapple, T trunk).
-func drawTree(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int) {
+// It first lays a soft contact shadow so the plant feels planted, then the
+// canopy in its color (P body, p shade/rim, L dapple, W glint/snow, T trunk).
+// Used for forest trees and the signature biome flora (acacia, palm, fir).
+func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int) {
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
@@ -429,6 +436,8 @@ func drawTree(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []stri
 				}
 			case 'L':
 				c = dapple
+			case 'W':
+				c = colorfulToRGBA(spriteWhite) // snow tip / bright glint
 			case 'T':
 				c = trunk
 			default:

@@ -148,6 +148,9 @@ func (g *Generator) At(x, y int) Cell {
 		return Cell{Biome: Water, Glyph: '~', Color: "#5BB0E0",
 			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
 	case elev < 0.38: // beach
+		if g.prop(x, y) < 0.02 { // the occasional palm — blocks movement
+			return Cell{Biome: Sand, Glyph: 'Ψ', Color: "#3E8E5A"}
+		}
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
 	case elev < 0.70: // lowland — climate decides the cover
 		switch {
@@ -218,9 +221,11 @@ func forestCell(g *Generator, x, y int) Cell {
 func snowCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Snow, Glyph: '·', Color: "#E8EEF5", Walkable: true}
 	switch r := g.prop(x, y); {
-	case r < 0.05:
+	case r < 0.07: // a snow-tipped fir — blocks movement
+		return Cell{Biome: Snow, Glyph: '♠', Color: "#2E5E43"}
+	case r < 0.12:
 		c.Glyph, c.Color = '°', "#C2CCD6" // an icy rock
-	case r < 0.14:
+	case r < 0.20:
 		c.Glyph, c.Color = ',', "#D4DEEA" // a snow tuft / drift
 	}
 	return c
@@ -231,9 +236,11 @@ func snowCell(g *Generator, x, y int) Cell {
 func savannaCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Savanna, Glyph: '·', Color: "#CDBA5C", Walkable: true}
 	switch r := g.prop(x, y); {
-	case r < 0.05:
+	case r < 0.013: // a lone acacia — blocks movement, a savanna landmark
+		return Cell{Biome: Savanna, Glyph: 'ϒ', Color: "#7C9442"}
+	case r < 0.06:
 		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
-	case r < 0.22:
+	case r < 0.23:
 		c.Glyph, c.Color = ',', "#C9B85F" // a clump of dry grass
 	}
 	return c
@@ -245,7 +252,7 @@ func swampCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Swamp, Glyph: '·', Color: "#45533C", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.12:
-		c.Glyph, c.Color = ',', "#6B7A3A" // reeds
+		c.Glyph, c.Color = '‖', "#7C8A45" // a clump of cattail reeds
 	case r < 0.18:
 		c.Glyph, c.Color = 'o', "#3A5A3A" // a mossy hummock
 	case r < 0.24:
@@ -279,9 +286,11 @@ func pathCell(g *Generator, x, y int) Cell {
 
 func hillCell(g *Generator, x, y int) Cell {
 	switch r := g.prop(x, y); {
-	case r < 0.10: // a boulder — blocks movement
+	case r < 0.04: // a jagged crag — blocks movement, a highland landmark
+		return Cell{Biome: Hill, Glyph: 'Δ', Color: "#8C8475"}
+	case r < 0.12: // a boulder — blocks movement
 		return Cell{Biome: Hill, Glyph: '▲', Color: "#8A8170"}
-	case r < 0.18: // a small rock
+	case r < 0.20: // a small rock
 		return Cell{Biome: Hill, Glyph: '°', Color: "#9AA0A8", Walkable: true}
 	}
 	return Cell{Biome: Hill, Glyph: '∩', Color: "#9C8D67", Walkable: true}
