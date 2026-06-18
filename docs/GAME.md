@@ -142,7 +142,7 @@ them.
 | `/me <action>` | emote to those nearby |
 | `/w <name> <msg>` | private message (aliases `/whisper /tell /msg`) |
 | `/roll [NdM]` | roll dice for everyone nearby |
-| `/color [0-7]` | change avatar color |
+| `/color [0-21]` | change avatar color |
 | `/goto <area>` | teleport to an area |
 | `/character` · `/inventory` (`/i`) | open the avatar editor / list your pack |
 | `/clear` · `/help` | clear your log; list commands |

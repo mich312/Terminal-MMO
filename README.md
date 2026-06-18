@@ -131,7 +131,7 @@ talking. `/help` lists them in a panel:
 | `/me <action>` | emote to those nearby |
 | `/w <name> <message>` | private message (aliases `/whisper /tell /msg`) |
 | `/roll [NdM]` | roll dice for everyone nearby (e.g. `/roll 2d6`) |
-| `/color [0-7]` | change your avatar color |
+| `/color [0-21]` | change your avatar color |
 | `/goto <area>` | teleport to an area |
 | `/clear` · `/help` | clear your log; list commands |
 

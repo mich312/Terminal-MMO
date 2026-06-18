@@ -62,7 +62,7 @@ func init() {
 			run:     cmdRoll,
 		},
 		{
-			name: "color", aliases: []string{"colour"}, usage: "/color [0-7]",
+			name: "color", aliases: []string{"colour"}, usage: "/color [0-21]",
 			summary: "change your avatar color",
 			run:     cmdColor,
 		},

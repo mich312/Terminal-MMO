@@ -54,7 +54,7 @@ and bind it into `ui.Theme` if it's a reusable style. Don't scatter literals.
 Player colors are a separate set of **22 readable truecolor hues** in
 `internal/ui/theme.go` (`avatarColors`), starting with "claude clay" `#D97757`.
 A player's default color is a deterministic hash of their name
-(`ui.AvatarColor`); `/color [0-7]` picks by index. Keep new hues readable on the
+(`ui.AvatarColor`); `/color [0-21]` picks by index. Keep new hues readable on the
 dark slate background and distinct from their neighbors.
 
 ## The lipgloss theme
