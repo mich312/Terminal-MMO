@@ -465,22 +465,30 @@ func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (color
 	return nbr[best], bestDepth, true
 }
 
-// valueNoise is smooth, coherent [0,1) value noise: hashNoise on an integer
-// lattice, smoothstep-interpolated. Low frequency (one lattice cell ≈ one tile)
-// so thresholding it yields contiguous blobs — coherent terrain seams, not
-// per-pixel static.
+// valueNoise is coherent [0,1) noise for seam dithering: two octaves of
+// smoothstep value noise (fbm). The low octave (≈one cell per tile) sets the
+// big lobes; the high octave at half amplitude superimposes small notches, so
+// boundaries get multi-scale detail — deep bays and tiny jags — instead of one
+// uniform scallop rhythm. Thresholding it still yields hard per-pixel blocks,
+// so the look stays retro.
 func valueNoise(x, y int) float64 {
-	const denom = 7.0 // lattice spacing in art-pixels; not a tile multiple, to avoid grid alignment
+	// 0.667 + 0.333 keeps the sum in [0,1); seeds differ so octaves don't align.
+	return 0.667*latticeNoise(x, y, 7.0, 0x51) + 0.333*latticeNoise(x, y, 3.0, 0xB7)
+}
+
+// latticeNoise is one octave of smoothstep-interpolated value noise: hashNoise
+// sampled on an integer lattice spaced denom art-pixels apart, seeded by seed.
+func latticeNoise(x, y int, denom float64, seed int) float64 {
 	fx, fy := float64(x)/denom, float64(y)/denom
 	x0, y0 := int(math.Floor(fx)), int(math.Floor(fy))
 	tx, ty := fx-float64(x0), fy-float64(y0)
 	tx = tx * tx * (3 - 2*tx) // smoothstep
 	ty = ty * ty * (3 - 2*ty)
 	return bilerp(
-		hashNoise(x0, y0, 0x51),
-		hashNoise(x0+1, y0, 0x51),
-		hashNoise(x0, y0+1, 0x51),
-		hashNoise(x0+1, y0+1, 0x51),
+		hashNoise(x0, y0, seed),
+		hashNoise(x0+1, y0, seed),
+		hashNoise(x0, y0+1, seed),
+		hashNoise(x0+1, y0+1, seed),
 		tx, ty)
 }
 
