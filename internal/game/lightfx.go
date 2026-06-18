@@ -73,28 +73,33 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 }
 
 // emitterGlow returns a prop's glow color, radius (in tiles), an intensity
-// multiplier (a campfire floods, a gem only twinkles) and whether it emits at
-// all. propCol is the prop's day/night-tinted color; frame drives flame flicker.
+// multiplier (a campfire floods, loot only twinkles) and whether it emits at
+// all. propCol is the prop's day/night-tinted color. Flames and fixtures
+// flicker on the frame (two summed waves, so it's not a clean pulse); portals
+// and loot (items and hats) are steady.
 func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col colorful.Color, radius, intensity float64, ok bool) {
-	flicker := 0.85 + 0.15*math.Sin(float64(frame)*0.6+float64(wx*7+wy*3))
-	// Light mostly brightens (whitened) with only a hint of the source hue, so a
-	// glow lifts the area rather than washing it in color. whiten blends toward
-	// white; a campfire keeps more of its warmth because that reads as right.
+	h := float64(wx*7 + wy*3)
+	flame := 0.78 + 0.16*math.Sin(float64(frame)*0.7+h) + 0.06*math.Sin(float64(frame)*1.9+h*1.7)
+	gentle := 0.9 + 0.1*math.Sin(float64(frame)*0.5+h)
 	white := colorful.Color{R: 1, G: 1, B: 1}
 	whiten := func(c colorful.Color, k float64) colorful.Color { return c.BlendLab(white, k).Clamped() }
 	switch p {
 	case PropCampfire:
-		return whiten(colorful.Color{R: 1, G: 0.55, B: 0.2}, 0.3), 3.0 * flicker, 1.0, true
+		// Saturated warm light so the fire genuinely warms the ground it reveals,
+		// flickering in both reach and brightness.
+		return whiten(colorful.Color{R: 1, G: 0.5, B: 0.16}, 0.1), 3.0 * flame, flame, true
 	case PropPortal:
 		return whiten(propCol, 0.6), 2.8, 0.6, true
 	case PropCore, PropFountain:
-		return whiten(colorful.Color{R: 0.75, G: 0.92, B: 1}, 0.55), 3.4 * flicker, 0.7, true
+		return whiten(colorful.Color{R: 0.75, G: 0.92, B: 1}, 0.55), 3.4 * gentle, 0.7 * gentle, true
 	case PropLamp:
-		return whiten(colorful.Color{R: 1, G: 0.84, B: 0.5}, 0.45), 2.4 * flicker, 0.7, true
+		return whiten(colorful.Color{R: 1, G: 0.82, B: 0.45}, 0.4), 2.4 * gentle, 0.7 * gentle, true
 	case PropTurbine, PropScreen:
 		return whiten(colorful.Color{R: 0.5, G: 0.8, B: 1}, 0.6), 2.0, 0.6, true
 	case PropGem:
 		return whiten(propCol, 0.65), 0.9, 0.35, true
+	case PropHat:
+		return whiten(propCol, 0.55), 1.1, 0.4, true // hats glow too, a touch brighter than items
 	}
 	return colorful.Color{}, 0, 0, false
 }
