@@ -639,52 +639,61 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wa
 			}
 		})
 	}
-	stamp := func(tx, ty, rad int, from lkind, to lkind) {
+	// stampInto converts the worksite's own ground, but only where it bites into
+	// the *natural* biome (rock for a quarry, trees for a clearing) — so the site
+	// hugs the real biome edge instead of stamping a synthetic patch on the grass.
+	stampInto := func(tx, ty, rad int, want func(Biome) bool, to lkind) {
 		for gy := ty - rad; gy <= ty+rad; gy++ {
 			for gx := tx - rad; gx <= tx+rad; gx++ {
-				if l.in(gx, gy) && l.at(gx, gy).kind == from {
+				if l.in(gx, gy) && l.at(gx, gy).kind == lEmpty && want(l.at(gx, gy).biome) {
 					l.at(gx, gy).kind = to
 				}
 			}
 		}
 	}
 
-	// Quarry — cut into nearby hills: a stone floor with a couple of boulders.
-	if tx, ty, ok := find(func(b Biome) bool { return b == Hill }); ok {
-		stamp(tx, ty, 2, lEmpty, lQuarry)
-		l.at(tx, ty).kind = lQuarryRock
-		if l.in(tx+1, ty+1) && l.at(tx+1, ty+1).kind == lQuarry {
-			l.at(tx+1, ty+1).kind = lQuarryRock
-		}
-		if hx, hy, ok := hutNear(tx-2, ty); ok {
+	isRock := func(b Biome) bool { return b == Hill || b == Mountain }
+	isForest := func(b Biome) bool { return b == Forest }
+	isWater := func(b Biome) bool { return b == Water || b == Deep }
+
+	// Quarry — cut into the nearest rock (hills or mountain): a stone floor with
+	// boulders at the face, a hut on the meadow side, a path back.
+	if tx, ty, ok := find(isRock); ok {
+		hx, hy, hok := hutNear(tx, ty)
+		if hok {
 			placeBuilding(l, canBuild, hx, hy, btCottage)
-			carveSpur(hx, hy)
-		} else {
-			carveSpur(tx, ty)
 		}
+		stampInto(tx, ty, 2, isRock, lQuarry)
+		l.at(tx, ty).kind = lQuarryRock
+		for _, o := range [][2]int{{1, 0}, {0, 1}} {
+			if gx, gy := tx+o[0], ty+o[1]; l.in(gx, gy) && l.at(gx, gy).kind == lQuarry {
+				l.at(gx, gy).kind = lQuarryRock
+			}
+		}
+		spurFrom(carveSpur, hx, hy, tx, ty, hok)
 	}
-	// Lumber camp — a clearing at the forest edge with felled stumps and a store.
-	if tx, ty, ok := find(func(b Biome) bool { return b == Forest }); ok {
-		stamp(tx, ty, 2, lEmpty, lClearing)
-		for _, o := range [][2]int{{-1, -1}, {1, 0}, {0, 1}} {
+	// Lumber camp — a clearing bitten into the nearest forest, with felled stumps,
+	// a store on the meadow side, a path back.
+	if tx, ty, ok := find(isForest); ok {
+		hx, hy, hok := hutNear(tx, ty)
+		if hok && !placeBuilding(l, canBuild, hx, hy, btBarn) {
+			placeBuilding(l, canBuild, hx, hy, btCottage)
+		}
+		stampInto(tx, ty, 2, isForest, lClearing)
+		for _, o := range [][2]int{{0, 0}, {-1, -1}, {1, 0}, {0, 1}} {
 			if gx, gy := tx+o[0], ty+o[1]; l.in(gx, gy) && l.at(gx, gy).kind == lClearing {
 				l.at(gx, gy).kind = lStump
 			}
 		}
-		if hx, hy, ok := hutNear(tx, ty); ok {
-			placeBuilding(l, canBuild, hx, hy, btBarn)
-			carveSpur(hx, hy)
-		} else {
-			carveSpur(tx, ty)
-		}
+		spurFrom(carveSpur, hx, hy, tx, ty, hok)
 	}
-	// Fishing hut — on the shore, with a jetty reaching out over the water.
-	if tx, ty, ok := find(func(b Biome) bool { return b == Water }); ok {
-		if hx, hy, ok := hutNear(tx, ty); ok {
+	// Fishing hut — on the shore by the nearest water, a jetty reaching out over it.
+	if tx, ty, ok := find(isWater); ok {
+		if hx, hy, hok := hutNear(tx, ty); hok {
 			placeBuilding(l, canBuild, hx, hy, btCottage)
 			jetty := func(ax, ay, bx, by int) {
 				bresenham(ax, ay, bx, by, func(gx, gy int) {
-					if l.in(gx, gy) && l.at(gx, gy).biome == Water && l.at(gx, gy).kind == lEmpty {
+					if l.in(gx, gy) && isWater(l.at(gx, gy).biome) && l.at(gx, gy).kind == lEmpty {
 						l.at(gx, gy).kind = lJetty
 					}
 				})
@@ -693,6 +702,16 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wa
 			jetty(tx, ty, tx+(tx-hx), ty+(ty-hy)) // a little further out
 			carveSpur(hx, hy)
 		}
+	}
+}
+
+// spurFrom carves the worksite's path from its hut if it has one, else from the
+// worksite itself.
+func spurFrom(carve func(int, int), hx, hy, tx, ty int, fromHut bool) {
+	if fromHut {
+		carve(hx, hy)
+	} else {
+		carve(tx, ty)
 	}
 }
 
