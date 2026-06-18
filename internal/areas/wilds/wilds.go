@@ -292,7 +292,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		sx, sy := a.wx, a.wy
 		for i := 0; i < steps; i++ {
 			nx, ny := a.wx+dx, a.wy+dy
-			if !a.fits(nx, ny) {
+			if !game.CanStep(a.gen.Walkable, a.wx, a.wy, dx, dy) {
 				break
 			}
 			a.wx, a.wy = nx, ny

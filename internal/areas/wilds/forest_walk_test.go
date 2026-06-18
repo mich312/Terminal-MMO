@@ -69,7 +69,14 @@ func TestForestTraversable(t *testing.T) {
 		}
 		for _, d := range dirs {
 			n := [2]int{c[0] + d[0], c[1] + d[1]}
-			if n[0] < x0 || n[0] > x1 || n[1] < y0 || n[1] > y1 || seen[n] || !walk(n[0], n[1]) {
+			if n[0] < x0 || n[0] > x1 || n[1] < y0 || n[1] > y1 || seen[n] {
+				continue
+			}
+			// Mirror the game's CanStep: no diagonal corner-cutting.
+			if d[0] != 0 && d[1] != 0 && !walk(c[0]+d[0], c[1]) && !walk(c[0], c[1]+d[1]) {
+				continue
+			}
+			if !walk(n[0], n[1]) {
 				continue
 			}
 			seen[n] = true

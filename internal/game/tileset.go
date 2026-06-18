@@ -184,12 +184,15 @@ var propArt = map[TileProp][]string{
 		"oPPPPo",
 		"pPPPPp",
 	},
+	// A collectible gem: mostly the item's own color (so a red berry reads red,
+	// a purple mushroom purple) with light facets and a single white glint — not
+	// the all-white sparkle that used to look like snow.
 	PropGem: {
-		"..W...",
-		".WGW..",
-		"WGGGW.",
-		".WGW..",
-		"..W...",
+		"..L...",
+		".LPL..",
+		"LPPPW.",
+		".LPPL.",
+		"..p...",
 		"......",
 	},
 	PropLamp: {

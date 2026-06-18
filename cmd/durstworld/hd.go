@@ -208,6 +208,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			light = l.HDLight() // the Wilds' discovery circle
 		}
 		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, light, ox, oy, hdScale, false, style)
+		game.OverlayWalkable(img, tm, hdScale) // debug: tint blocked tiles (toggle with F2)
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
 		// HD has no glyph layer, so slides are rasterized straight onto the image.
@@ -431,6 +432,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				draw()
 			} else if key == "e" { // pick up an item under the player
 				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+				draw()
+			} else if key == "f2" { // toggle the walkability debug overlay
+				game.DebugWalkable = !game.DebugWalkable
 				draw()
 			} else if key == "\r" || key == "\n" { // open chat
 				chatActive, chatInput = true, ""

@@ -142,7 +142,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				case PropPortal:
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				case PropTree:
-					drawTree(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy))
+					drawTree(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy), originX+vx, originY+vy)
 				}
 			}
 		}
@@ -395,7 +395,7 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 // bottom-aligned so the trunk sits on the tile and the crown overhangs upward.
 // It first lays a soft contact shadow on the ground so the tree feels planted,
 // then the canopy in the tree's color (P body, p shade, L dapple, T trunk).
-func drawTree(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string) {
+func drawTree(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int) {
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
@@ -420,7 +420,13 @@ func drawTree(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []stri
 			case 'P':
 				c = body
 			case 'p':
+				// The shade pixels form the canopy rim; coherently dither them away
+				// so silhouettes feather and neighboring crowns blend into one mass
+				// instead of reading as discrete lollipops.
 				c = shade
+				if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) < 0.42 {
+					ok = false
+				}
 			case 'L':
 				c = dapple
 			case 'T':
