@@ -314,7 +314,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
 				continue
 			}
-			if math.Hypot(float64(gx)-gpx, float64(gy)-gpy) < 3.2 {
+			if math.Hypot(float64(gx)-gpx, float64(gy)-gpy) < 2.4 {
 				l.at(gx, gy).kind = lGreen
 			}
 		}
@@ -363,8 +363,12 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if r > buildR || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
 				continue
 			}
-			if d := onAnyRoad(float64(gx), float64(gy)); d < 0.9 || d > 2.3 {
-				continue // must front a road, but not sit on it
+			// A plot must front a street, or ring the central green — so the core
+			// packs tightly around the green rather than leaving it bare.
+			roadD := onAnyRoad(float64(gx), float64(gy))
+			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
+			if !((roadD >= 0.9 && roadD <= 2.3) || (greenD >= 2.6 && greenD <= 5)) {
+				continue
 			}
 			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
 			if cellHash.f() > density(r) {
@@ -697,6 +701,9 @@ func distToAxis(px, py, ox, oy, dx, dy float64) float64 {
 	return math.Abs((px-ox)*(-dy) + (py-oy)*dx)
 }
 
+// bresenham walks a line, but is kept 4-connected: on a diagonal step it also
+// plots the corner cell, so a wall drawn along it never has a diagonal-only gap
+// (which would both look broken and let a body slip through).
 func bresenham(x0, y0, x1, y1 int, plot func(int, int)) {
 	dx := abs(x1 - x0)
 	dy := -abs(y1 - y0)
@@ -714,11 +721,16 @@ func bresenham(x0, y0, x1, y1 int, plot func(int, int)) {
 			return
 		}
 		e2 := 2 * err
+		movedX := false
 		if e2 >= dy {
 			err += dy
 			x0 += sx
+			movedX = true
 		}
 		if e2 <= dx {
+			if movedX {
+				plot(x0, y0) // fill the corner to keep the run 4-connected
+			}
 			err += dx
 			y0 += sy
 		}

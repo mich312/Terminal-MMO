@@ -340,15 +340,34 @@ var portalArt = []string{
 // from their footprint. Each is (h·6) rows × (w·6) cols of art-pixels, drawn
 // bottom-left-anchored so it rises up (north) and extends right (east) from its
 // base tile. Codes: P wall, p roof, D base/door shade, L window, R trim/cross.
-var buildingArt = map[TileProp][]string{
-	PropBldCottage:   genBuilding(1, 1, false, false),
-	PropBldHouse:     genBuilding(2, 2, false, false),
-	PropBldLonghouse: genBuilding(3, 2, false, false),
-	PropBldBarn:      genBuilding(2, 2, true, false),
-	PropBldChurch:    genBuilding(2, 3, false, true),
+// Each building type has a few variants (different roofs, window rows, door
+// placement, half-timbering, steeple offset). The renderer picks one per
+// instance by world position, so a street isn't lined with identical copies.
+var buildingArt = map[TileProp][][]string{
+	PropBldCottage:   bldVariants(1, 1, bldDwelling),
+	PropBldHouse:     bldVariants(2, 2, bldDwelling),
+	PropBldLonghouse: bldVariants(3, 2, bldDwelling),
+	PropBldBarn:      bldVariants(2, 2, bldBarn),
+	PropBldChurch:    bldVariants(2, 3, bldChurch),
 }
 
-func genBuilding(wt, ht int, barn, church bool) []string {
+type bldKind uint8
+
+const (
+	bldDwelling bldKind = iota
+	bldBarn
+	bldChurch
+)
+
+func bldVariants(wt, ht int, k bldKind) [][]string {
+	return [][]string{
+		genBuilding(wt, ht, k, 0),
+		genBuilding(wt, ht, k, 1),
+		genBuilding(wt, ht, k, 2),
+	}
+}
+
+func genBuilding(wt, ht int, k bldKind, style int) []string {
 	w, h := wt*tileArtN, ht*tileArtN
 	g := make([][]byte, h)
 	for y := range g {
@@ -357,7 +376,7 @@ func genBuilding(wt, ht int, barn, church bool) []string {
 			g[y][x] = '.'
 		}
 	}
-	roofH := h * 9 / 20 // ~45% of the height is roof
+	roofH := h * []int{42, 50, 38}[style%3] / 100
 	if roofH < 2 {
 		roofH = 2
 	}
@@ -370,45 +389,74 @@ func genBuilding(wt, ht int, barn, church bool) []string {
 	for x := 0; x < w; x++ {
 		g[baseY][x] = 'D' // base course
 	}
-	for ry := 0; ry < roofH; ry++ { // pitched roof: a triangle, widest at the eaves
-		margin := (roofH - 1 - ry) * (w / 2) / roofH
-		for x := margin; x < w-margin; x++ {
+	// Roof: a pitched ridge, or (style 1) a hipped roof with a flat-ish top.
+	topInset := 0
+	if style == 1 {
+		topInset = w / 4
+	}
+	for ry := 0; ry < roofH; ry++ {
+		m := (roofH - 1 - ry) * (w/2 - topInset) / roofH
+		for x := m; x < w-m; x++ {
 			g[ry][x] = 'p'
 		}
 	}
-	wy := wallTop + (baseY-wallTop)/3 // a row of windows
-	for x := 1; x < w-1; x++ {
-		if x%3 == 1 {
-			g[wy][x] = 'L'
+	// Half-timbering (style 2 dwellings): dark vertical studs in the walls.
+	if style == 2 && k == bldDwelling {
+		for y := wallTop + 1; y < baseY; y++ {
+			for x := 0; x < w; x++ {
+				if x%4 == 1 {
+					g[y][x] = 'D'
+				}
+			}
 		}
 	}
-	dcx, dw := w/2, w/4 // a door at the bottom centre
+	// Windows: one or two rows, phase shifted per style.
+	for r := 0; r < []int{1, 2, 1}[style%3]; r++ {
+		wy := wallTop + 1 + r*2
+		if wy >= baseY {
+			break
+		}
+		for x := 1; x < w-1; x++ {
+			if (x+style)%3 == 1 {
+				g[wy][x] = 'L'
+			}
+		}
+	}
+	// Door, offset per style.
+	dcx := w/2 + []int{0, -w / 6, w / 6}[style%3]
+	dw := w / 4
 	if dw < 1 {
 		dw = 1
 	}
 	for y := baseY - max(1, (baseY-wallTop)/2); y <= baseY; y++ {
-		for x := dcx - dw/2; x <= dcx+dw/2 && x < w; x++ {
-			if x >= 0 {
+		for x := dcx - dw/2; x <= dcx+dw/2; x++ {
+			if x >= 0 && x < w {
 				g[y][x] = 'D'
 			}
 		}
 	}
-	if barn { // big central wagon doors
+	if k == bldBarn { // big central wagon doors
 		for y := wallTop + (baseY-wallTop)/3; y <= baseY; y++ {
 			for x := w / 4; x < w-w/4; x++ {
 				g[y][x] = 'D'
 			}
 		}
 	}
-	if church { // a central steeple rising above the roof, topped with a cross
-		towW := tileArtN / 2
-		tx0 := w/2 - towW/2
+	if k == bldChurch { // a steeple rising above the roof, topped with a cross
+		towW := tileArtN/2 + style%2
+		tx0 := w/2 - towW/2 + []int{0, -1, 1}[style%3]
+		if tx0 < 0 {
+			tx0 = 0
+		}
 		for y := 0; y < wallTop; y++ {
-			for x := tx0; x < tx0+towW; x++ {
+			for x := tx0; x < tx0+towW && x < w; x++ {
 				g[y][x] = 'P'
 			}
 		}
-		cx := w / 2
+		cx := tx0 + towW/2
+		if cx >= w {
+			cx = w - 1
+		}
 		g[0][cx], g[1][cx], g[2][cx] = 'R', 'R', 'R'
 		if cx-1 >= 0 {
 			g[1][cx-1] = 'R'

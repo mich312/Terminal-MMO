@@ -148,8 +148,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			for vx := 0; vx < cam.W; vx++ {
 				if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					accumCanopyShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
-				} else if art, ok := buildingArtFor(props[vy][vx]); ok {
-					accumBuildingShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
+				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
+					accumBuildingShadow(shadowMask, imgW, imgH, vx, vy, scale, vs[0])
 				}
 			}
 		}
@@ -160,8 +160,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
-				} else if art, ok := buildingArtFor(props[vy][vx]); ok {
-					drawBuilding(img, vx, vy, scale, propCols[vy][vx], art)
+				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
+					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs)
 				}
 			}
 		}
@@ -470,16 +470,31 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 	}
 }
 
-// buildingArtFor returns the multi-tile sprite for a village building prop.
-func buildingArtFor(p TileProp) ([]string, bool) {
+// buildingArtFor returns the sprite variants for a village building prop.
+func buildingArtFor(p TileProp) ([][]string, bool) {
 	a, ok := buildingArt[p]
 	return a, ok
 }
 
+// bldHash is a stable per-building hash of its world position, used to pick a
+// sprite variant and a small color jitter so neighbours don't look identical.
+func bldHash(wx, wy int) uint32 {
+	return uint32(wx)*73856093 ^ uint32(wy)*19349663
+}
+
 // drawBuilding renders a multi-tile village building, bottom-left-anchored on
-// tile (vx,vy) so it rises up and extends right from its base. Codes: P wall,
-// p roof, D base/door, L window, R trim/cross.
-func drawBuilding(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string) {
+// tile (vx,vy) so it rises up and extends right from its base. It picks one of
+// the type's variants and nudges the color, both keyed on world position (wx,wy)
+// so the same building always looks the same. Codes: P wall, p roof, D
+// base/door, L window, R trim/cross.
+func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color, variants [][]string) {
+	hsh := bldHash(wx, wy)
+	art := variants[hsh%uint32(len(variants))]
+	if j := float64(int((hsh>>5)%7)-3) * 0.022; j >= 0 { // ±~7% lightness per building
+		col = col.BlendLab(spriteWhite, j)
+	} else {
+		col = col.BlendLab(shadowColor, -j)
+	}
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
