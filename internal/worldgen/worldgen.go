@@ -311,13 +311,13 @@ func houseColor(r float64) string {
 
 func treeColor(r float64) string {
 	switch {
-	case r < 0.20:
+	case r < 0.25:
 		return "#276B43" // deep green
-	case r < 0.70:
+	case r < 0.87:
 		return "#2F7D4F" // green
-	case r < 0.82:
+	case r < 0.93:
 		return "#C99A3A" // gold (autumn)
-	case r < 0.92:
+	case r < 0.97:
 		return "#C2602F" // orange
 	default:
 		return "#B5482C" // red

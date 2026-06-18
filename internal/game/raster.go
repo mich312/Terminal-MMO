@@ -290,14 +290,20 @@ func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int, height float64)
 	if px < 1 {
 		px = 1
 	}
-	// Golden-hour stretch: a low-but-still-up sun throws a long shadow along its
-	// azimuth; peaks at dawn/dusk, vanishes at noon and after dark.
-	if elev, azX, _ := sunState(); elev > 0 {
-		golden := (1 - elev) * math.Min(1, elev*4)
-		off := azX * height * golden
-		cx += off / 2
-		rx += math.Abs(off) / 2
+	// Shadows always lean a bit to one side (a fixed key light), with a gentle
+	// extra stretch along the sun's azimuth when it's low at dawn/dusk.
+	elev, azX, _ := sunState()
+	golden := 0.0
+	if elev > 0 {
+		golden = (1 - elev) * math.Min(1, elev*4)
 	}
+	side := 1.0
+	if elev > 0 && azX < 0 {
+		side = -1 // morning sun in the east → shadow falls west
+	}
+	reach := 0.28*height + 0.5*golden*math.Abs(azX)*height
+	cx += side * reach * 0.5
+	rx += reach * 0.5
 	bx0 := int(math.Floor((cx-rx)/float64(px))) * px
 	bx1 := int(math.Floor((cx+rx)/float64(px))) * px
 	by0 := int(math.Floor((cy-ry)/float64(px))) * px
