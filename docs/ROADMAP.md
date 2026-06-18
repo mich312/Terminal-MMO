@@ -153,6 +153,27 @@ doors stay open). Two kinds, to exercise both solo and social play:
   are `game.FlavorArea` reward rooms; worldgen places the gates on extended
   trails with clearings, so they're always reachable.
 
+## Phase 8 — Settlements (villages & hamlets) ✅
+
+Structures beyond the lone homestead: deterministic settlements scattered
+through the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
+
+- ✅ A macro-grid (`internal/worldgen/settlement.go`) hashes each cell to decide
+  whether it hosts a settlement, its centre, tier and organic outline. The hub
+  is kept clear; only temperate lowland is settled, and footprints clip cleanly
+  against water and peaks.
+- ✅ **Organic, not rectangular.** A settlement's edge is a wobbly radial curve
+  `R(θ) = R0·(1 + Σ aₖ·sin(kθ+φₖ))` — a lopsided "incorrectly shaped circle".
+  Each cell decides inside/edge/outside in O(1) from its angle and distance, so
+  there's no boundary tracing or flood fill in the hot path.
+- ✅ **Villages** (fenced) and **hamlets** (open): a central well, jittered house
+  plots, radial dirt roads that breach the fence ring to form gateways, and a
+  plowed **field** wedge for villages. New props (`PropWell`, `PropFence`) and a
+  furrowed ground texture (`TexField`); houses now cluster here, with only the
+  odd remote cabin left scattered in the open Wilds.
+- ✅ Tests assert determinism, hub protection, and that a fenced village's
+  interior is always reachable from outside (the roads really do gate the wall).
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**

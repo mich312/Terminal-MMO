@@ -75,6 +75,12 @@ var groundArt = map[TileTex][][]string{
 		{"LBBBBB", "BBBBBB", "BBBBBB", "LBBBBB", "BBBBBB", "BBBBBB"},
 		{"BBBBBL", "BBBBBB", "BBBBBB", "BBBBBL", "BBBBBB", "BBBBBB"},
 	},
+	// Field: plowed earth in straight furrows — full-width dark rows so adjacent
+	// field tiles join into continuous plowlines across a farm.
+	TexField: {
+		{"BBBBBB", "DDDDDD", "BBBBBB", "DDDDDD", "BBBBBB", "DDDDDD"},
+		{"DDDDDD", "BBBBBB", "DDDDDD", "BBBBBB", "DDDDDD", "BBBBBB"},
+	},
 }
 
 var propArt = map[TileProp][]string{
@@ -152,6 +158,26 @@ var propArt = map[TileProp][]string{
 		"PPPPPP",
 		"PPppPP",
 		"PPppPP",
+	},
+	// PropWell is a round stone village well: a light-rimmed stone ring (P/L)
+	// around dark water (D), the centrepiece of a settlement.
+	PropWell: {
+		".PPPP.",
+		"PLppLP",
+		"PpDDpP",
+		"PpDDpP",
+		"PLppLP",
+		".pPPp.",
+	},
+	// PropFence is a low post-and-rail fence segment — two posts and a rail —
+	// ringing a village. Reads the same from any approach.
+	PropFence: {
+		"......",
+		"P....P",
+		"PPPPPP",
+		"pPPPPp",
+		"P....P",
+		"......",
 	},
 	// PropHat is a wearable lying on the ground — a little brimmed hat that
 	// glints (W) so it reads as special loot, not terrain.

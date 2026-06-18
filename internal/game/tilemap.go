@@ -37,6 +37,7 @@ const (
 	TexFloor // subtly speckled interior floor
 	TexBrick // staggered brick courses, for walls
 	TexMetal // riveted metal plate, for machine halls
+	TexField // plowed farm furrows, for village fields
 )
 
 // TileProp is a sprite drawn over the ground in the HD renderer — flowers,
@@ -75,6 +76,9 @@ const (
 	PropReed     // swamp: a clump of thin cattail reeds (in-tile)
 	PropCrag     // hill: a jagged rock spire (in-tile, blocks)
 	PropCampfire // a traveler's campfire — flickers and casts warm light at night
+	// Settlement structures for villages and hamlets in the Wilds.
+	PropWell  // a stone village well — the heart of a settlement (blocks)
+	PropFence // a low post-and-rail fence segment ringing a village (blocks)
 )
 
 // Tile is one cell of a parsed map.

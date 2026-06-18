@@ -121,21 +121,14 @@ func (g *Generator) At(x, y int) Cell {
 		return pathCell(g, x, y)
 	}
 
-	// Domain warping: offset the sample point by a low-frequency noise field
-	// before reading elevation/moisture, so biome edges meander organically
-	// (wavy coastlines, interlocking forests) instead of forming smooth blobs.
-	const warp = 18.0
-	wx := float64(x) + warp*(g.fbmAt(float64(x), float64(y), 0x1233A, 0.02, 2)-0.5)
-	wy := float64(y) + warp*(g.fbmAt(float64(x), float64(y), 0x77C2B, 0.02, 2)-0.5)
+	// Settlements (villages, hamlets, walled towns) are derived deterministically
+	// from a macro-grid — placed after the hub carve-outs above so they never
+	// intrude on the spawn plaza, the connecting trails or the portal gates.
+	if c, ok := g.settlementAt(x, y); ok {
+		return c
+	}
 
-	elev := g.fbmAt(wx, wy, 0x1, 0.045, 4)
-	moist := g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
-	// climate is the large-scale temperature field (low frequency = broad warm/
-	// cold regions); temp also folds in elevation, so highlands and peaks run
-	// colder. Snow keys off climate (the region) as well as temp, so a lone high
-	// knoll in a warm meadow stays a rocky hill instead of sprouting a snowcap.
-	climate := g.fbmAt(wx, wy, 0x7E11, 0.014, 3)
-	temp := climate - 0.30*(elev-0.5)
+	elev, moist, temp, region := g.climate(x, y)
 
 	switch {
 	case elev < 0.24: // deep water
@@ -164,12 +157,12 @@ func (g *Generator) At(x, y int) Cell {
 			return grassCell(g, x, y)
 		}
 	case elev < 0.84: // highland — snow only in genuinely cold regions, else hills
-		if temp < 0.40 && climate < 0.42 {
+		if temp < 0.40 && region < 0.42 {
 			return snowCell(g, x, y)
 		}
 		return hillCell(g, x, y)
 	default: // peaks — snow-capped except in warm regions, where they're bare rock
-		if temp < 0.52 && climate < 0.55 {
+		if temp < 0.52 && region < 0.55 {
 			return Cell{Biome: Snow, Glyph: '▲', Color: "#EAF0F7"} // snowy peak (blocks)
 		}
 		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
@@ -179,12 +172,32 @@ func (g *Generator) At(x, y int) Cell {
 // Walkable is a convenience over At for collision checks.
 func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 
+// climate samples the three terrain fields at (x,y): elevation, moisture and
+// temperature. Domain warping offsets the sample point by a low-frequency noise
+// field first, so biome edges meander organically (wavy coastlines,
+// interlocking forests) instead of forming smooth blobs. temp folds in
+// elevation, so highlands and peaks run colder.
+// region is the large-scale temperature field (low frequency = broad warm/cold
+// regions); temp folds in elevation on top of it. Snow keys off region as well
+// as temp, so a lone high knoll in a warm meadow stays a rocky hill instead of
+// sprouting a snowcap.
+func (g *Generator) climate(x, y int) (elev, moist, temp, region float64) {
+	const warp = 18.0
+	wx := float64(x) + warp*(g.fbmAt(float64(x), float64(y), 0x1233A, 0.02, 2)-0.5)
+	wy := float64(y) + warp*(g.fbmAt(float64(x), float64(y), 0x77C2B, 0.02, 2)-0.5)
+	elev = g.fbmAt(wx, wy, 0x1, 0.045, 4)
+	moist = g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
+	region = g.fbmAt(wx, wy, 0x7E11, 0.014, 3)
+	temp = region - 0.30*(elev-0.5)
+	return elev, moist, temp, region
+}
+
 func grassCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Grass, Glyph: '·', Color: "#5EAE63", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.0016: // a traveler's campfire — blocks, glows warm at night
 		c.Glyph, c.Color, c.Walkable = 'Λ', "#FF7A1E", false
-	case r < 0.006: // a rare homestead — blocks movement
+	case r < 0.0026: // a remote lone cabin — blocks movement (most houses cluster in villages)
 		c.Glyph, c.Color, c.Walkable = 'H', houseColor(g.prop2(x, y)), false
 	case r < 0.056:
 		c.Glyph, c.Color = '*', flowerColor(g.prop2(x, y)) // flower (varied)

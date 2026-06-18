@@ -520,6 +520,12 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
 	case 'H': // a homestead — decorative house (blocks)
 		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
+	case 'W': // a village well (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropWell, c.Color, groundColor(worldgen.Grass)
+	case '=': // a village fence segment (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropFence, c.Color, groundColor(worldgen.Grass)
+	case '"': // a plowed field furrow (walkable)
+		t.Tex, t.Ground = game.TexField, "#7A5E38"
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
 	case 'ϒ': // acacia on savanna
