@@ -396,7 +396,46 @@ var buildingArt = map[TileProp][][]string{
 	PropBldLonghouse: bldVariants(3, 2, bldDwelling),
 	PropBldBarn:      bldVariants(2, 2, bldBarn),
 	PropBldChurch:    bldVariants(2, 3, bldChurch),
+	PropBldCathedral: bldVariants(3, 4, bldChurch),
+	PropBldKeep:      {genKeep(3, 3)},
 	PropTower:        {towerArt},
+}
+
+// genKeep builds a castle keep: a solid stone block with a flat battlemented
+// crown (merlons), corner turrets a touch taller, arrow slits and a gate.
+func genKeep(wt, ht int) []string {
+	w, h := wt*tileArtN, ht*tileArtN
+	g := make([][]byte, h)
+	for y := range g {
+		g[y] = make([]byte, w)
+		for x := range g[y] {
+			g[y][x] = 'P'
+		}
+	}
+	for x := 0; x < w; x++ {
+		g[h-1][x] = 'D' // base course
+		if x%2 == 1 {
+			g[0][x] = '.' // battlement gaps (merlons between)
+		} else {
+			g[0][x] = 'L' // lit merlon caps
+		}
+	}
+	for y := 2; y < h-2; y += 3 { // arrow slits
+		for x := 2; x < w-2; x += 4 {
+			g[y][x] = 'D'
+		}
+	}
+	dcx := w / 2 // a gate at the base
+	for y := h - 3; y < h; y++ {
+		for x := dcx - 1; x <= dcx+1; x++ {
+			g[y][x] = 'D'
+		}
+	}
+	out := make([]string, h)
+	for y := range g {
+		out[y] = string(g[y])
+	}
+	return out
 }
 
 // towerArt is a stone wall tower: one tile wide, two tall, with a battlemented

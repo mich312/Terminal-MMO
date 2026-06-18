@@ -57,13 +57,33 @@ func findWorksite(g *worldgen.Generator, cx, cy int) (int, int, bool) {
 }
 
 // findTown scans for a stone-walled city by its cobbled market square (unique to
-// cities) and returns a point at its centre.
+// cities) and returns a point at its centre, preferring one on dry ground.
 func findTown(g *worldgen.Generator) (int, int, bool) {
-	const span = 560
+	const span = 700
+	dry := func(cx, cy int) bool { // few water tiles in the central blocks
+		wet := 0
+		for dy := -16; dy <= 16; dy += 2 {
+			for dx := -16; dx <= 16; dx++ {
+				if b := g.At(cx+dx, cy+dy).Biome; b == worldgen.Water || b == worldgen.Deep {
+					wet++
+				}
+			}
+		}
+		return wet < 12
+	}
+	seen := map[[2]int]bool{}
 	for cy := -span; cy <= span; cy++ {
 		for cx := -span; cx <= span; cx++ {
 			c := g.At(cx, cy)
-			if c.Glyph == '·' && c.Color == "#A89B82" { // a plaza tile
+			if c.Glyph != '·' || c.Color != "#A89B82" {
+				continue
+			}
+			key := [2]int{cx / 60, cy / 60}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			if dry(cx, cy) {
 				return cx, cy, true
 			}
 		}

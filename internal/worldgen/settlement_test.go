@@ -114,6 +114,69 @@ func TestVillageReachable(t *testing.T) {
 	}
 }
 
+// TestCityWalkable finds a stone-walled city and confirms a player can walk
+// from its centre out through a gate — the tangled lanes must stay connected and
+// breach the wall.
+func TestCityWalkable(t *testing.T) {
+	g := New(worldSeed)
+	var city settlement
+	found := false
+	for ring := 1; ring < 40 && !found; ring++ {
+		for my := -ring; my <= ring && !found; my++ {
+			for mx := -ring; mx <= ring; mx++ {
+				if abs(mx) != ring && abs(my) != ring {
+					continue
+				}
+				if s := g.settlementFor(mx, my); s.valid && s.town {
+					city, found = s, true
+					break
+				}
+			}
+		}
+	}
+	if !found {
+		t.Skip("no city found near origin")
+	}
+	reach, half, _ := city.dims()
+	var start [2]int
+	ok := false
+	for r := 0; r <= 6 && !ok; r++ {
+		for dy := -r; dy <= r && !ok; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if g.Walkable(city.cx+dx, city.cy+dy) {
+					start, ok = [2]int{dx, dy}, true
+					break
+				}
+			}
+		}
+	}
+	if !ok {
+		t.Fatalf("city at (%d,%d) has no walkable centre", city.cx, city.cy)
+	}
+	seen := map[[2]int]bool{}
+	stack := [][2]int{start}
+	escaped := false
+	for len(stack) > 0 {
+		p := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[p] || p[0] < -half || p[0] > half || p[1] < -half || p[1] > half {
+			continue
+		}
+		seen[p] = true
+		if abs(p[0]) > reach || abs(p[1]) > reach {
+			escaped = true
+		}
+		for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			if g.Walkable(city.cx+p[0]+d[0], city.cy+p[1]+d[1]) {
+				stack = append(stack, [2]int{p[0] + d[0], p[1] + d[1]})
+			}
+		}
+	}
+	if !escaped {
+		t.Fatalf("city at (%d,%d) centre cannot reach a gate — not walkable through", city.cx, city.cy)
+	}
+}
+
 // TestPreviewVillage renders the first few settlements as ASCII so the layout
 // can be eyeballed. Run with: go test ./internal/worldgen -run Preview -v
 //

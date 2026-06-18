@@ -156,6 +156,7 @@ const (
 	lWall                     // a stone curtain wall, for towns (blocks)
 	lTower                    // a stone wall tower, for towns (blocks)
 	lPlaza                    // a cobbled market square, for towns (walkable)
+	lPaved                    // packed/cobbled ground between city buildings (walkable)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -168,7 +169,9 @@ const (
 	btHouse               // 2×2
 	btLonghouse           // 3×2
 	btBarn                // 2×2
-	btChurch              // 2×3 (tall, central)
+	btChurch              // 2×3 (tall, village centrepiece)
+	btKeep                // 3×3 (a city's castle keep)
+	btCathedral           // 3×4 (a city's great church)
 )
 
 // footprint reports a building's width and height in tiles. The anchor is the
@@ -183,6 +186,10 @@ func footprint(bt buildType) (w, h int) {
 		return 2, 2
 	case btChurch:
 		return 2, 3
+	case btKeep:
+		return 3, 3
+	case btCathedral:
+		return 3, 4
 	default:
 		return 1, 1
 	}
@@ -284,16 +291,44 @@ func (g *Generator) genLayout(s settlement) *layout {
 		{mid[0], mid[1], cfx - dx*reach, cfy - dy*reach},
 	}
 	if s.town {
-		// A city is laid out on a (jittered) grid of streets running along and
-		// across the main axis, so housing packs into proper blocks.
-		const block = 10.0
-		for d := -reach; d <= reach; d += block {
-			j := rng.rng(-1.5, 1.5)
-			ax, ay := float64(cgx)+px*(d+j), float64(cgy)+py*(d+j)
-			segs = append(segs, seg{ax - dx*reach, ay - dy*reach, ax + dx*reach, ay + dy*reach})
-			k := rng.rng(-1.5, 1.5)
-			bx, by := float64(cgx)+dx*(d+k), float64(cgy)+dy*(d+k)
-			segs = append(segs, seg{bx - px*reach, by - py*reach, bx + px*reach, by + py*reach})
+		// A tangled medieval street plan: winding lanes radiating from the market
+		// out to the gates, a few wobbly ring roads tying them together, and a
+		// scatter of short alleys. The radials meet at the centre and reach the
+		// wall (becoming gates), so the whole web is connected and walkable.
+		nRad := 5 + rng.n(3)
+		for i := 0; i < nRad; i++ {
+			a := float64(i)/float64(nRad)*2*math.Pi + rng.rng(-0.35, 0.35)
+			prevx, prevy := float64(cgx), float64(cgy)
+			const steps = 4
+			for st := 1; st <= steps; st++ {
+				rr := reach * float64(st) / float64(steps)
+				a += rng.rng(-0.22, 0.22) // wind as the lane runs outward
+				nx, ny := float64(cgx)+math.Cos(a)*rr, float64(cgy)+math.Sin(a)*rr
+				segs = append(segs, seg{prevx, prevy, nx, ny})
+				prevx, prevy = nx, ny
+			}
+		}
+		for ri := 1; ri <= 2+rng.n(2); ri++ { // wobbly ring roads
+			ringR := reach * float64(ri) / 3.5
+			k := 9 + rng.n(4)
+			rp := make([][2]float64, k)
+			for j := 0; j < k; j++ {
+				a := float64(j)/float64(k)*2*math.Pi + rng.rng(-0.15, 0.15)
+				rr := ringR * rng.rng(0.82, 1.18)
+				rp[j] = [2]float64{float64(cgx) + math.Cos(a)*rr, float64(cgy) + math.Sin(a)*rr}
+			}
+			for j := 0; j < k; j++ {
+				segs = append(segs, seg{rp[j][0], rp[j][1], rp[(j+1)%k][0], rp[(j+1)%k][1]})
+			}
+		}
+		for i := 0; i < 10+rng.n(10); i++ { // short connecting alleys
+			a := rng.f() * 2 * math.Pi
+			r1 := reach * rng.rng(0.2, 0.92)
+			a2, r2 := a+rng.rng(-0.5, 0.5), r1+rng.rng(-7, 7)
+			segs = append(segs, seg{
+				float64(cgx) + math.Cos(a)*r1, float64(cgy) + math.Sin(a)*r1,
+				float64(cgx) + math.Cos(a2)*r2, float64(cgy) + math.Sin(a2)*r2,
+			})
 		}
 	} else {
 		// A village clusters organically: a loop lane round the core with a couple
@@ -345,17 +380,29 @@ func (g *Generator) genLayout(s settlement) *layout {
 	if canBuild(cgx, cgy) {
 		l.at(cgx, cgy).kind = lWell
 	}
-	// Church: the centrepiece, fronting the green. Try a ring of spots around the
-	// green so a road through the middle doesn't stop it being placed at all.
+	// The centrepiece: a village fronts a church on its green; a city's market
+	// square is anchored by a great cathedral on one side and a castle keep on
+	// the other. Try a ring of spots so a lane through the middle can't block it.
 	gx0, gy0 := int(gpx), int(gpy)
-	for _, o := range [][2]int{{-1, 3}, {0, 3}, {-2, 3}, {1, 3}, {-1, 4}, {-2, 2}, {1, 2}, {-3, 3}, {2, 3}} {
-		if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], btChurch) {
+	churchType := btChurch
+	if s.town {
+		churchType = btCathedral
+	}
+	for _, o := range [][2]int{{-1, 4}, {0, 4}, {-2, 4}, {1, 4}, {-1, 5}, {-2, 3}, {2, 4}, {-3, 4}} {
+		if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], churchType) {
 			break
 		}
 	}
+	if s.town { // the keep, on the far side of the square
+		for _, o := range [][2]int{{0, -4}, {1, -4}, {-1, -4}, {2, -4}, {0, -5}, {-2, -4}} {
+			if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], btKeep) {
+				break
+			}
+		}
+	}
 	squareR, squareKind := 2.4, lGreen
-	if s.town { // a town has a broad cobbled market square, not a little green
-		squareR, squareKind = 4.2, lPlaza
+	if s.town { // a city has a broad cobbled market square, not a little green
+		squareR, squareKind = 4.6, lPlaza
 	}
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
@@ -388,8 +435,8 @@ func (g *Generator) genLayout(s settlement) *layout {
 
 	buildR := reach - 4 // buildings stay inside this; the wall encloses them
 	base, slope, floor := 0.95, 0.6, 0.22
-	if s.town { // a city packs its blocks tight with houses, edge to edge
-		base, slope, floor = 1.4, 0.4, 0.85
+	if s.town { // a city: nearly every plot built, just thinning a touch outward
+		base, slope, floor = 1.35, 0.45, 0.8
 	}
 	density := func(r float64) float64 {
 		p := base - slope*(r/buildR) // dense core, thinning toward the edge
@@ -424,24 +471,50 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
+	// The built-up limit. A village fills a near-disc; a city's edge is lobed and
+	// irregular (a few harmonics), so its wall and outskirts wobble like a real
+	// medieval town instead of forming a tidy circle.
+	buildLimit := func(float64) float64 { return buildR }
+	if s.town {
+		var amp, ph [3]float64
+		for k := 0; k < 3; k++ {
+			amp[k] = rng.rng(0.06, 0.17)
+			ph[k] = rng.f() * 2 * math.Pi
+		}
+		buildLimit = func(ang float64) float64 {
+			m := 1.0
+			for k := 0; k < 3; k++ {
+				m += amp[k] * math.Sin(float64(k+1)*ang+ph[k])
+			}
+			return buildR * m
+		}
+	}
+
 	// Houses front the streets or ring the green. The front band is wide and its
 	// acceptance is jittered per plot, so dwellings sit at varied setbacks (some
 	// on the street, some back in their croft) rather than in a tidy line.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			r := math.Hypot(float64(gx-cgx), float64(gy-cgy))
-			if r > buildR || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
+			if r > buildLimit(math.Atan2(float64(gy-cgy), float64(gx-cgx))) || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
 				continue
 			}
-			roadD := onAnyRoad(float64(gx), float64(gy))
 			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
 			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
-			setback := 2.0 + cellHash.f()*1.6 // village: 2.0 … 3.6 tiles off the street
 			if s.town {
-				setback = 1.0 + cellHash.f()*4 // city: fill the whole block
-			}
-			if !((roadD >= 0.9 && roadD <= setback) || (greenD >= squareR+0.2 && greenD <= squareR+2.8)) {
-				continue
+				// A city packs solid: build on every plot that isn't a lane or the
+				// square; the lanes (already carved) and the one-tile gaps between
+				// buildings are the streets, so blocks fill edge to edge.
+				if greenD < squareR+0.6 {
+					continue
+				}
+			} else {
+				// A village fronts the streets or rings the green, at jittered setbacks.
+				roadD := onAnyRoad(float64(gx), float64(gy))
+				setback := 2.0 + cellHash.f()*1.6
+				if !((roadD >= 0.9 && roadD <= setback) || (greenD >= squareR+0.2 && greenD <= squareR+2.8)) {
+					continue
+				}
 			}
 			if cellHash.f() > density(r) {
 				continue
@@ -558,7 +631,12 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
-	// Everything left inside the wall becomes trodden yard.
+	// Everything left inside the wall becomes ground: trodden grassy yard in a
+	// village, packed/cobbled paving between a city's tight buildings.
+	yardKind := lYard
+	if s.town {
+		yardKind = lPaved
+	}
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			c := l.at(gx, gy)
@@ -568,7 +646,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 			r := math.Hypot(float64(gx-cgx), float64(gy-cgy))
 			ang := math.Atan2(float64(gy-cgy), float64(gx-cgx))
 			if r < wallRad(ang) && canBuild(gx, gy) {
-				c.kind = lYard
+				c.kind = yardKind
 			}
 		}
 	}
@@ -945,6 +1023,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Hill, Glyph: 'I', Color: "#9A9CA6"} // stone tower (blocks)
 	case lPlaza:
 		return Cell{Biome: Path, Glyph: '·', Color: "#A89B82", Walkable: true} // cobbled square
+	case lPaved:
+		return Cell{Biome: Path, Glyph: '·', Color: "#9A8E78", Walkable: true} // packed city ground
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:
@@ -955,8 +1035,10 @@ func cellFor(c *lcell) Cell {
 
 func buildingGlyph(bt buildType) rune {
 	switch bt {
-	case btChurch:
+	case btCathedral, btChurch:
 		return 'C'
+	case btKeep:
+		return 'K'
 	case btLonghouse:
 		return 'L'
 	case btBarn:
@@ -969,10 +1051,14 @@ func buildingGlyph(bt buildType) rune {
 }
 
 func buildingColor(bt buildType, b Biome) string {
-	if bt == btChurch {
+	switch bt {
+	case btChurch:
 		return "#C9CCD2" // pale stone
-	}
-	if bt == btBarn {
+	case btCathedral:
+		return "#D6D2C4" // pale cathedral stone
+	case btKeep:
+		return "#9A9CA6" // grey castle stone
+	case btBarn:
 		return "#7C5A38" // dark timber
 	}
 	return houseColor(uint64Hash(bt, b))

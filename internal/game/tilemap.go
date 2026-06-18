@@ -89,6 +89,8 @@ const (
 	PropBldLonghouse // 3×2 longhouse
 	PropBldBarn      // 2×2 barn
 	PropBldChurch    // 2×3 church with a steeple
+	PropBldKeep      // 3×3 castle keep (a city's stronghold)
+	PropBldCathedral // 3×4 great church (a city's grand centrepiece)
 	PropBldBody      // a covered footprint tile (no draw)
 	PropCrop         // ripe grain standing in a field (harvestable)
 	PropStone        // cut-stone rubble at a quarry (harvestable)
