@@ -130,9 +130,12 @@ func (g *Generator) At(x, y int) Cell {
 
 	elev := g.fbmAt(wx, wy, 0x1, 0.045, 4)
 	moist := g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
-	// Temperature is a large-scale climate field (low frequency = broad warm/cold
-	// regions), nudged colder as elevation rises so highlands and peaks freeze.
-	temp := g.fbmAt(wx, wy, 0x7E11, 0.014, 3) - 0.30*(elev-0.5)
+	// climate is the large-scale temperature field (low frequency = broad warm/
+	// cold regions); temp also folds in elevation, so highlands and peaks run
+	// colder. Snow keys off climate (the region) as well as temp, so a lone high
+	// knoll in a warm meadow stays a rocky hill instead of sprouting a snowcap.
+	climate := g.fbmAt(wx, wy, 0x7E11, 0.014, 3)
+	temp := climate - 0.30*(elev-0.5)
 
 	switch {
 	case elev < 0.24: // deep water
@@ -157,13 +160,13 @@ func (g *Generator) At(x, y int) Cell {
 		default:
 			return grassCell(g, x, y)
 		}
-	case elev < 0.84: // highland — cold tops freeze to snow, else hills
-		if temp < 0.40 {
+	case elev < 0.84: // highland — snow only in genuinely cold regions, else hills
+		if temp < 0.40 && climate < 0.42 {
 			return snowCell(g, x, y)
 		}
 		return hillCell(g, x, y)
-	default: // peaks — snow-capped where cold, bare rock where warm
-		if temp < 0.52 {
+	default: // peaks — snow-capped except in warm regions, where they're bare rock
+		if temp < 0.52 && climate < 0.55 {
 			return Cell{Biome: Snow, Glyph: '▲', Color: "#EAF0F7"} // snowy peak (blocks)
 		}
 		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
