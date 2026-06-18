@@ -10,6 +10,10 @@ the (coming-soon) Arcade.
 ssh -p 2222 yourname@durstworld.example.com
 ```
 
+> **New here (human or AI)?** [`docs/GAME.md`](docs/GAME.md) is the orientation
+> doc — what the game is, every feature, and the architecture. Before touching
+> anything visual, read [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md).
+
 No password, no account — your SSH username is your name in the world.
 
 ## Run locally
