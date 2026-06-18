@@ -128,6 +128,7 @@ const (
 	lFence                    // palisade segment (blocks)
 	lGate                     // opening where a road crosses the palisade (walkable)
 	lField                    // cultivated field (walkable)
+	lGarden                   // a small kitchen garden inside the village (walkable)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -164,6 +165,7 @@ type lcell struct {
 	kind  lkind
 	bt    buildType // for lBuildAnchor
 	fv    uint8     // fence orientation (for lFence): 0 horizontal, 1 vertical, 2 post/corner
+	decor uint8     // yard greenery: 0 none, 1 bush, 2 flower, 3 tuft
 	biome Biome     // underlying biome, for ground colour
 }
 
@@ -354,23 +356,22 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
-	// Houses front the streets: scan the grid, and on buildable plots a short
-	// step off a road, try to drop a building (denser toward the centre), leaving
-	// a one-tile gap to its neighbours for crofts/gardens.
+	// Houses front the streets or ring the green. The front band is wide and its
+	// acceptance is jittered per plot, so dwellings sit at varied setbacks (some
+	// on the street, some back in their croft) rather than in a tidy line.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			r := math.Hypot(float64(gx-cgx), float64(gy-cgy))
 			if r > buildR || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
 				continue
 			}
-			// A plot must front a street, or ring the central green — so the core
-			// packs tightly around the green rather than leaving it bare.
 			roadD := onAnyRoad(float64(gx), float64(gy))
 			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
-			if !((roadD >= 0.9 && roadD <= 2.3) || (greenD >= 2.6 && greenD <= 5)) {
+			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
+			setback := 2.0 + cellHash.f()*1.6 // 2.0 … 3.6 tiles off the street
+			if !((roadD >= 0.9 && roadD <= setback) || (greenD >= 2.6 && greenD <= 5)) {
 				continue
 			}
-			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
 			if cellHash.f() > density(r) {
 				continue
 			}
@@ -379,25 +380,26 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 
 	// Palisade: enclose the built-up area with an irregular polygon. For each of
-	// N angular sectors, take the farthest occupied cell + a margin as a vertex,
-	// then connect the vertices with straight runs — giving real corners, not a
-	// smooth ring.
+	// N angular sectors, take the farthest *built* cell (houses and green, not the
+	// roads that run out to the gates) + a margin as a vertex, then connect the
+	// vertices with straight runs — so the wall hugs the houses and has real
+	// corners, not a smooth ring ballooned out along the roads.
 	const sectors = 20
 	sectorR := make([]float64, sectors)
 	for i := range sectorR {
-		sectorR[i] = 6
+		sectorR[i] = 5
 	}
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
-			if !occupied(l.at(gx, gy).kind) {
+			if !builtUp(l.at(gx, gy).kind) {
 				continue
 			}
 			ddx, ddy := float64(gx-cgx), float64(gy-cgy)
 			r := math.Hypot(ddx, ddy)
 			ang := math.Atan2(ddy, ddx)
 			si := int((ang+math.Pi)/(2*math.Pi)*sectors) % sectors
-			if r+2.5 > sectorR[si] {
-				sectorR[si] = r + 2.5
+			if r+2 > sectorR[si] {
+				sectorR[si] = r + 2
 			}
 		}
 	}
@@ -467,6 +469,50 @@ func (g *Generator) genLayout(s settlement) *layout {
 			}
 		}
 	}
+
+	// Kitchen gardens: small 2×2 cultivated patches tucked into the yards (the
+	// crofts behind the houses), so the inside of the village isn't bare earth.
+	yard2x2 := func(gx, gy int) bool {
+		for yy := gy; yy < gy+2; yy++ {
+			for xx := gx; xx < gx+2; xx++ {
+				if !l.in(xx, yy) || l.at(xx, yy).kind != lYard {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	for gy := 0; gy < n-1; gy++ {
+		for gx := 0; gx < n-1; gx++ {
+			if yard2x2(gx, gy) && unit(hashCoord(s.id^0x6A5D, l.ox+gx, l.oy+gy)) < 0.05 {
+				for yy := gy; yy < gy+2; yy++ {
+					for xx := gx; xx < gx+2; xx++ {
+						l.at(xx, yy).kind = lGarden
+					}
+				}
+			}
+		}
+	}
+
+	// Greenery: scatter bushes, flowers and grass tufts across the remaining
+	// yards so the village reads as lived-in (gardens, hedges) rather than a
+	// swept dirt commons.
+	for gy := 0; gy < n; gy++ {
+		for gx := 0; gx < n; gx++ {
+			c := l.at(gx, gy)
+			if c.kind != lYard {
+				continue
+			}
+			switch h := unit(hashCoord(s.id^0xDEC04, l.ox+gx, l.oy+gy)); {
+			case h < 0.10:
+				c.decor = 1 // bush
+			case h < 0.22:
+				c.decor = 2 // flower
+			case h < 0.40:
+				c.decor = 3 // grass tuft
+			}
+		}
+	}
 	return l
 }
 
@@ -506,6 +552,16 @@ func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt build
 func occupied(k lkind) bool {
 	switch k {
 	case lRoad, lGreen, lWell, lBuildAnchor, lBuildBody:
+		return true
+	}
+	return false
+}
+
+// builtUp is the occupied set the wall hugs: houses and the green, but not the
+// roads (which run out to the gates).
+func builtUp(k lkind) bool {
+	switch k {
+	case lGreen, lWell, lBuildAnchor, lBuildBody:
 		return true
 	}
 	return false
@@ -607,7 +663,16 @@ func cellFor(c *lcell) Cell {
 	ground := groundColorFor(c.biome)
 	switch c.kind {
 	case lYard:
-		return Cell{Biome: c.biome, Glyph: '·', Color: ground, Walkable: true}
+		y := Cell{Biome: c.biome, Glyph: '·', Color: ground, Walkable: true}
+		switch c.decor { // scattered greenery — gardens, hedges, tufts
+		case 1:
+			y.Glyph, y.Color = 'o', "#3E8F57" // bush
+		case 2:
+			y.Glyph, y.Color = '*', "#FF6B6B" // flower
+		case 3:
+			y.Glyph, y.Color = ',', "#4F9460" // grass tuft
+		}
+		return y
 	case lGreen:
 		return Cell{Biome: Grass, Glyph: '·', Color: "#6FBE6A", Walkable: true}
 	case lRoad, lGate:
@@ -618,6 +683,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: c.biome, Glyph: '=', Color: "#5A3D22", Variant: c.fv}
 	case lField:
 		return Cell{Biome: Grass, Glyph: '"', Color: "#86974A", Walkable: true}
+	case lGarden:
+		return Cell{Biome: Grass, Glyph: '"', Color: "#7FA64B", Walkable: true}
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:
