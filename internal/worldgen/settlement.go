@@ -154,9 +154,9 @@ func (g *Generator) cellInSettlement(s settlement, x, y int) (Cell, bool) {
 	if s.hasFence && d >= R-1 {
 		return Cell{Biome: Grass, Glyph: '=', Color: "#7A5A3A"}, true
 	}
-	// Farm wedge: plowed fields fill one angular sector toward the edge.
-	if s.hasFields && d > s.r0*0.55 && angDiff(theta, s.fieldAng) < 0.6 {
-		return Cell{Biome: Grass, Glyph: '"', Color: "#8A6E44", Walkable: true}, true
+	// Farm wedge: cultivated fields fill one angular sector toward the edge.
+	if s.hasFields && d > s.r0*0.6 && angDiff(theta, s.fieldAng) < 0.45 {
+		return Cell{Biome: Grass, Glyph: '"', Color: "#86974A", Walkable: true}, true
 	}
 	// Houses on a jittered plot grid, kept off the central well and clear of the
 	// fence ring (villages) or just inside the outline (open hamlets).
@@ -175,10 +175,10 @@ func (g *Generator) cellInSettlement(s settlement, x, y int) (Cell, bool) {
 // road's angular half-width shrinks with distance so it stays roughly one tile
 // wide all the way out.
 func (s settlement) onSpoke(theta, d, R float64) bool {
-	if d < 1 || d > R+0.6 {
+	if d < 2.5 || d > R+0.6 {
 		return false
 	}
-	half := 0.9 / d
+	half := 0.6 / d
 	step := 2 * math.Pi / float64(s.spokes)
 	for i := 0; i < s.spokes; i++ {
 		if angDiff(theta, s.spoke0+float64(i)*step) < half {
