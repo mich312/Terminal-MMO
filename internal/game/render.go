@@ -12,11 +12,13 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// PlayerW, PlayerH is a player's collision footprint in tiles. Avatars are
-// drawn as larger half-block sprites overhanging this footprint.
+// PlayerW, PlayerH is a player's collision footprint in tiles. A single tile,
+// so the hero reads as one small figure in a large world; the HD avatar sprite
+// is drawn to roughly fill that tile, while the glyph renderer shows a single
+// token (it can't fit a face in one cell).
 const (
-	PlayerW = 2
-	PlayerH = 2
+	PlayerW = 1
+	PlayerH = 1
 )
 
 // Camera is the window of a (possibly larger-than-screen) map that is drawn.

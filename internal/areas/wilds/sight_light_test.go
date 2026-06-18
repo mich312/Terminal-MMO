@@ -63,11 +63,12 @@ func TestSightLightStaysCenteredOnPlayer(t *testing.T) {
 		a.reveal() // uncover a discoverR disc around the player so terrain is visible
 
 		tm, ox, oy := a.sample(vw, vh)
-		lit := game.RenderRGBA(nil, tm, nil, "", 0, game.Camera{W: vw, H: vh}, a.sightLight(), ox, oy, scale, false, style)
+		light := a.sightLight()
+		lit := game.RenderRGBA(nil, tm, nil, "", 0, game.Camera{W: vw, H: vh}, light, ox, oy, scale, false, style)
 		flat := game.RenderRGBA(nil, tm, nil, "", 0, game.Camera{W: vw, H: vh}, game.Light{}, ox, oy, scale, false, style)
 
-		// The player sits dead-center in the window (sample() centers the body).
-		cx, cy := vw/2, vh/2
+		// The lit circle's center, in window-tile coordinates (where the player is).
+		cx, cy := light.X-ox, light.Y-oy
 		// A point just inside the revealed disc (discoverR=9) but beyond the lit
 		// radius (sightR=7), so it should be clearly darkened.
 		ex, ey := cx, cy+8

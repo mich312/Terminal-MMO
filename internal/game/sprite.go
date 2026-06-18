@@ -11,9 +11,10 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// Sprite bitmaps live in avatar.go (AvatarBitmap), shared by both renderers.
-// They are 6×6 pixels → 6 cells wide × 3 cells tall in the half-block renderer,
-// sized to sit close to the 2×2 footprint rather than loom over it.
+// Sprite bitmaps live in avatar.go (AvatarBitmap), used by the HD pixel
+// renderer and the character-panel preview. The glyph renderer can't fit a
+// recognizable face in a single-tile footprint, so it draws each player as one
+// colored token (their name initial) instead.
 
 var (
 	spriteWhite = mustHex("#F5F7FA")
@@ -37,56 +38,19 @@ func playerColor(c lipgloss.Color) colorful.Color {
 	return colorful.Color{R: 0.5, G: 0.5, B: 0.5}
 }
 
-// stampSprite draws one player's avatar onto the grid. (fc,fr) is the
-// top-left grid cell of the player's PlayerW×PlayerH footprint; the sprite is
-// centered over it and bottom-aligned, overhanging upward and sideways.
+// stampSprite draws one player's avatar onto the grid. (fc,fr) is the player's
+// single-tile footprint cell. A 1×1 body has no room for a half-block sprite,
+// so each player is one colored token — their name initial reversed onto the
+// body color — with a chevron above your own head to mark you.
 func stampSprite(grid [][]rcell, th *ui.Theme, p world.Player, isSelf bool, frame, fc, fr int) {
 	body := playerColor(p.Color)
-	// The half-block grid can't show the full-res sprite; downsample it to keep
-	// the glyph avatar ~2 tiles (6 px wide × 6 px tall → 6 cells × 3 cells).
-	bmp := downsampleBitmap(AvatarBitmap(p.Style, p.Accessory, p.Facing, AvatarWalkFrame(p.LastMoved, frame)), 6, 6)
-	cellsW := len(bmp[0])
-	cellsH := len(bmp) / 2
-
-	left := fc + PlayerW/2 - cellsW/2
-	bottom := fr + PlayerH - 1
-	top := bottom - (cellsH - 1)
-
-	// "you" marker: a small chevron floating above your own head.
+	cell := rcell{ch: nameInitial(p.Name), fg: spriteBlack, bg: body, hasBg: true, bold: true}
 	if isSelf {
-		putCell(grid, top-1, fc+PlayerW/2, rcell{ch: '▾', fg: spriteWhite, bold: true})
-	}
-
-	for cr := 0; cr < cellsH; cr++ {
-		topRow := []rune(bmp[2*cr])
-		botRow := []rune(bmp[2*cr+1])
-		for cc := 0; cc < cellsW; cc++ {
-			tc, topOp := spritePixel(topRow[cc], body, isSelf)
-			bc, botOp := spritePixel(botRow[cc], body, isSelf)
-			if !topOp && !botOp {
-				continue
-			}
-			gr, gc := top+cr, left+cc
-			switch {
-			case topOp && botOp:
-				putCell(grid, gr, gc, rcell{ch: '▀', fg: tc, bg: bc, hasBg: true, bold: true})
-			case topOp:
-				putCell(grid, gr, gc, rcell{ch: '▀', fg: tc, bold: true})
-			default:
-				putCell(grid, gr, gc, rcell{ch: '▄', fg: bc, bold: true})
-			}
-		}
-	}
-
-	// name initial below the feet, in the player's color (reversed for self).
-	init := nameInitial(p.Name)
-	cell := rcell{ch: init, fg: body, bold: true}
-	if isSelf {
+		putCell(grid, fr-1, fc, rcell{ch: '▾', fg: spriteWhite, bold: true})
 		cell.fg = spriteWhite
-		cell.bg = body
-		cell.hasBg = true
+		cell.bg = body.BlendLab(spriteBlack, 0.15).Clamped()
 	}
-	putCell(grid, bottom+1, fc+PlayerW/2, cell)
+	putCell(grid, fr, fc, cell)
 }
 
 // spritePixel resolves a bitmap code to a color (and whether it's opaque),
@@ -153,31 +117,6 @@ func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []s
 		lines = append(lines, sb.String())
 	}
 	return lines
-}
-
-// downsampleBitmap nearest-samples a sprite down to at most maxW×maxH (keeping
-// an even height for half-block pairing). Sprites already within bounds are
-// returned unchanged.
-func downsampleBitmap(rows []string, maxW, maxH int) []string {
-	h := len(rows)
-	w := len([]rune(rows[0]))
-	if w <= maxW && h <= maxH {
-		return rows
-	}
-	nw, nh := min(w, maxW), min(h, maxH)
-	if nh%2 == 1 {
-		nh--
-	}
-	out := make([]string, nh)
-	for y := 0; y < nh; y++ {
-		src := []rune(rows[y*h/nh])
-		o := make([]rune, nw)
-		for x := 0; x < nw; x++ {
-			o[x] = src[x*w/nw]
-		}
-		out[y] = string(o)
-	}
-	return out
 }
 
 func nameInitial(name string) rune {
