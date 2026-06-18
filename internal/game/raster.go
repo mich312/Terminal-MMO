@@ -143,13 +143,15 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		// first, then the canopies, so a near tree's shadow never lands on the
 		// canopy of one behind it — shadows always stay behind the trees. Within
 		// the canopy pass, top rows first so a nearer crown overlaps the one behind.
+		shadowMask := make([]uint8, imgW*imgH)
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
-					drawCanopyShadow(img, vx, vy, scale, art)
+					accumCanopyShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
 				}
 			}
 		}
+		applyShadowMask(img, shadowMask)
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				if props[vy][vx] == PropPortal {
@@ -278,13 +280,12 @@ func fillRect(img *image.RGBA, x0, y0, w, h int, c color.RGBA) {
 	}
 }
 
-// drawShadow darkens an elliptical patch toward black. It snaps to a px-sized
-// block grid with two alpha steps (a solid core and a lighter rim) so the
-// shadow stays crisply pixelated like the rest of the art rather than a smooth
-// anti-aliased blob. px is the art-pixel size of the caster; height is the
-// caster's height in pixels, used to stretch the shadow long and away from a low
-// sun at golden hour (short at noon, soft/short at night).
-func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int, height float64) {
+// shadowBlocks walks the px-snapped, two-level (core/rim) elliptical shadow for
+// a caster, applying the always-on directional lean plus the softened
+// golden-hour stretch, and calls emit(x, y, alpha) for each covered pixel.
+// Sharing this lets shadows be darkened straight onto the frame, or accumulated
+// into a max-coverage mask so overlapping shadows don't stack.
+func shadowBlocks(cx, cy, rx, ry float64, px int, height float64, emit func(x, y int, a float64)) {
 	if px < 1 {
 		px = 1
 	}
@@ -321,15 +322,25 @@ func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int, height float64)
 			}
 			for y := by; y < by+px; y++ {
 				for x := bx; x < bx+px; x++ {
-					or, og, ob, ok := getPixel(img, x, y)
-					if !ok {
-						continue
-					}
-					setPixel8(img, x, y, float64(or)*(1-a), float64(og)*(1-a), float64(ob)*(1-a))
+					emit(x, y, a)
 				}
 			}
 		}
 	}
+}
+
+// drawShadow darkens a single elliptical shadow straight onto the frame, snapped
+// to a px block grid with two retro alpha steps. height is the caster's height,
+// used for the directional/golden-hour stretch. (Used for avatars and bulky
+// single-tile props; tree canopies accumulate via a mask instead.)
+func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int, height float64) {
+	shadowBlocks(cx, cy, rx, ry, px, height, func(x, y int, a float64) {
+		or, og, ob, ok := getPixel(img, x, y)
+		if !ok {
+			return
+		}
+		setPixel8(img, x, y, float64(or)*(1-a), float64(og)*(1-a), float64(ob)*(1-a))
+	})
 }
 
 // drawChevron marks the local player with a small white downward triangle.
@@ -474,17 +485,40 @@ func canopyArt(p TileProp, wx, wy int) ([]string, bool) {
 	return nil, false
 }
 
-// drawCanopyShadow lays just the contact shadow for a tall prop, sized to the
-// canopy width and the caster's height. Drawn in its own pass before any
-// canopy, so shadows stay on the ground behind the trees.
-func drawCanopyShadow(img *image.RGBA, vx, vy, scale int, art []string) {
+// accumCanopyShadow records a tall prop's contact shadow into a max-coverage
+// mask (alpha 0..255) instead of darkening directly, so overlapping tree
+// shadows don't stack into ever-darker blobs — the densest stand casts a single
+// even shadow. applyShadowMask then darkens the frame once.
+func accumCanopyShadow(mask []uint8, imgW, imgH, vx, vy, scale int, art []string) {
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
 	}
 	w := len(art[0])
-	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
-		float64(w*apx)*0.38, float64(apx)*1.4, apx, float64(len(art)*apx))
+	shadowBlocks(float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
+		float64(w*apx)*0.38, float64(apx)*1.4, apx, float64(len(art)*apx),
+		func(x, y int, a float64) {
+			if x < 0 || x >= imgW || y < 0 || y >= imgH {
+				return
+			}
+			if v := uint8(a * 255); v > mask[y*imgW+x] {
+				mask[y*imgW+x] = v
+			}
+		})
+}
+
+// applyShadowMask darkens the frame once by the accumulated shadow coverage.
+func applyShadowMask(img *image.RGBA, mask []uint8) {
+	for i, v := range mask {
+		if v == 0 {
+			continue
+		}
+		a := float64(v) / 255
+		o := i * 4
+		img.Pix[o] = uint8(float64(img.Pix[o]) * (1 - a))
+		img.Pix[o+1] = uint8(float64(img.Pix[o+1]) * (1 - a))
+		img.Pix[o+2] = uint8(float64(img.Pix[o+2]) * (1 - a))
+	}
 }
 
 // drawCanopy renders a tall flora sprite (art) centered on tile (vx,vy),
