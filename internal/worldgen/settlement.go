@@ -130,6 +130,11 @@ const (
 	lField                    // cultivated field (walkable)
 	lGarden                   // a small kitchen garden inside the village (walkable)
 	lPond                     // a village pond by the green (blocks)
+	lQuarry                   // cut-stone quarry floor (walkable)
+	lQuarryRock               // a boulder at the quarry (blocks)
+	lClearing                 // a cleared worksite floor — packed earth (walkable)
+	lStump                    // a cut stump / log at a lumber camp (walkable)
+	lJetty                    // a wooden jetty out over the water (walkable)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -452,11 +457,17 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 	autotileFences(l)
 
-	// Fields along the approach, just outside the wall on the road axis.
 	wallRad := func(ang float64) float64 {
 		si := int((ang+math.Pi)/(2*math.Pi)*sectors) % sectors
 		return sectorR[si]
 	}
+
+	// Outlying worksites — a quarry on nearby hills, a lumber camp at the forest
+	// edge, a fishing hut on the shore — each placed in fitting terrain just past
+	// the wall and linked back through a gate by a spur road.
+	placeOutbuildings(l, canBuild, cgx, cgy, wallRad)
+
+	// Fields along the approach, just outside the wall on the road axis.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			if l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) {
@@ -568,6 +579,121 @@ func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt build
 	a := l.at(gx, y0) // anchor at bottom-left
 	a.kind, a.bt = lBuildAnchor, bt
 	return true
+}
+
+// placeOutbuildings sites the village's resource buildings in the surrounding
+// terrain and links each back to the village by a spur road. Each is optional —
+// it only appears if its terrain (hills / forest / water) lies within reach.
+func placeOutbuildings(l *layout, canBuild func(int, int) bool, cgx, cgy int, wallRad func(float64) float64) {
+	n := l.n
+
+	// find returns the matching-biome cell nearest the village but past the wall.
+	find := func(want func(Biome) bool) (int, int, bool) {
+		bx, by, bd, ok := 0, 0, math.MaxFloat64, false
+		for gy := 2; gy < n-2; gy++ {
+			for gx := 2; gx < n-2; gx++ {
+				if !want(l.at(gx, gy).biome) {
+					continue
+				}
+				ddx, ddy := float64(gx-cgx), float64(gy-cgy)
+				r := math.Hypot(ddx, ddy)
+				if r < wallRad(math.Atan2(ddy, ddx))+3 || r > float64(settleHalf-4) {
+					continue
+				}
+				if r < bd {
+					bx, by, bd, ok = gx, gy, r, true
+				}
+			}
+		}
+		return bx, by, ok
+	}
+	// hutNear finds open, buildable land next to (tx,ty) for the worksite's hut.
+	hutNear := func(tx, ty int) (int, int, bool) {
+		for _, o := range [][2]int{{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {2, 0}, {-2, 0}, {0, 2}, {0, -2}, {1, 1}, {-1, -1}} {
+			gx, gy := tx+o[0], ty+o[1]
+			if l.in(gx, gy) && l.at(gx, gy).kind == lEmpty && canBuild(gx, gy) {
+				return gx, gy, true
+			}
+		}
+		return 0, 0, false
+	}
+	// carveSpur runs a road from a worksite back to the village, opening a gate
+	// where it crosses the wall; inside the wall the existing lanes take over.
+	carveSpur := func(x0, y0 int) {
+		bresenham(x0, y0, cgx, cgy, func(gx, gy int) {
+			if !l.in(gx, gy) {
+				return
+			}
+			ddx, ddy := float64(gx-cgx), float64(gy-cgy)
+			if math.Hypot(ddx, ddy) < wallRad(math.Atan2(ddy, ddx))-0.5 {
+				return
+			}
+			c := l.at(gx, gy)
+			switch c.kind {
+			case lFence:
+				c.kind = lGate
+			case lEmpty, lField:
+				if c.biome != Water && c.biome != Mountain && c.biome != Deep {
+					c.kind = lRoad
+				}
+			}
+		})
+	}
+	stamp := func(tx, ty, rad int, from lkind, to lkind) {
+		for gy := ty - rad; gy <= ty+rad; gy++ {
+			for gx := tx - rad; gx <= tx+rad; gx++ {
+				if l.in(gx, gy) && l.at(gx, gy).kind == from {
+					l.at(gx, gy).kind = to
+				}
+			}
+		}
+	}
+
+	// Quarry — cut into nearby hills: a stone floor with a couple of boulders.
+	if tx, ty, ok := find(func(b Biome) bool { return b == Hill }); ok {
+		stamp(tx, ty, 2, lEmpty, lQuarry)
+		l.at(tx, ty).kind = lQuarryRock
+		if l.in(tx+1, ty+1) && l.at(tx+1, ty+1).kind == lQuarry {
+			l.at(tx+1, ty+1).kind = lQuarryRock
+		}
+		if hx, hy, ok := hutNear(tx-2, ty); ok {
+			placeBuilding(l, canBuild, hx, hy, btCottage)
+			carveSpur(hx, hy)
+		} else {
+			carveSpur(tx, ty)
+		}
+	}
+	// Lumber camp — a clearing at the forest edge with felled stumps and a store.
+	if tx, ty, ok := find(func(b Biome) bool { return b == Forest }); ok {
+		stamp(tx, ty, 2, lEmpty, lClearing)
+		for _, o := range [][2]int{{-1, -1}, {1, 0}, {0, 1}} {
+			if gx, gy := tx+o[0], ty+o[1]; l.in(gx, gy) && l.at(gx, gy).kind == lClearing {
+				l.at(gx, gy).kind = lStump
+			}
+		}
+		if hx, hy, ok := hutNear(tx, ty); ok {
+			placeBuilding(l, canBuild, hx, hy, btBarn)
+			carveSpur(hx, hy)
+		} else {
+			carveSpur(tx, ty)
+		}
+	}
+	// Fishing hut — on the shore, with a jetty reaching out over the water.
+	if tx, ty, ok := find(func(b Biome) bool { return b == Water }); ok {
+		if hx, hy, ok := hutNear(tx, ty); ok {
+			placeBuilding(l, canBuild, hx, hy, btCottage)
+			jetty := func(ax, ay, bx, by int) {
+				bresenham(ax, ay, bx, by, func(gx, gy int) {
+					if l.in(gx, gy) && l.at(gx, gy).biome == Water && l.at(gx, gy).kind == lEmpty {
+						l.at(gx, gy).kind = lJetty
+					}
+				})
+			}
+			jetty(hx, hy, tx, ty)
+			jetty(tx, ty, tx+(tx-hx), ty+(ty-hy)) // a little further out
+			carveSpur(hx, hy)
+		}
+	}
 }
 
 func occupied(k lkind) bool {
@@ -711,6 +837,16 @@ func cellFor(c *lcell) Cell {
 	case lPond:
 		return Cell{Biome: Water, Glyph: '~', Color: "#3F9AE0",
 			AnimA: "#2E6BD0", AnimB: "#5BB0E0", Frames: []rune{'~', '≈', '~', '≋'}}
+	case lQuarry:
+		return Cell{Biome: Mountain, Glyph: '·', Color: "#9AA0A8", Walkable: true}
+	case lQuarryRock:
+		return Cell{Biome: Hill, Glyph: '▲', Color: "#8A8170"} // boulder (blocks)
+	case lClearing:
+		return Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}
+	case lStump:
+		return Cell{Biome: Path, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
+	case lJetty:
+		return Cell{Biome: Path, Glyph: '·', Color: "#7A5A38", Walkable: true} // dock planks
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:

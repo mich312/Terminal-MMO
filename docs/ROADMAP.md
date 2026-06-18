@@ -185,6 +185,12 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
   per-building roof/colour variety, and **harvestable grain** standing in the
   fields and gardens — a new collectible that hooks straight into the existing
   pickup + inventory (`e` to harvest, persists like other forage).
+- ✅ Outlying worksites linked by spur roads: a **stone quarry** cut into nearby
+  hills (cut-stone floor + boulders), a **lumber camp** clearing at the forest
+  edge (stumps + a store), and a **fishing hut** on the shore with a **jetty**
+  out over the water. Each appears only where its terrain lies within reach, is
+  sited in fitting ground just past the wall, and is connected back through a
+  gate by a road.
 
 ## Parked polish
 
