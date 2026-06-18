@@ -12,30 +12,35 @@ import (
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
 
-// findWell scans a region for a settlement centre (a well glyph 'W'), returning
-// the first whose "fenced" status matches wantFence.
-func findWell(g *worldgen.Generator, wantFence bool) (int, int, bool) {
-	const span = 400
-	for cy := -span; cy <= span; cy++ {
-		for cx := -span; cx <= span; cx++ {
+// findWells scans a region for settlement centres (well glyph 'W'), returning up
+// to n of them (deduplicated by proximity).
+func findWells(g *worldgen.Generator, n int) [][2]int {
+	const span = 420
+	var out [][2]int
+	for cy := -span; cy <= span && len(out) < n; cy++ {
+		for cx := -span; cx <= span && len(out) < n; cx++ {
 			if g.At(cx, cy).Glyph != 'W' {
 				continue
 			}
-			fenced := false
-			for dy := -16; dy <= 16 && !fenced; dy++ {
-				for dx := -16; dx <= 16; dx++ {
-					if g.At(cx+dx, cy+dy).Glyph == '=' {
-						fenced = true
-						break
-					}
+			near := false
+			for _, p := range out {
+				if abs(p[0]-cx) < 60 && abs(p[1]-cy) < 60 {
+					near = true
 				}
 			}
-			if fenced == wantFence {
-				return cx, cy, true
+			if !near {
+				out = append(out, [2]int{cx, cy})
 			}
 		}
 	}
-	return 0, 0, false
+	return out
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // renderSettlementPNG rasterizes a full-visibility window around (cx,cy) into a
@@ -78,14 +83,13 @@ func TestHDPreview(t *testing.T) {
 	defer func() { ui.Now = old }()
 
 	g := worldgen.New(worldSeed)
-	if cx, cy, ok := findWell(g, true); ok {
-		renderSettlementPNG(t, cx, cy, 34, 26, "/tmp/village_hd.png")
-	} else {
-		t.Error("no fenced village found")
+	wells := findWells(g, 3)
+	if len(wells) == 0 {
+		t.Fatal("no settlements found")
 	}
-	if cx, cy, ok := findWell(g, false); ok {
-		renderSettlementPNG(t, cx, cy, 28, 26, "/tmp/hamlet_hd.png")
-	} else {
-		t.Error("no hamlet found")
+	renderSettlementPNG(t, wells[0][0], wells[0][1], 40, 30, "/tmp/village_closeup_hd.png")
+	names := []string{"/tmp/village_hd.png", "/tmp/village2_hd.png", "/tmp/village3_hd.png"}
+	for i, w := range wells {
+		renderSettlementPNG(t, w[0], w[1], 60, 20, names[i])
 	}
 }

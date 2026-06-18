@@ -153,26 +153,33 @@ doors stay open). Two kinds, to exercise both solo and social play:
   are `game.FlavorArea` reward rooms; worldgen places the gates on extended
   trails with clearings, so they're always reachable.
 
-## Phase 8 — Settlements (villages & hamlets) ✅
+## Phase 8 — Settlements (medieval villages) ✅
 
-Structures beyond the lone homestead: deterministic settlements scattered
-through the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
+Structures beyond the lone homestead: deterministic villages scattered through
+the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
 
-- ✅ A macro-grid (`internal/worldgen/settlement.go`) hashes each cell to decide
-  whether it hosts a settlement, its centre, tier and organic outline. The hub
-  is kept clear; only temperate lowland is settled, and footprints clip cleanly
-  against water and peaks.
-- ✅ **Organic, not rectangular.** A settlement's edge is a wobbly radial curve
-  `R(θ) = R0·(1 + Σ aₖ·sin(kθ+φₖ))` — a lopsided "incorrectly shaped circle".
-  Each cell decides inside/edge/outside in O(1) from its angle and distance, so
-  there's no boundary tracing or flood fill in the hot path.
-- ✅ **Villages** (fenced) and **hamlets** (open): a central well, jittered house
-  plots, radial dirt roads that breach the fence ring to form gateways, and a
-  plowed **field** wedge for villages. New props (`PropWell`, `PropFence`) and a
-  furrowed ground texture (`TexField`); houses now cluster here, with only the
-  odd remote cabin left scattered in the open Wilds.
-- ✅ Tests assert determinism, hub protection, and that a fenced village's
-  interior is always reachable from outside (the roads really do gate the wall).
+- ✅ **Whole-layout generation, cached.** Unlike the terrain (decided per cell),
+  a village's plan is generated as a whole into a small local grid from its
+  macro-cell hash and cached (`internal/worldgen/settlement.go`); `At()` then
+  looks the cell up. Generating the plan at once is what lets villages have
+  multi-tile buildings, lanes that wrap housing, a wall with real corners, and
+  roads that leave through the gates — none of which a per-cell decision could.
+- ✅ **Medieval nucleated plan:** a central well + a stone **church** with a
+  steeple, a main road bending through (in one gate, out the other) plus a loop
+  lane and branch lanes so housing clusters in 2D; **varied multi-tile
+  buildings** (cottage 1×1, house 2×2, longhouse 3×2, barn, church 2×3) front
+  the streets, densest at the core; an **irregular palisade** (a per-sector
+  vertex polygon, Bresenham-walked) with autotiled rail/corner sprites and gates
+  where roads cross it; and **fields** along the approach.
+- ✅ **Fits the land:** only temperate lowland is settled, the hub stays clear,
+  and footprints clip against water/peaks so a village meets its lake or hillside
+  instead of paving over it; cleared ground keeps the underlying biome look.
+- ✅ **Connecting roads:** each village links toward its nearest neighbour;
+  distant ones dwindle to a faded trail.
+- ✅ Renderer support for bottom-anchored multi-tile buildings (`drawBuilding`,
+  procedural `buildingArt`), oriented palisade sprites, and a furrowed `TexField`.
+- ✅ Tests assert determinism, hub protection, and that a village's centre is
+  always reachable on foot from outside the wall (the roads really do gate it).
 
 ## Parked polish
 

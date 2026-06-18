@@ -6,7 +6,10 @@
 // hand them to the normal tile renderer.
 package worldgen
 
-import "math"
+import (
+	"math"
+	"sync"
+)
 
 // Biome is the coarse terrain class a cell belongs to.
 type Biome int
@@ -38,11 +41,17 @@ type Cell struct {
 	Walkable bool
 	Object   bool   // drawn bold (the gate)
 	Portal   string // non-empty → a portal to this area id
+	Variant  uint8  // sub-type selector (e.g. fence orientation, building type)
 }
 
-// Generator produces cells for one seed.
+// Generator produces cells for one seed. The caches memoize settlement metadata
+// and generated village layouts per macro-cell (villages are sparse, so few are
+// ever held); both are sync.Maps so a Generator stays safe to share.
 type Generator struct {
-	seed uint64
+	seed         uint64
+	settleCache  sync.Map // macro-cell key → settlement
+	layoutCache  sync.Map // macro-cell key → *layout
+	partnerCache sync.Map // macro-cell key → partnerResult
 }
 
 // New returns a generator for the given seed.
@@ -190,6 +199,37 @@ func (g *Generator) climate(x, y int) (elev, moist, temp, region float64) {
 	region = g.fbmAt(wx, wy, 0x7E11, 0.014, 3)
 	temp = region - 0.30*(elev-0.5)
 	return elev, moist, temp, region
+}
+
+// biomeAt returns the coarse biome class at (x,y), ignoring props, landmarks and
+// settlements — the bare terrain a settlement is built on, so its cleared ground
+// keeps the surrounding look (grassy meadow, dry savanna, …).
+func (g *Generator) biomeAt(x, y int) Biome {
+	elev, moist, temp, region := g.climate(x, y)
+	switch {
+	case elev < 0.30:
+		return Water
+	case elev < 0.38:
+		return Sand
+	case elev < 0.70:
+		switch {
+		case elev < 0.46 && moist > 0.62 && temp > 0.45:
+			return Swamp
+		case moist > 0.52:
+			return Forest
+		case temp > 0.60 && moist < 0.44:
+			return Savanna
+		default:
+			return Grass
+		}
+	case elev < 0.84:
+		if temp < 0.40 && region < 0.42 {
+			return Snow
+		}
+		return Hill
+	default:
+		return Mountain
+	}
 }
 
 func grassCell(g *Generator, x, y int) Cell {

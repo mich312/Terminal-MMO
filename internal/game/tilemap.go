@@ -76,9 +76,20 @@ const (
 	PropReed     // swamp: a clump of thin cattail reeds (in-tile)
 	PropCrag     // hill: a jagged rock spire (in-tile, blocks)
 	PropCampfire // a traveler's campfire — flickers and casts warm light at night
-	// Settlement structures for villages and hamlets in the Wilds.
-	PropWell  // a stone village well — the heart of a settlement (blocks)
-	PropFence // a low post-and-rail fence segment ringing a village (blocks)
+	// Settlement structures for villages in the Wilds.
+	PropWell      // a stone village well — the heart of a settlement (blocks)
+	PropFenceH    // palisade rail running east–west (blocks)
+	PropFenceV    // palisade rail running north–south (blocks)
+	PropFencePost // palisade corner / junction post (blocks)
+	// Multi-tile village buildings (drawn bottom-left-anchored, overhanging up
+	// and right). PropBldBody marks a footprint tile that the anchor's sprite
+	// covers — it blocks movement but draws nothing itself.
+	PropBldCottage   // 1×1 cottage
+	PropBldHouse     // 2×2 house
+	PropBldLonghouse // 3×2 longhouse
+	PropBldBarn      // 2×2 barn
+	PropBldChurch    // 2×3 church with a steeple
+	PropBldBody      // a covered footprint tile (no draw)
 )
 
 // Tile is one cell of a parsed map.

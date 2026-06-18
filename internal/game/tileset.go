@@ -169,15 +169,32 @@ var propArt = map[TileProp][]string{
 		"PLppLP",
 		".pPPp.",
 	},
-	// PropFence is a low post-and-rail fence segment — two posts and a rail —
-	// ringing a village. Reads the same from any approach.
-	PropFence: {
+	// Palisade rails: rough timber stakes. The horizontal run shows a long rail
+	// across two posts; the vertical run shows stakes along the line of travel;
+	// the post is a stout corner/junction upright. Autotiling picks between them.
+	PropFenceH: {
 		"......",
 		"P....P",
 		"PPPPPP",
 		"pPPPPp",
 		"P....P",
-		"......",
+		"P....P",
+	},
+	PropFenceV: {
+		".P..P.",
+		".P..P.",
+		".PppP.",
+		".PppP.",
+		".P..P.",
+		".P..P.",
+	},
+	PropFencePost: {
+		"PP..PP",
+		"PP..PP",
+		"PPppPP",
+		"PPppPP",
+		"PP..PP",
+		"PP..PP",
 	},
 	// PropHat is a wearable lying on the ground — a little brimmed hat that
 	// glints (W) so it reads as special loot, not terrain.
@@ -317,6 +334,94 @@ var portalArt = []string{
 	".R@@@@@@@@R.",
 	"..R@@@@@@R..",
 	"...RRRRRR...",
+}
+
+// buildingArt holds the multi-tile sprites for village buildings, generated once
+// from their footprint. Each is (h·6) rows × (w·6) cols of art-pixels, drawn
+// bottom-left-anchored so it rises up (north) and extends right (east) from its
+// base tile. Codes: P wall, p roof, D base/door shade, L window, R trim/cross.
+var buildingArt = map[TileProp][]string{
+	PropBldCottage:   genBuilding(1, 1, false, false),
+	PropBldHouse:     genBuilding(2, 2, false, false),
+	PropBldLonghouse: genBuilding(3, 2, false, false),
+	PropBldBarn:      genBuilding(2, 2, true, false),
+	PropBldChurch:    genBuilding(2, 3, false, true),
+}
+
+func genBuilding(wt, ht int, barn, church bool) []string {
+	w, h := wt*tileArtN, ht*tileArtN
+	g := make([][]byte, h)
+	for y := range g {
+		g[y] = make([]byte, w)
+		for x := range g[y] {
+			g[y][x] = '.'
+		}
+	}
+	roofH := h * 9 / 20 // ~45% of the height is roof
+	if roofH < 2 {
+		roofH = 2
+	}
+	wallTop, baseY := roofH, h-1
+	for y := wallTop; y <= baseY; y++ {
+		for x := 0; x < w; x++ {
+			g[y][x] = 'P'
+		}
+	}
+	for x := 0; x < w; x++ {
+		g[baseY][x] = 'D' // base course
+	}
+	for ry := 0; ry < roofH; ry++ { // pitched roof: a triangle, widest at the eaves
+		margin := (roofH - 1 - ry) * (w / 2) / roofH
+		for x := margin; x < w-margin; x++ {
+			g[ry][x] = 'p'
+		}
+	}
+	wy := wallTop + (baseY-wallTop)/3 // a row of windows
+	for x := 1; x < w-1; x++ {
+		if x%3 == 1 {
+			g[wy][x] = 'L'
+		}
+	}
+	dcx, dw := w/2, w/4 // a door at the bottom centre
+	if dw < 1 {
+		dw = 1
+	}
+	for y := baseY - max(1, (baseY-wallTop)/2); y <= baseY; y++ {
+		for x := dcx - dw/2; x <= dcx+dw/2 && x < w; x++ {
+			if x >= 0 {
+				g[y][x] = 'D'
+			}
+		}
+	}
+	if barn { // big central wagon doors
+		for y := wallTop + (baseY-wallTop)/3; y <= baseY; y++ {
+			for x := w / 4; x < w-w/4; x++ {
+				g[y][x] = 'D'
+			}
+		}
+	}
+	if church { // a central steeple rising above the roof, topped with a cross
+		towW := tileArtN / 2
+		tx0 := w/2 - towW/2
+		for y := 0; y < wallTop; y++ {
+			for x := tx0; x < tx0+towW; x++ {
+				g[y][x] = 'P'
+			}
+		}
+		cx := w / 2
+		g[0][cx], g[1][cx], g[2][cx] = 'R', 'R', 'R'
+		if cx-1 >= 0 {
+			g[1][cx-1] = 'R'
+		}
+		if cx+1 < w {
+			g[1][cx+1] = 'R'
+		}
+	}
+	out := make([]string, h)
+	for y := range g {
+		out[y] = string(g[y])
+	}
+	return out
 }
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').

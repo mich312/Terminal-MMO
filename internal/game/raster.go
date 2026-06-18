@@ -148,6 +148,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			for vx := 0; vx < cam.W; vx++ {
 				if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					accumCanopyShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
+				} else if art, ok := buildingArtFor(props[vy][vx]); ok {
+					accumBuildingShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
 				}
 			}
 		}
@@ -158,6 +160,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
+				} else if art, ok := buildingArtFor(props[vy][vx]); ok {
+					drawBuilding(img, vx, vy, scale, propCols[vy][vx], art)
 				}
 			}
 		}
@@ -464,6 +468,73 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 			}
 		}
 	}
+}
+
+// buildingArtFor returns the multi-tile sprite for a village building prop.
+func buildingArtFor(p TileProp) ([]string, bool) {
+	a, ok := buildingArt[p]
+	return a, ok
+}
+
+// drawBuilding renders a multi-tile village building, bottom-left-anchored on
+// tile (vx,vy) so it rises up and extends right from its base. Codes: P wall,
+// p roof, D base/door, L window, R trim/cross.
+func drawBuilding(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	left := vx * scale
+	top := (vy+1)*scale - len(art)*apx
+	body := colorfulToRGBA(col)
+	roof := colorfulToRGBA(col.BlendLab(shadowColor, 0.45).Clamped())
+	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.62).Clamped())
+	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.6).Clamped())
+	trim := colorfulToRGBA(col.BlendLab(spriteWhite, 0.32).Clamped())
+	for ay, row := range art {
+		for ax := 0; ax < len(row); ax++ {
+			var c color.RGBA
+			ok := true
+			switch row[ax] {
+			case 'P':
+				c = body
+			case 'p':
+				c = roof
+			case 'D':
+				c = base
+			case 'L':
+				c = win
+			case 'R':
+				c = trim
+			default:
+				ok = false
+			}
+			if ok {
+				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+			}
+		}
+	}
+}
+
+// accumBuildingShadow records a building's soft contact shadow, centred under
+// its footprint, into the shared max-coverage shadow mask.
+func accumBuildingShadow(mask []uint8, imgW, imgH, vx, vy, scale int, art []string) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	w, h := len(art[0]), len(art)
+	cx := float64(vx*scale) + float64(w*apx)/2
+	by := float64((vy+1)*scale) - float64(apx)
+	shadowBlocks(cx, by, float64(w*apx)*0.5, float64(apx)*1.5, apx, float64(h*apx),
+		func(x, y int, a float64) {
+			if x < 0 || x >= imgW || y < 0 || y >= imgH {
+				return
+			}
+			if v := uint8(a * 255); v > mask[y*imgW+x] {
+				mask[y*imgW+x] = v
+			}
+		})
 }
 
 // canopyArt returns the sprite for a tall flora prop (trees pick a variant by

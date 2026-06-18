@@ -518,14 +518,28 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropStump, c.Color, groundColor(c.Biome)
 	case '°': // small rock
 		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
-	case 'H': // a homestead — decorative house (blocks)
-		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
 	case 'W': // a village well (blocks)
-		t.Prop, t.PropHex, t.Ground = game.PropWell, c.Color, groundColor(worldgen.Grass)
-	case '=': // a village fence segment (blocks)
-		t.Prop, t.PropHex, t.Ground = game.PropFence, c.Color, groundColor(worldgen.Grass)
+		t.Prop, t.PropHex, t.Ground = game.PropWell, c.Color, groundColor(c.Biome)
+	case '=': // a palisade segment (blocks) — orientation carried in Variant
+		switch c.Variant {
+		case 1:
+			t.Prop = game.PropFenceV
+		case 2:
+			t.Prop = game.PropFencePost
+		default:
+			t.Prop = game.PropFenceH
+		}
+		t.PropHex, t.Ground = c.Color, groundColor(c.Biome)
 	case '"': // a cultivated field — crop rows (walkable)
 		t.Tex, t.Ground = game.TexField, "#86974A"
+	case '%': // a covered building footprint tile — drawn by its anchor (blocks)
+		t.Prop, t.Ground = game.PropBldBody, packedEarth
+	case 'h', 'H', 'L', 'B', 'C': // a village building anchor (blocks)
+		t.Prop = buildingProp(c.Variant)
+		t.PropHex, t.Ground = c.Color, packedEarth
+		if t.Prop == game.PropHouse { // a lone wilderness cabin keeps its biome ground
+			t.Ground = groundColor(c.Biome)
+		}
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
 	case 'ϒ': // acacia on savanna
@@ -546,6 +560,28 @@ func CellTile(c worldgen.Cell) game.Tile {
 		}
 	}
 	return t
+}
+
+// packedEarth is the trodden ground beneath village buildings.
+const packedEarth = "#9B8A6A"
+
+// buildingProp maps a settlement building's type (carried in Cell.Variant) to
+// its sprite. Variant 0 is a lone wilderness cabin (the single-tile PropHouse).
+func buildingProp(variant uint8) game.TileProp {
+	switch variant {
+	case 1:
+		return game.PropBldCottage
+	case 2:
+		return game.PropBldHouse
+	case 3:
+		return game.PropBldLonghouse
+	case 4:
+		return game.PropBldBarn
+	case 5:
+		return game.PropBldChurch
+	default:
+		return game.PropHouse
+	}
 }
 
 // texForBiome maps an overworld biome to an HD ground texture.

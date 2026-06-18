@@ -8,17 +8,16 @@ import (
 // worldSeed mirrors the seed the live Wilds runs on.
 const worldSeed = 0xD0117C0FFEE5742
 
-// findSettlement scans outward from the origin for the first valid settlement
-// (optionally requiring a fenced village) and returns it.
-func findSettlement(g *Generator, wantVillage bool) (settlement, bool) {
-	for ring := 1; ring < 20; ring++ {
+// findSettlement scans macro-cells outward from the origin for the first valid
+// settlement.
+func findSettlement(g *Generator) (settlement, bool) {
+	for ring := 1; ring < 30; ring++ {
 		for my := -ring; my <= ring; my++ {
 			for mx := -ring; mx <= ring; mx++ {
 				if abs(mx) != ring && abs(my) != ring {
-					continue // only the new ring's edge
+					continue
 				}
-				s := g.settlementFor(mx, my)
-				if s.valid && (!wantVillage || s.hasFence) {
+				if s := g.settlementFor(mx, my); s.valid {
 					return s, true
 				}
 			}
@@ -27,20 +26,23 @@ func findSettlement(g *Generator, wantVillage bool) (settlement, bool) {
 	return settlement{}, false
 }
 
+func cellEq(a, b Cell) bool {
+	return a.Biome == b.Biome && a.Glyph == b.Glyph && a.Color == b.Color &&
+		a.Walkable == b.Walkable && a.Variant == b.Variant
+}
+
 func TestSettlementDeterminism(t *testing.T) {
-	g := New(worldSeed)
-	s, ok := findSettlement(g, false)
+	s, ok := findSettlement(New(worldSeed))
 	if !ok {
 		t.Fatal("no settlement found near origin")
 	}
-	g2 := New(worldSeed)
-	for y := s.cy - 16; y <= s.cy+16; y++ {
-		for x := s.cx - 16; x <= s.cx+16; x++ {
-			a := g.At(x, y)
-			if b := g.At(x, y); !cellEq(a, b) {
-				t.Fatalf("At(%d,%d) not deterministic", x, y)
+	g1, g2 := New(worldSeed), New(worldSeed)
+	for y := s.cy - settleHalf; y <= s.cy+settleHalf; y++ {
+		for x := s.cx - settleHalf; x <= s.cx+settleHalf; x++ {
+			a := g1.At(x, y)
+			if b := g1.At(x, y); !cellEq(a, b) {
+				t.Fatalf("At(%d,%d) not deterministic within a generator", x, y)
 			}
-			// A second generator with the same seed must agree.
 			if c := g2.At(x, y); !cellEq(a, c) {
 				t.Fatalf("At(%d,%d) differs across generators", x, y)
 			}
@@ -48,15 +50,8 @@ func TestSettlementDeterminism(t *testing.T) {
 	}
 }
 
-func cellEq(a, b Cell) bool {
-	return a.Biome == b.Biome && a.Glyph == b.Glyph && a.Color == b.Color &&
-		a.Walkable == b.Walkable && a.Object == b.Object && a.Portal == b.Portal
-}
-
 func TestNoSettlementsNearHub(t *testing.T) {
 	g := New(worldSeed)
-	// The functional hub (spawn plaza, landmark clearings, connecting trails)
-	// lives within ~30 tiles of the origin; no settlement footprint may reach it.
 	const hubZone = settleHubKeep - settleMaxReach
 	for y := -hubZone; y <= hubZone; y++ {
 		for x := -hubZone; x <= hubZone; x++ {
@@ -67,25 +62,22 @@ func TestNoSettlementsNearHub(t *testing.T) {
 	}
 }
 
-// TestVillageReachable confirms a fenced village's interior is reachable from
-// outside its wall — i.e. the radial roads punch real gaps in the fence ring,
-// so a player can always walk in.
+// TestVillageReachable confirms a village's interior (its well) is reachable on
+// foot from outside the wall — the roads must punch real gates through it.
 func TestVillageReachable(t *testing.T) {
 	g := New(worldSeed)
-	s, ok := findSettlement(g, true)
+	s, ok := findSettlement(g)
 	if !ok {
-		t.Skip("no fenced village found near origin")
+		t.Fatal("no settlement found")
 	}
-	// Flood-fill walkable cells from a point well outside the village.
-	const margin = 6
-	lo, hi := -int(s.r0)-margin, int(s.r0)+margin
-	seen := map[[2]int]bool{}
+	lo, hi := -settleHalf, settleHalf
 	start := [2]int{lo, lo}
 	if !g.Walkable(s.cx+start[0], s.cy+start[1]) {
-		t.Skip("village corner not walkable; terrain-clipped edge")
+		t.Skip("grid corner not walkable (terrain-clipped); skipping")
 	}
+	seen := map[[2]int]bool{}
 	stack := [][2]int{start}
-	reachedCenter := false
+	reached := false
 	for len(stack) > 0 {
 		p := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -93,50 +85,41 @@ func TestVillageReachable(t *testing.T) {
 			continue
 		}
 		seen[p] = true
-		if abs(p[0]) <= 2 && abs(p[1]) <= 2 {
-			reachedCenter = true
+		if abs(p[0]) <= 1 && abs(p[1]) <= 1 {
+			reached = true
 		}
 		for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-			n := [2]int{p[0] + d[0], p[1] + d[1]}
-			if g.Walkable(s.cx+n[0], s.cy+n[1]) {
-				stack = append(stack, n)
+			if g.Walkable(s.cx+p[0]+d[0], s.cy+p[1]+d[1]) {
+				stack = append(stack, [2]int{p[0] + d[0], p[1] + d[1]})
 			}
 		}
 	}
-	if !reachedCenter {
-		t.Fatalf("village at (%d,%d) interior unreachable from outside", s.cx, s.cy)
+	if !reached {
+		t.Fatalf("village at (%d,%d) centre unreachable from outside the wall", s.cx, s.cy)
 	}
 }
 
-// TestPreviewVillage renders the first few settlements as ASCII so the
-// generated layouts can be eyeballed. Run with:
+// TestPreviewVillage renders the first few settlements as ASCII so the layout
+// can be eyeballed. Run with: go test ./internal/worldgen -run Preview -v
 //
-//	go test ./internal/worldgen -run Preview -v
-//
-// Legend: H house  O well  # fence  : field  . ground/road  T tree  ^ rock  ~ water
+// Legend: W well  C church  L longhouse  H house  B barn  h cottage  % building
+// = / | / + fence (h/v/corner)  : field  , road  . ground/green  T tree  ^ rock  ~ water
 func TestPreviewVillage(t *testing.T) {
 	g := New(worldSeed)
-	seen := map[[2]int]bool{}
 	shown := 0
-	for ring := 1; ring < 24 && shown < 4; ring++ {
-		for my := -ring; my <= ring && shown < 4; my++ {
-			for mx := -ring; mx <= ring && shown < 4; mx++ {
+	for ring := 1; ring < 24 && shown < 3; ring++ {
+		for my := -ring; my <= ring && shown < 3; my++ {
+			for mx := -ring; mx <= ring && shown < 3; mx++ {
 				if abs(mx) != ring && abs(my) != ring {
 					continue
 				}
 				s := g.settlementFor(mx, my)
-				if !s.valid || seen[[2]int{s.cx, s.cy}] {
+				if !s.valid {
 					continue
 				}
-				seen[[2]int{s.cx, s.cy}] = true
 				shown++
-				kind := "hamlet"
-				if s.hasFence {
-					kind = "village"
-				}
-				t.Logf("%s at (%d,%d)  r0=%.1f  spokes=%d  fields=%v",
-					kind, s.cx, s.cy, s.r0, s.spokes, s.hasFields)
-				t.Log(renderArea(g, s.cx, s.cy, 15))
+				t.Logf("settlement at (%d,%d)", s.cx, s.cy)
+				t.Log(renderArea(g, s.cx, s.cy, settleHalf))
 			}
 		}
 	}
@@ -147,33 +130,42 @@ func renderArea(g *Generator, cx, cy, rad int) string {
 	b.WriteByte('\n')
 	for y := cy - rad; y <= cy+rad; y++ {
 		for x := cx - rad; x <= cx+rad; x++ {
-			b.WriteRune(previewRune(g.At(x, y).Glyph))
+			b.WriteRune(previewRune(g.At(x, y)))
 		}
 		b.WriteByte('\n')
 	}
 	return b.String()
 }
 
-// previewRune maps a cell glyph to a clearer ASCII stand-in for the text dump.
-func previewRune(r rune) rune {
-	switch r {
-	case 'H':
-		return 'H' // house
-	case 'W':
-		return 'O' // well
+func previewRune(c Cell) rune {
+	switch c.Glyph {
+	case 'W', 'C', 'L', 'H', 'B', 'h':
+		return c.Glyph // well / buildings
+	case '%':
+		return '%' // building body
 	case '=':
-		return '#' // fence
+		switch c.Variant {
+		case 1:
+			return '|'
+		case 2:
+			return '+'
+		default:
+			return '='
+		}
 	case '"':
-		return ':' // field furrow
-	case '·', ',', '∘':
-		return '.' // open ground / road / yard
+		return ':' // field
 	case '♣', '♠', 'ϒ', 'Ψ':
-		return 'T' // tree
+		return 'T'
 	case '~', '≈', '≋':
-		return '~' // water
+		return '~'
 	case '▲', 'Δ', '°':
-		return '^' // rock / hill
+		return '^'
+	case '·':
+		if c.Biome == Path {
+			return ',' // road
+		}
+		return '.' // ground / green
 	default:
-		return r
+		return c.Glyph
 	}
 }
