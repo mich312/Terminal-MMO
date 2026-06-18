@@ -147,7 +147,8 @@ const (
 	lEmpty       lkind = iota // not part of the settlement → fall through to terrain
 	lYard                     // cleared, trodden ground (walkable)
 	lGreen                    // the village green (walkable)
-	lRoad                     // road / lane (walkable, packed earth)
+	lRoad                     // a village's dirt road / lane (walkable)
+	lStreet                   // a city's cobbled street (walkable)
 	lWell                     // the central well (blocks)
 	lFence                    // palisade segment (blocks)
 	lGate                     // opening where a road crosses the palisade (walkable)
@@ -349,7 +350,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 					}
 				}
 			}
-			if !fits || !placeBuilding(l, canBuild, qx-1, qy+1, btKeep) {
+			if !fits || !placeBuilding(l, canBuild, qx-1, qy+1, btKeep, 1) {
 				continue
 			}
 			for yy := y0; yy < y0+ch; yy++ {
@@ -491,12 +492,12 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if l.at(gx, gy).kind != lEmpty { // don't pave over the citadel
 				continue
 			}
-			ok := canBuild(gx, gy)
+			ok, laneKind := canBuild(gx, gy), lRoad
 			if s.town {
-				ok = inCity(gx, gy)
+				ok, laneKind = inCity(gx, gy), lStreet // cities are cobbled
 			}
 			if ok && onAnyRoad(float64(gx), float64(gy)) < 0.8 {
-				l.at(gx, gy).kind = lRoad
+				l.at(gx, gy).kind = laneKind
 			}
 		}
 	}
@@ -516,13 +517,13 @@ func (g *Generator) genLayout(s settlement) *layout {
 		churchType = btCathedral
 	}
 	for _, o := range [][2]int{{-1, 4}, {0, 4}, {-2, 4}, {1, 4}, {-1, 5}, {-2, 3}, {2, 4}, {-3, 4}} {
-		if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], churchType) {
+		if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], churchType, 1) {
 			break
 		}
 	}
 	if s.town { // a market hall flanks the square, opposite the cathedral
 		for _, o := range [][2]int{{3, -1}, {4, -1}, {3, 0}, {-4, -1}, {3, 1}, {4, 0}, {-5, -1}, {4, 1}} {
-			if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], btMarketHall) {
+			if placeBuilding(l, canBuild, gx0+o[0], gy0+o[1], btMarketHall, 1) {
 				break
 			}
 		}
@@ -695,7 +696,11 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if cellHash.f() > density(r) {
 				continue
 			}
-			placeBuilding(l, canBuild, gx, gy, chooseType(r, cellHash))
+			gap := 1 // villages keep alleys between buildings
+			if s.town {
+				gap = 0 // cities terrace: houses share walls into solid blocks
+			}
+			placeBuilding(l, canBuild, gx, gy, chooseType(r, cellHash), gap)
 		}
 	}
 
@@ -708,7 +713,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			switch l.at(gx, gy).kind {
-			case lBuildAnchor, lBuildBody, lRoad, lGate, lWell, lPlaza, lGreen, lPond,
+			case lBuildAnchor, lBuildBody, lRoad, lStreet, lGate, lWell, lPlaza, lGreen, lPond,
 				lCourtyard, lWall, lTower: // the citadel counts as built, too
 				core[gy*n+gx] = true
 			}
@@ -778,7 +783,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// Punch gates where a lane meets the wall.
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
-			if l.at(gx, gy).kind != lRoad {
+			if k := l.at(gx, gy).kind; k != lRoad && k != lStreet {
 				continue
 			}
 			edge := false
@@ -921,25 +926,27 @@ func (g *Generator) genLayout(s settlement) *layout {
 }
 
 // placeBuilding stamps a building with bottom-left anchor at (gx,gy) if its
-// whole footprint fits on buildable, empty ground with a one-tile margin.
-func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt buildType) bool {
+// footprint fits on buildable, empty ground. gap is the clear margin required to
+// other buildings: villages use 1 (alleys/crofts); city terraces use 0 so houses
+// share walls into solid blocks.
+func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt buildType, gap int) bool {
 	w, h := footprint(bt)
 	x0, y0 := gx, gy-(h-1)
-	for yy := y0 - 1; yy <= gy+1; yy++ { // include a 1-tile margin
-		for xx := x0 - 1; xx <= gx+w; xx++ {
-			if !l.in(xx, yy) {
+	for yy := y0; yy <= gy; yy++ { // the footprint itself
+		for xx := x0; xx <= gx+w-1; xx++ {
+			if !l.in(xx, yy) || !canBuild(xx, yy) {
 				return false
 			}
+			if k := l.at(xx, yy).kind; k != lEmpty && k != lYard {
+				return false
+			}
+		}
+	}
+	for yy := y0 - gap; yy <= gy+gap; yy++ { // the gap ring around it
+		for xx := x0 - gap; xx <= gx+w-1+gap; xx++ {
 			inFoot := xx >= x0 && xx <= gx+w-1 && yy >= y0 && yy <= gy
-			if inFoot && !canBuild(xx, yy) {
-				return false
-			}
-			k := l.at(xx, yy).kind
-			if inFoot && k != lEmpty && k != lYard {
-				return false
-			}
-			if !inFoot && occupiedBuilding(k) {
-				return false // keep a gap to other buildings
+			if !inFoot && l.in(xx, yy) && occupiedBuilding(l.at(xx, yy).kind) {
+				return false // keep the required gap to other buildings
 			}
 		}
 	}
@@ -1029,7 +1036,7 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(in
 	if tx, ty, ok := find(isRock); ok {
 		hx, hy, hok := hutNear(tx, ty)
 		if hok {
-			placeBuilding(l, canBuild, hx, hy, btCottage)
+			placeBuilding(l, canBuild, hx, hy, btCottage, 1)
 		}
 		stampInto(tx, ty, 2, isRock, lQuarry)
 		l.at(tx, ty).kind = lQuarryRock
@@ -1044,8 +1051,8 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(in
 	// a store on the meadow side, a path back.
 	if tx, ty, ok := find(isForest); ok {
 		hx, hy, hok := hutNear(tx, ty)
-		if hok && !placeBuilding(l, canBuild, hx, hy, btBarn) {
-			placeBuilding(l, canBuild, hx, hy, btCottage)
+		if hok && !placeBuilding(l, canBuild, hx, hy, btBarn, 1) {
+			placeBuilding(l, canBuild, hx, hy, btCottage, 1)
 		}
 		stampInto(tx, ty, 2, isForest, lClearing)
 		for _, o := range [][2]int{{0, 0}, {-1, -1}, {1, 0}, {0, 1}} {
@@ -1058,7 +1065,7 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(in
 	// Fishing hut — on the shore by the nearest water, a jetty reaching out over it.
 	if tx, ty, ok := find(isWater); ok {
 		if hx, hy, hok := hutNear(tx, ty); hok {
-			placeBuilding(l, canBuild, hx, hy, btCottage)
+			placeBuilding(l, canBuild, hx, hy, btCottage, 1)
 			jetty := func(ax, ay, bx, by int) {
 				bresenham(ax, ay, bx, by, func(gx, gy int) {
 					if l.in(gx, gy) && isWater(l.at(gx, gy).biome) && l.at(gx, gy).kind == lEmpty {
@@ -1081,14 +1088,6 @@ func spurFrom(carve func(int, int), hx, hy, tx, ty int, fromHut bool) {
 	} else {
 		carve(tx, ty)
 	}
-}
-
-func occupied(k lkind) bool {
-	switch k {
-	case lRoad, lGreen, lWell, lBuildAnchor, lBuildBody:
-		return true
-	}
-	return false
 }
 
 func occupiedBuilding(k lkind) bool { return k == lBuildAnchor || k == lBuildBody }
@@ -1204,6 +1203,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Grass, Glyph: '·', Color: "#6FBE6A", Walkable: true}
 	case lRoad, lGate:
 		return Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}
+	case lStreet:
+		return Cell{Biome: Path, Glyph: '·', Color: "#BBB29B", Walkable: true} // pale cobbled street
 	case lWell:
 		return Cell{Biome: c.biome, Glyph: 'W', Color: "#9AA7B0"}
 	case lFence:
@@ -1232,7 +1233,7 @@ func cellFor(c *lcell) Cell {
 	case lPlaza:
 		return Cell{Biome: Path, Glyph: '·', Color: "#A89B82", Walkable: true} // cobbled square
 	case lPaved:
-		return Cell{Biome: Path, Glyph: '·', Color: "#9A8E78", Walkable: true} // packed city ground
+		return Cell{Biome: Path, Glyph: '·', Color: "#83785F", Walkable: true} // darker earth between buildings
 	case lCourtyard:
 		return Cell{Biome: Path, Glyph: '·', Color: "#8F8576", Walkable: true} // castle bailey
 	case lBuildAnchor:
