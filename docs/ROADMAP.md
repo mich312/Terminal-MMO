@@ -69,7 +69,7 @@ Direction agreed with the team. Decisions locked:
 - ✅ Command registry + parser (`internal/game/commands.go`): chat starting
   with `/` routes to a handler instead of `World.Chat`. Aliases supported.
 - ✅ Core commands: `/help [cmd]`, `/who`, `/where`, `/me`, `/w` (aliases
-  `/whisper /tell /msg`), `/roll [NdM]`, `/color [0-7]`, `/goto <area>`,
+  `/whisper /tell /msg`), `/roll [NdM]`, `/color [0-21]`, `/goto <area>`,
   `/clear`. Multi-line output (`/help`, `/who`) uses a dismissable info panel.
 - ✅ New world primitives: `Emote` (proximity), `Whisper` (one recipient,
   sender echoes locally), `SetColor`.

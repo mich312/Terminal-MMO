@@ -1,8 +1,16 @@
 # Real-pixel renderer — experiment & decision
 
-Status: **experimental prototype** (branch `claude/pixel-based-renderer`). Not
-wired into the game. This records what we built, what we measured, and the
-recommendation.
+> **Superseded:** the recommendation below was accepted and then taken further —
+> the HD real-pixel renderer **shipped as the default client** (a plain `ssh`
+> serves sixel/kitty; `ssh -t … glyph` opts back into the half-block client).
+> This document is kept as the historical record of the experiment, the
+> measurements, and the reasoning that still governs the HD renderer's shape
+> (flat shading + delta + event-driven). For how the game works today, see
+> [`GAME.md`](GAME.md) and [`STYLE_GUIDE.md`](STYLE_GUIDE.md).
+
+Status (at time of writing): **experimental prototype** (branch
+`claude/pixel-based-renderer`). Not yet wired into the game. This records what we
+built, what we measured, and the recommendation.
 
 ## The question
 
