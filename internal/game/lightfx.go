@@ -61,19 +61,24 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 // all. propCol is the prop's day/night-tinted color; frame drives flame flicker.
 func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col colorful.Color, radius, intensity float64, ok bool) {
 	flicker := 0.85 + 0.15*math.Sin(float64(frame)*0.6+float64(wx*7+wy*3))
+	// Light mostly brightens (whitened) with only a hint of the source hue, so a
+	// glow lifts the area rather than washing it in color. whiten blends toward
+	// white; a campfire keeps more of its warmth because that reads as right.
+	white := colorful.Color{R: 1, G: 1, B: 1}
+	whiten := func(c colorful.Color, k float64) colorful.Color { return c.BlendLab(white, k).Clamped() }
 	switch p {
 	case PropCampfire:
-		return colorful.Color{R: 1, G: 0.55, B: 0.2}, 3.0 * flicker, 1.0, true
+		return whiten(colorful.Color{R: 1, G: 0.55, B: 0.2}, 0.3), 3.0 * flicker, 1.0, true
 	case PropPortal:
-		return propCol.BlendLab(colorful.Color{R: 0.8, G: 0.95, B: 1}, 0.4), 2.8, 0.6, true
+		return whiten(propCol, 0.6), 2.8, 0.6, true
 	case PropCore, PropFountain:
-		return colorful.Color{R: 0.75, G: 0.92, B: 1}, 3.4 * flicker, 0.7, true
+		return whiten(colorful.Color{R: 0.75, G: 0.92, B: 1}, 0.55), 3.4 * flicker, 0.7, true
 	case PropLamp:
-		return colorful.Color{R: 1, G: 0.84, B: 0.5}, 2.4 * flicker, 0.7, true
+		return whiten(colorful.Color{R: 1, G: 0.84, B: 0.5}, 0.45), 2.4 * flicker, 0.7, true
 	case PropTurbine, PropScreen:
-		return colorful.Color{R: 0.5, G: 0.8, B: 1}, 2.0, 0.6, true
+		return whiten(colorful.Color{R: 0.5, G: 0.8, B: 1}, 0.6), 2.0, 0.6, true
 	case PropGem:
-		return propCol.BlendLab(colorful.Color{R: 1, G: 1, B: 1}, 0.25), 0.9, 0.35, true
+		return whiten(propCol, 0.65), 0.9, 0.35, true
 	}
 	return colorful.Color{}, 0, 0, false
 }

@@ -139,25 +139,23 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		}
 		// Sun-glint / moon-glitter shimmering across water.
 		waterGlint(img, texs, cam, scale, frame, originX, originY)
-		// Tall props (trees, portals) are drawn over the terrain in a second pass,
-		// top rows first, so each overhangs upward and a lower (nearer) one overlaps
-		// the canopy of the one behind it — turning a scatter of trees into a layered
-		// canopy. (Single-tile props were already drawn by paintTile.)
+		// Tall props (trees, portals) overhang upward. Draw all the canopy shadows
+		// first, then the canopies, so a near tree's shadow never lands on the
+		// canopy of one behind it — shadows always stay behind the trees. Within
+		// the canopy pass, top rows first so a nearer crown overlaps the one behind.
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
-				switch props[vy][vx] {
-				case PropPortal:
+				if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
+					drawCanopyShadow(img, vx, vy, scale, art)
+				}
+			}
+		}
+		for vy := 0; vy < cam.H; vy++ {
+			for vx := 0; vx < cam.W; vx++ {
+				if props[vy][vx] == PropPortal {
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
-				case PropTree:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], pickTreeArt(originX+vx, originY+vy), originX+vx, originY+vy, amb, ambStr)
-				case PropAcacia:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], acaciaArt, originX+vx, originY+vy, amb, ambStr)
-				case PropPalm:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], palmArt, originX+vx, originY+vy, amb, ambStr)
-				case PropFir:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], firArt, originX+vx, originY+vy, amb, ambStr)
-				case PropCrag:
-					drawCanopy(img, vx, vy, scale, propCols[vy][vx], cragArt, originX+vx, originY+vy, amb, ambStr)
+				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				}
 			}
 		}
@@ -457,11 +455,42 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 	}
 }
 
+// canopyArt returns the sprite for a tall flora prop (trees pick a variant by
+// position), and whether the prop is a canopy at all — shared by the shadow and
+// body passes so both agree on the shape.
+func canopyArt(p TileProp, wx, wy int) ([]string, bool) {
+	switch p {
+	case PropTree:
+		return pickTreeArt(wx, wy), true
+	case PropAcacia:
+		return acaciaArt, true
+	case PropPalm:
+		return palmArt, true
+	case PropFir:
+		return firArt, true
+	case PropCrag:
+		return cragArt, true
+	}
+	return nil, false
+}
+
+// drawCanopyShadow lays just the contact shadow for a tall prop, sized to the
+// canopy width and the caster's height. Drawn in its own pass before any
+// canopy, so shadows stay on the ground behind the trees.
+func drawCanopyShadow(img *image.RGBA, vx, vy, scale int, art []string) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	w := len(art[0])
+	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
+		float64(w*apx)*0.38, float64(apx)*1.4, apx, float64(len(art)*apx))
+}
+
 // drawCanopy renders a tall flora sprite (art) centered on tile (vx,vy),
-// bottom-aligned so the trunk sits on the tile and the crown overhangs upward.
-// It first lays a soft contact shadow so the plant feels planted, then the
-// canopy in its color (P body, p shade/rim, L dapple, W glint/snow, T trunk).
-// Used for forest trees and the signature biome flora (acacia, palm, fir).
+// bottom-aligned so the trunk sits on the tile and the crown overhangs upward,
+// in its color (P body, p shade/rim, L dapple, W glint/snow, T trunk). The
+// contact shadow is drawn separately by drawCanopyShadow.
 func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int, amb colorful.Color, ambStr float64) {
 	apx := scale / tileArtN
 	if apx < 1 {
@@ -470,11 +499,6 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 	w := len(art[0])
 	left := vx*scale + scale/2 - (w*apx)/2
 	top := (vy+1)*scale - len(art)*apx
-
-	// Contact shadow under the trunk, sized to the canopy width and stretched by
-	// the sun (tall canopies throw the longest golden-hour shadows).
-	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
-		float64(w*apx)*0.38, float64(apx)*1.4, apx, float64(len(art)*apx))
 
 	body := colorfulToRGBA(col)
 	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
