@@ -230,20 +230,65 @@ func Shade(img *image.RGBA, x, y, w, h int, t float64) {
 	}
 }
 
+// cardUnit is the chunky-pixel size for panel chrome, matched to the bitmap
+// font's scale so the borders read at the same resolution as the text.
+func cardUnit(img *image.RGBA) int {
+	u := img.Bounds().Dx() / 540
+	if u < 2 {
+		u = 2
+	}
+	if u > 3 {
+		u = 3
+	}
+	return u
+}
+
 func fillCard(img *image.RGBA, x, y, w, h int) {
+	u := cardUnit(img)
+	bt := 2 * u
 	bg := color.RGBA{14, 18, 26, 255}
-	border := color.RGBA{0x2E, 0x8B, 0xFF, 255}
+	for j := bt; j < h-bt; j++ {
+		for i := bt; i < w-bt; i++ {
+			if inside(img, x+i, y+j) {
+				img.SetRGBA(x+i, y+j, blend(img.RGBAAt(x+i, y+j), bg, 0.95))
+			}
+		}
+	}
+	drawFrame(img, x, y, w, h, u)
+}
+
+// Frame draws just the chunky pixel border (no fill) over an already-shaded
+// region — used to give the HUD bar and toasts the same chrome as the panels.
+func Frame(img *image.RGBA, x, y, w, h int) { drawFrame(img, x, y, w, h, cardUnit(img)) }
+
+// drawFrame paints a chunky beveled border in u-sized pixel blocks: a dark
+// outer outline, a two-tone bevel (lit top/left, shaded bottom/right) for a
+// raised retro look, and notched (chamfered) corners.
+func drawFrame(img *image.RGBA, x, y, w, h, u int) {
+	edge := color.RGBA{0x10, 0x16, 0x22, 255}
+	hi := color.RGBA{0x5C, 0xA6, 0xFF, 255}
+	lo := color.RGBA{0x1C, 0x52, 0x9E, 255}
+	bt := 2 * u
 	for j := 0; j < h; j++ {
 		for i := 0; i < w; i++ {
+			if i >= bt && i < w-bt && j >= bt && j < h-bt {
+				continue // interior
+			}
+			if (i < u || i >= w-u) && (j < u || j >= h-u) {
+				continue // notch the outer corners for a chamfered look
+			}
 			px, py := x+i, y+j
 			if !inside(img, px, py) {
 				continue
 			}
-			if i < 2 || j < 2 || i >= w-2 || j >= h-2 {
-				img.SetRGBA(px, py, border)
-			} else {
-				img.SetRGBA(px, py, blend(img.RGBAAt(px, py), bg, 0.95))
+			c := hi
+			if i >= w-bt || j >= h-bt {
+				c = lo // shaded bottom/right bevel
 			}
+			if i < u || j < u || i >= w-u || j >= h-u {
+				c = edge // dark outer outline
+			}
+			img.SetRGBA(px, py, c)
 		}
 	}
 }

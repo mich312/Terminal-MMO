@@ -41,7 +41,12 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	}
 
-	grid := buildGrid(th, tm, cam, light, frame)
+	grid := buildGrid(th, tm, cam, light, frame, originX, originY)
+	// Day/night ambient for the ground and prop colors, so the whole HD scene
+	// (not just the base terrain that flows through buildGrid) shifts with the
+	// time of day, matching the glyph renderer.
+	ambHex, ambStr := ui.Ambient(ui.Now())
+	amb := mustHex(ambHex)
 	cols := make([][]colorful.Color, cam.H)
 	texs := make([][]TileTex, cam.H)
 	props := make([][]TileProp, cam.H)
@@ -67,14 +72,16 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			// A prop's ground is colored separately from the glyph's color so the
 			// flower-glyph stays red in the text renderer while HD draws grass.
 			if t.Ground != "" {
-				cols[y][x] = applyLight(style.tint(t.Ground), tx, ty, light)
+				// Lighting is evaluated in absolute world coordinates (see buildGrid):
+				// tx,ty index the window tile, originX+x/originY+y is its world cell.
+				cols[y][x] = applyLight(tint(style.tint(t.Ground), amb, ambStr), originX+x, originY+y, light)
 			}
 			if t.Prop != PropNone {
 				ph := t.PropHex
 				if ph == "" {
 					ph = t.Color
 				}
-				propCols[y][x] = style.tint(ph)
+				propCols[y][x] = tint(style.tint(ph), amb, ambStr)
 			}
 		}
 	}
@@ -113,19 +120,65 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		// ripples, sand speckles…). Hard tile edges — no blur, no all-over grain.
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
+				// Gather the 8 neighbors' lit ground colors so paintTile can dither
+				// the tile's border toward a differing biome — soft seams instead of
+				// hard grid edges. Out-of-window neighbors fall back to self (no blend).
+				at := func(x, y int) colorful.Color {
+					if x < 0 || x >= cam.W || y < 0 || y >= cam.H {
+						return cols[vy][vx]
+					}
+					return cols[y][x]
+				}
+				nbr := [8]colorful.Color{
+					at(vx, vy-1), at(vx+1, vy-1), at(vx+1, vy), at(vx+1, vy+1),
+					at(vx, vy+1), at(vx-1, vy+1), at(vx-1, vy), at(vx-1, vy-1),
+				}
 				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
-					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style)
+					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style, nbr)
 			}
 		}
-		// Portals are multi-tile animated gates drawn over the terrain so they can
-		// overhang upward. (Houses are single-tile props, drawn by paintTile.)
+		// Sun-glint / moon-glitter shimmering across water.
+		waterGlint(img, texs, cam, scale, frame, originX, originY)
+		// Tall props (trees, portals) overhang upward. Draw all the canopy shadows
+		// first, then the canopies, so a near tree's shadow never lands on the
+		// canopy of one behind it — shadows always stay behind the trees. Within
+		// the canopy pass, top rows first so a nearer crown overlaps the one behind.
+		shadowMask := make([]uint8, imgW*imgH)
+		for vy := 0; vy < cam.H; vy++ {
+			for vx := 0; vx < cam.W; vx++ {
+				if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
+					accumCanopyShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
+				}
+			}
+		}
+		applyShadowMask(img, shadowMask)
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				if props[vy][vx] == PropPortal {
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
+				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
+					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				}
 			}
 		}
+		// Night point lights: emissive props (campfires, portals, lamps, the
+		// reactor core, gem loot…) bloom a warm/cool glow pool on the scene after
+		// dusk, scaled by how dark it is.
+		if _, _, night := sunState(); night > 0.03 {
+			apx := scale / tileArtN
+			if apx < 1 {
+				apx = 1
+			}
+			for vy := 0; vy < cam.H; vy++ {
+				for vx := 0; vx < cam.W; vx++ {
+					if col, rad, mult, ok := emitterGlow(props[vy][vx], propCols[vy][vx], frame, originX+vx, originY+vy); ok {
+						drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, night*mult, apx)
+					}
+				}
+			}
+		}
+		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
+		drawFireflies(img, texs, cam, scale, frame, originX, originY)
 	}
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
@@ -190,7 +243,7 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 	// soft elliptical contact shadow at the feet (stays planted while the body
 	// bobs, so the step reads as a bounce rather than a slide)
 	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
-		float64(destW)*0.42, float64(k)*1.3)
+		float64(destW)*0.42, float64(k)*1.3, k, float64(destH))
 
 	if wf == 1 { // mid-stride: lift the body a touch
 		bob := k / 2
@@ -227,25 +280,67 @@ func fillRect(img *image.RGBA, x0, y0, w, h int, c color.RGBA) {
 	}
 }
 
-// drawShadow darkens an elliptical patch toward the ground color, softly.
-func drawShadow(img *image.RGBA, cx, cy, rx, ry float64) {
-	for y := int(cy - ry); y <= int(cy+ry); y++ {
-		for x := int(cx - rx); x <= int(cx+rx); x++ {
-			nx := (float64(x) - cx) / rx
-			ny := (float64(y) - cy) / ry
+// shadowBlocks walks the px-snapped, two-level (core/rim) elliptical shadow for
+// a caster, applying the always-on directional lean plus the softened
+// golden-hour stretch, and calls emit(x, y, alpha) for each covered pixel.
+// Sharing this lets shadows be darkened straight onto the frame, or accumulated
+// into a max-coverage mask so overlapping shadows don't stack.
+func shadowBlocks(cx, cy, rx, ry float64, px int, height float64, emit func(x, y int, a float64)) {
+	if px < 1 {
+		px = 1
+	}
+	// Shadows always lean a bit to one side (a fixed key light), with a gentle
+	// extra stretch along the sun's azimuth when it's low at dawn/dusk.
+	elev, azX, _ := sunState()
+	golden := 0.0
+	if elev > 0 {
+		golden = (1 - elev) * math.Min(1, elev*4)
+	}
+	side := 1.0
+	if elev > 0 && azX < 0 {
+		side = -1 // morning sun in the east → shadow falls west
+	}
+	reach := 0.28*height + 0.5*golden*math.Abs(azX)*height
+	cx += side * reach * 0.5
+	rx += reach * 0.5
+	bx0 := int(math.Floor((cx-rx)/float64(px))) * px
+	bx1 := int(math.Floor((cx+rx)/float64(px))) * px
+	by0 := int(math.Floor((cy-ry)/float64(px))) * px
+	by1 := int(math.Floor((cy+ry)/float64(px))) * px
+	for by := by0; by <= by1; by += px {
+		for bx := bx0; bx <= bx1; bx += px {
+			// Test the block centre against the ellipse; quantize to two levels.
+			nx := (float64(bx) + float64(px)/2 - cx) / rx
+			ny := (float64(by) + float64(px)/2 - cy) / ry
 			d2 := nx*nx + ny*ny
 			if d2 > 1 {
 				continue
 			}
-			or, og, ob, ok := getPixel(img, x, y)
-			if !ok {
-				continue
+			a := 0.42
+			if d2 > 0.5 {
+				a = 0.22 // lighter rim block
 			}
-			a := 0.4 * (1 - d2)
-			setPixel8(img, x, y,
-				float64(or)*(1-a), float64(og)*(1-a), float64(ob)*(1-a))
+			for y := by; y < by+px; y++ {
+				for x := bx; x < bx+px; x++ {
+					emit(x, y, a)
+				}
+			}
 		}
 	}
+}
+
+// drawShadow darkens a single elliptical shadow straight onto the frame, snapped
+// to a px block grid with two retro alpha steps. height is the caster's height,
+// used for the directional/golden-hour stretch. (Used for avatars and bulky
+// single-tile props; tree canopies accumulate via a mask instead.)
+func drawShadow(img *image.RGBA, cx, cy, rx, ry float64, px int, height float64) {
+	shadowBlocks(cx, cy, rx, ry, px, height, func(x, y int, a float64) {
+		or, og, ob, ok := getPixel(img, x, y)
+		if !ok {
+			return
+		}
+		setPixel8(img, x, y, float64(or)*(1-a), float64(og)*(1-a), float64(ob)*(1-a))
+	})
 }
 
 // drawChevron marks the local player with a small white downward triangle.
@@ -271,29 +366,28 @@ const tileArtN = 6
 // paintTile draws one tile: the ground surface sprite (a shade pattern colored
 // by base) nearest-upscaled to the on-screen tile size, then an optional prop
 // sprite over it. Sharp pixels throughout.
-func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style) {
-	baseRGBA := colorfulToRGBA(base)
-	variants := style.Ground[tex]
-	if len(variants) == 0 { // flat / untextured
-		fillRect(img, ox, oy, scale, scale, baseRGBA)
-	} else {
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style, nbr [8]colorful.Color) {
+	var art []string
+	if variants := style.Ground[tex]; len(variants) > 0 {
 		idx := int(hashNoise(wx, wy) * float64(len(variants)))
 		if tex == TexWater {
 			idx = (frame / 4) % len(variants) // ripples animate
 		}
-		art := variants[idx%len(variants)]
-		light := colorfulToRGBA(base.BlendLab(spriteWhite, style.GroundLightMix).Clamped())
-		dark := colorfulToRGBA(base.BlendLab(shadowColor, style.GroundDarkMix).Clamped())
-		blitTileArt(img, ox, oy, scale, art, func(r byte) (color.RGBA, bool) {
-			switch r {
-			case 'L':
-				return light, true
-			case 'D':
-				return dark, true
-			default:
-				return baseRGBA, true // 'B' and ' '
-			}
-		})
+		art = variants[idx%len(variants)]
+	}
+	light := base.BlendLab(spriteWhite, style.GroundLightMix).Clamped()
+	dark := base.BlendLab(shadowColor, style.GroundDarkMix).Clamped()
+	blitGround(img, ox, oy, scale, art, base, light, dark, nbr, wx, wy)
+
+	// Ground a few bulky props with a soft contact shadow so they don't look
+	// pasted onto the terrain (trees get theirs in drawTree).
+	if prop == PropHouse || prop == PropBoulder {
+		apx := scale / tileArtN
+		if apx < 1 {
+			apx = 1
+		}
+		drawShadow(img, float64(ox+scale/2), float64(oy+scale)-float64(apx),
+			float64(scale)*0.4, float64(apx)*1.3, apx, float64(scale))
 	}
 
 	if art, ok := style.Props[prop]; ok {
@@ -372,12 +466,142 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 	}
 }
 
-// portalPixel returns a swirling portal color for an art pixel at the given
-// frame — diagonal bands of the style's portal ramp drift to read as an active
-// gate.
+// canopyArt returns the sprite for a tall flora prop (trees pick a variant by
+// position), and whether the prop is a canopy at all — shared by the shadow and
+// body passes so both agree on the shape.
+func canopyArt(p TileProp, wx, wy int) ([]string, bool) {
+	switch p {
+	case PropTree:
+		return pickTreeArt(wx, wy), true
+	case PropAcacia:
+		return acaciaArt, true
+	case PropPalm:
+		return palmArt, true
+	case PropFir:
+		return firArt, true
+	case PropCrag:
+		return cragArt, true
+	}
+	return nil, false
+}
+
+// accumCanopyShadow records a tall prop's contact shadow into a max-coverage
+// mask (alpha 0..255) instead of darkening directly, so overlapping tree
+// shadows don't stack into ever-darker blobs — the densest stand casts a single
+// even shadow. applyShadowMask then darkens the frame once.
+func accumCanopyShadow(mask []uint8, imgW, imgH, vx, vy, scale int, art []string) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	w := len(art[0])
+	shadowBlocks(float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
+		float64(w*apx)*0.38, float64(apx)*1.4, apx, float64(len(art)*apx),
+		func(x, y int, a float64) {
+			if x < 0 || x >= imgW || y < 0 || y >= imgH {
+				return
+			}
+			if v := uint8(a * 255); v > mask[y*imgW+x] {
+				mask[y*imgW+x] = v
+			}
+		})
+}
+
+// applyShadowMask darkens the frame once by the accumulated shadow coverage.
+func applyShadowMask(img *image.RGBA, mask []uint8) {
+	for i, v := range mask {
+		if v == 0 {
+			continue
+		}
+		a := float64(v) / 255
+		o := i * 4
+		img.Pix[o] = uint8(float64(img.Pix[o]) * (1 - a))
+		img.Pix[o+1] = uint8(float64(img.Pix[o+1]) * (1 - a))
+		img.Pix[o+2] = uint8(float64(img.Pix[o+2]) * (1 - a))
+	}
+}
+
+// drawCanopy renders a tall flora sprite (art) centered on tile (vx,vy),
+// bottom-aligned so the trunk sits on the tile and the crown overhangs upward,
+// in its color (P body, p shade/rim, L dapple, W glint/snow, T trunk). The
+// contact shadow is drawn separately by drawCanopyShadow.
+func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, wx, wy int, amb colorful.Color, ambStr float64) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	w := len(art[0])
+	left := vx*scale + scale/2 - (w*apx)/2
+	top := (vy+1)*scale - len(art)*apx
+
+	body := colorfulToRGBA(col)
+	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
+	dark := colorfulToRGBA(col.BlendLab(shadowColor, 0.52).Clamped())
+	dapple := colorfulToRGBA(col.BlendLab(spriteWhite, 0.30).Clamped())
+	trunk := colorfulToRGBA(trunkColor)
+	for ay, row := range art {
+		for ax := 0; ax < len(row); ax++ {
+			var c color.RGBA
+			ok := true
+			switch row[ax] {
+			case 'P':
+				c = body
+			case 'p':
+				// The shade pixels form the canopy rim; coherently dither them away
+				// so silhouettes feather and neighboring crowns blend into one mass
+				// instead of reading as discrete lollipops.
+				c = shade
+				if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) < 0.42 {
+					ok = false
+				}
+			case 'L':
+				c = dapple
+			case 'D':
+				c = dark // solid shadow face (no dither) — for rock crags
+			case 'W':
+				// Snow tip / glint — tinted by the day/night ambient like the rest,
+				// so fir caps don't glow pure white at night.
+				c = colorfulToRGBA(tint(spriteWhite, amb, ambStr).Clamped())
+			case 'T':
+				c = trunk
+			default:
+				ok = false
+			}
+			if ok {
+				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+			}
+		}
+	}
+}
+
+// pickTreeArt chooses a tree variant deterministically by world position, so a
+// stand mixes broad, young and conifer shapes without flicker as the camera
+// scrolls. Oaks dominate, conifers are common, small trees fill in.
+func pickTreeArt(wx, wy int) []string {
+	switch r := hashNoise(wx, wy, 0x7733); {
+	case r < 0.55:
+		return treeArt[0] // broad oak
+	case r < 0.80:
+		return treeArt[2] // conifer
+	default:
+		return treeArt[1] // small
+	}
+}
+
+// portalPixel returns the color for an art pixel of an active gate's swirl. A
+// 3-arm spiral (angle + radius from the gate's centre) rotates with the frame
+// and pulses outward, banded to three flat colors of the style's portal ramp —
+// a chunky, clearly-animated retro gate rather than a smooth gradient.
 func portalPixel(ax, ay, frame int, pal ui.Palette) color.RGBA {
-	s := 0.5 + 0.5*math.Sin(float64(ax+ay)*0.7-float64(frame)*0.45)
-	return colorfulToRGBA(mustHex(string(ui.Blend(pal.PortalA, pal.PortalB, s))))
+	dx, dy := float64(ax)-5.5, float64(ay)-5.5 // portalArt is 12×12 art-pixels
+	ang := math.Atan2(dy, dx)
+	r := math.Hypot(dx, dy)
+	s := 0.5 + 0.5*math.Sin(3*ang+r*0.9-float64(frame)*0.5)
+	band := math.Floor(s * 3)
+	if band > 2 {
+		band = 2
+	}
+	return colorfulToRGBA(mustHex(string(ui.Blend(pal.PortalA, pal.PortalB, band/2))))
 }
 
 // blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale
@@ -393,6 +617,100 @@ func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(by
 			}
 		}
 	}
+}
+
+// blitGround paints a tile's ground surface like blitTileArt, but additionally
+// dithers the tile's outer art-pixels toward a neighboring biome's color when
+// it differs — the dual-grid idea (neighbors decide the seam) expressed as a
+// live per-pixel blend, so hard grid edges become organic transitions
+// (coastlines, forest edges, path shoulders) with no authored transition art.
+//
+// The dither threshold comes from a low-frequency coherent noise field sampled
+// in world space, not white noise: that makes the seam waver in contiguous
+// lobes (peninsulas and inlets) rather than salt-and-pepper static, while the
+// per-art-pixel blocks keep the look crisply retro. art may be nil for a flat
+// surface.
+func blitGround(img *image.RGBA, ox, oy, scale int, art []string, base, light, dark colorful.Color, nbr [8]colorful.Color, wx, wy int) {
+	// Coverage by penetration depth: most of the edge pixels flip, narrowing as
+	// the neighbor reaches deeper in, so lobes round off into peninsulas.
+	seamThresh := [seamBand + 1]float64{0.45, 0.68, 0.88}
+	for iy := 0; iy < scale; iy++ {
+		ay := iy * tileArtN / scale
+		for ix := 0; ix < scale; ix++ {
+			ax := ix * tileArtN / scale
+			col := base
+			if art != nil {
+				switch art[ay][ax] {
+				case 'L':
+					col = light
+				case 'D':
+					col = dark
+				}
+			}
+			if target, depth, ok := edgeNeighbor(ax, ay, base, nbr); ok {
+				if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > seamThresh[depth] {
+					col = target
+				}
+			}
+			img.SetRGBA(ox+ix, oy+iy, colorfulToRGBA(col))
+		}
+	}
+}
+
+// seamBand is how many art-pixels deep a neighboring biome can flood across a
+// tile edge (the transition width).
+const seamBand = 2
+
+// edgeNeighbor picks the differing neighbor a border art-pixel (ax,ay) should
+// dither toward, and that pixel's penetration depth (0 = on the edge) so the
+// caller can taper coverage with depth. Returns ok=false for interior pixels or
+// when every touched neighbor is the same biome (so interiors stay seamless).
+// nbr is ordered N, NE, E, SE, S, SW, W, NW.
+func edgeNeighbor(ax, ay int, base colorful.Color, nbr [8]colorful.Color) (colorful.Color, int, bool) {
+	dN, dS, dW, dE := ay, tileArtN-1-ay, ax, tileArtN-1-ax
+	// A diagonal pixel's depth is the deeper of its two edge distances, so the
+	// flood rounds off at corners instead of squaring them.
+	depth := [8]int{dN, max(dN, dE), dE, max(dS, dE), dS, max(dS, dW), dW, max(dN, dW)}
+	best, bestDepth := -1, seamBand+1
+	for i := 0; i < 8; i++ {
+		if depth[i] > seamBand || base.DistanceLab(nbr[i]) < 0.07 {
+			continue
+		}
+		if depth[i] < bestDepth {
+			best, bestDepth = i, depth[i]
+		}
+	}
+	if best < 0 {
+		return base, 0, false
+	}
+	return nbr[best], bestDepth, true
+}
+
+// valueNoise is coherent [0,1) noise for seam dithering: two octaves of
+// smoothstep value noise (fbm). The low octave (≈one cell per tile) sets the
+// big lobes; the high octave at half amplitude superimposes small notches, so
+// boundaries get multi-scale detail — deep bays and tiny jags — instead of one
+// uniform scallop rhythm. Thresholding it still yields hard per-pixel blocks,
+// so the look stays retro.
+func valueNoise(x, y int) float64 {
+	// 0.667 + 0.333 keeps the sum in [0,1); seeds differ so octaves don't align.
+	return 0.667*latticeNoise(x, y, 7.0, 0x51) + 0.333*latticeNoise(x, y, 3.0, 0xB7)
+}
+
+// latticeNoise is one octave of smoothstep-interpolated value noise: hashNoise
+// sampled on an integer lattice spaced denom art-pixels apart, seeded by seed.
+func latticeNoise(x, y int, denom float64, seed int) float64 {
+	fx, fy := float64(x)/denom, float64(y)/denom
+	x0, y0 := int(math.Floor(fx)), int(math.Floor(fy))
+	tx, ty := fx-float64(x0), fy-float64(y0)
+	tx = tx * tx * (3 - 2*tx) // smoothstep
+	ty = ty * ty * (3 - 2*ty)
+	return bilerp(
+		hashNoise(x0, y0, seed),
+		hashNoise(x0+1, y0, seed),
+		hashNoise(x0, y0+1, seed),
+		hashNoise(x0+1, y0+1, seed),
+		tx, ty)
 }
 
 // hashNoise is a cheap deterministic [0,1) value from a few ints (FNV-ish), for

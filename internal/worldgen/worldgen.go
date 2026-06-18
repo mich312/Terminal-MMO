@@ -130,9 +130,12 @@ func (g *Generator) At(x, y int) Cell {
 
 	elev := g.fbmAt(wx, wy, 0x1, 0.045, 4)
 	moist := g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
-	// Temperature is a large-scale climate field (low frequency = broad warm/cold
-	// regions), nudged colder as elevation rises so highlands and peaks freeze.
-	temp := g.fbmAt(wx, wy, 0x7E11, 0.014, 3) - 0.30*(elev-0.5)
+	// climate is the large-scale temperature field (low frequency = broad warm/
+	// cold regions); temp also folds in elevation, so highlands and peaks run
+	// colder. Snow keys off climate (the region) as well as temp, so a lone high
+	// knoll in a warm meadow stays a rocky hill instead of sprouting a snowcap.
+	climate := g.fbmAt(wx, wy, 0x7E11, 0.014, 3)
+	temp := climate - 0.30*(elev-0.5)
 
 	switch {
 	case elev < 0.24: // deep water
@@ -145,6 +148,9 @@ func (g *Generator) At(x, y int) Cell {
 		return Cell{Biome: Water, Glyph: '~', Color: "#5BB0E0",
 			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
 	case elev < 0.38: // beach
+		if g.prop(x, y) < 0.02 { // the occasional palm — blocks movement
+			return Cell{Biome: Sand, Glyph: 'Ψ', Color: "#3E8E5A"}
+		}
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
 	case elev < 0.70: // lowland — climate decides the cover
 		switch {
@@ -157,13 +163,13 @@ func (g *Generator) At(x, y int) Cell {
 		default:
 			return grassCell(g, x, y)
 		}
-	case elev < 0.84: // highland — cold tops freeze to snow, else hills
-		if temp < 0.40 {
+	case elev < 0.84: // highland — snow only in genuinely cold regions, else hills
+		if temp < 0.40 && climate < 0.42 {
 			return snowCell(g, x, y)
 		}
 		return hillCell(g, x, y)
-	default: // peaks — snow-capped where cold, bare rock where warm
-		if temp < 0.52 {
+	default: // peaks — snow-capped except in warm regions, where they're bare rock
+		if temp < 0.52 && climate < 0.55 {
 			return Cell{Biome: Snow, Glyph: '▲', Color: "#EAF0F7"} // snowy peak (blocks)
 		}
 		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
@@ -174,8 +180,10 @@ func (g *Generator) At(x, y int) Cell {
 func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 
 func grassCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Grass, Glyph: '·', Color: "#5FA86B", Walkable: true}
+	c := Cell{Biome: Grass, Glyph: '·', Color: "#5EAE63", Walkable: true}
 	switch r := g.prop(x, y); {
+	case r < 0.0016: // a traveler's campfire — blocks, glows warm at night
+		c.Glyph, c.Color, c.Walkable = 'Λ', "#FF7A1E", false
 	case r < 0.006: // a rare homestead — blocks movement
 		c.Glyph, c.Color, c.Walkable = 'H', houseColor(g.prop2(x, y)), false
 	case r < 0.056:
@@ -190,16 +198,24 @@ func grassCell(g *Generator, x, y int) Cell {
 	return c
 }
 
+// forestSalt separates the tree-clustering field from the other noise.
+const forestSalt uint64 = 0x0F0235713EE50000
+
 func forestCell(g *Generator, x, y int) Cell {
+	// Cluster trees into stands: a low-frequency density field thickens the
+	// canopy in the heart of a wood and thins it toward the edges, so forests
+	// read as groves with clearings rather than an even scatter.
+	density := g.fbmAt(float64(x), float64(y), forestSalt, 0.07, 2)
+	tree := 0.16 + 0.46*density // ~16% at edges … ~62% in dense cores
 	switch r := g.prop(x, y); {
-	case r < 0.28: // a tree — blocks movement (color varies; some autumn)
+	case r < tree: // a tree — blocks movement (color varies; some autumn)
 		return Cell{Biome: Forest, Glyph: '♣', Color: treeColor(g.prop2(x, y))}
-	case r < 0.36: // a stump
+	case r < tree+0.07: // a stump
 		return Cell{Biome: Forest, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
-	case r < 0.50: // undergrowth bush
+	case r < tree+0.22: // undergrowth bush
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
 	}
-	return Cell{Biome: Forest, Glyph: '·', Color: "#3F8A5A", Walkable: true}
+	return Cell{Biome: Forest, Glyph: '·', Color: "#2E6B40", Walkable: true}
 }
 
 // snowCell is cold high ground: pale, mostly open, with the odd ice-glazed
@@ -207,9 +223,11 @@ func forestCell(g *Generator, x, y int) Cell {
 func snowCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Snow, Glyph: '·', Color: "#E8EEF5", Walkable: true}
 	switch r := g.prop(x, y); {
-	case r < 0.05:
+	case r < 0.07: // a snow-tipped fir — blocks movement
+		return Cell{Biome: Snow, Glyph: '♠', Color: "#2E5E43"}
+	case r < 0.12:
 		c.Glyph, c.Color = '°', "#C2CCD6" // an icy rock
-	case r < 0.14:
+	case r < 0.20:
 		c.Glyph, c.Color = ',', "#D4DEEA" // a snow tuft / drift
 	}
 	return c
@@ -218,11 +236,13 @@ func snowCell(g *Generator, x, y int) Cell {
 // savannaCell is warm, dry grassland: golden tufts and the occasional scrubby
 // bush. Kept free of blocking props so the dry plains stay open.
 func savannaCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Savanna, Glyph: '·', Color: "#B8A659", Walkable: true}
+	c := Cell{Biome: Savanna, Glyph: '·', Color: "#CDBA5C", Walkable: true}
 	switch r := g.prop(x, y); {
-	case r < 0.05:
+	case r < 0.013: // a lone acacia — blocks movement, a savanna landmark
+		return Cell{Biome: Savanna, Glyph: 'ϒ', Color: "#7C9442"}
+	case r < 0.06:
 		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
-	case r < 0.22:
+	case r < 0.23:
 		c.Glyph, c.Color = ',', "#C9B85F" // a clump of dry grass
 	}
 	return c
@@ -231,10 +251,10 @@ func savannaCell(g *Generator, x, y int) Cell {
 // swampCell is warm, low, waterlogged ground: murky green flats with reeds,
 // hummocks and the odd shallow pool. Stays walkable — boggy, not impassable.
 func swampCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Swamp, Glyph: '·', Color: "#4A5A3A", Walkable: true}
+	c := Cell{Biome: Swamp, Glyph: '·', Color: "#45533C", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.12:
-		c.Glyph, c.Color = ',', "#6B7A3A" // reeds
+		c.Glyph, c.Color = '‖', "#7C8A45" // a clump of cattail reeds
 	case r < 0.18:
 		c.Glyph, c.Color = 'o', "#3A5A3A" // a mossy hummock
 	case r < 0.24:
@@ -259,7 +279,7 @@ func onPath(x, y int) bool {
 // pathCell is the worn-dirt trail surface, with the occasional cobble for
 // texture. Always walkable.
 func pathCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Path, Glyph: '·', Color: "#9B8B6A", Walkable: true}
+	c := Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}
 	if g.prop(x, y) < 0.12 {
 		c.Glyph, c.Color = '∘', "#857653" // a cobble
 	}
@@ -268,9 +288,11 @@ func pathCell(g *Generator, x, y int) Cell {
 
 func hillCell(g *Generator, x, y int) Cell {
 	switch r := g.prop(x, y); {
-	case r < 0.10: // a boulder — blocks movement
+	case r < 0.04: // a jagged crag — blocks movement, a highland landmark
+		return Cell{Biome: Hill, Glyph: 'Δ', Color: "#8C8475"}
+	case r < 0.12: // a boulder — blocks movement
 		return Cell{Biome: Hill, Glyph: '▲', Color: "#8A8170"}
-	case r < 0.18: // a small rock
+	case r < 0.20: // a small rock
 		return Cell{Biome: Hill, Glyph: '°', Color: "#9AA0A8", Walkable: true}
 	}
 	return Cell{Biome: Hill, Glyph: '∩', Color: "#9C8D67", Walkable: true}
@@ -289,13 +311,13 @@ func houseColor(r float64) string {
 
 func treeColor(r float64) string {
 	switch {
-	case r < 0.20:
+	case r < 0.25:
 		return "#276B43" // deep green
-	case r < 0.70:
+	case r < 0.87:
 		return "#2F7D4F" // green
-	case r < 0.82:
+	case r < 0.93:
 		return "#C99A3A" // gold (autumn)
-	case r < 0.92:
+	case r < 0.97:
 		return "#C2602F" // orange
 	default:
 		return "#B5482C" // red

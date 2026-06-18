@@ -60,13 +60,21 @@ const (
 	PropMachine  // boxy machine / plotter
 	PropScreen   // wall-mounted display panel (animated)
 	PropPlinth   // exhibit pedestal
-	PropGem      // small showcased item (glints)
+	PropGem      // a found item lying in the world (mundane forage — no glow)
+	PropGemGlow  // a luminous found item (crystal, mushroom) — glows at night
 	PropLamp     // light fixture / spotlight (glows)
 	PropCrate    // crate / desk block
 	PropCore     // reactor energy orb (glows, hero feature)
 	PropTurbine  // turbine / generator unit (glows)
 	PropPipe     // pipe segment with a valve light
 	PropFountain // water feature centerpiece (glows)
+	// Signature overworld flora, one recognizable silhouette per biome.
+	PropAcacia // savanna: flat-topped umbrella tree (tall, blocks)
+	PropPalm   // beach: fronds on a leaning trunk (tall, blocks)
+	PropFir    // snow: snow-tipped conifer (tall, blocks)
+	PropReed     // swamp: a clump of thin cattail reeds (in-tile)
+	PropCrag     // hill: a jagged rock spire (in-tile, blocks)
+	PropCampfire // a traveler's campfire — flickers and casts warm light at night
 )
 
 // Tile is one cell of a parsed map.

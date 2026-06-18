@@ -292,7 +292,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		sx, sy := a.wx, a.wy
 		for i := 0; i < steps; i++ {
 			nx, ny := a.wx+dx, a.wy+dy
-			if !a.fits(nx, ny) {
+			if !game.CanStep(a.gen.Walkable, a.wx, a.wy, dx, dy) {
 				break
 			}
 			a.wx, a.wy = nx, ny
@@ -414,12 +414,19 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Tex, t.Ground = game.TexRock, "#33363E"
 					}
 				} else if !a.collected[[2]int{wx, wy}] {
+					// Items/hats keep the biome ground under them; only the gem/hat on
+					// top is colored. (Without an explicit Ground the HD renderer would
+					// treat the loot color as the surface and dither a halo around it.)
 					if h, ok := hatAt(cell, wx, wy); ok {
 						t.Ch, t.Color = '♚', h.hex
-						t.Prop, t.PropHex = game.PropHat, h.hex
+						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
-						t.Prop, t.PropHex = game.PropGem, it.Hex // glints in HD
+						prop := game.PropGem
+						if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
+							prop = game.PropGemGlow
+						}
+						t.Prop, t.PropHex, t.Ground = prop, it.Hex, groundColor(cell.Biome)
 					}
 				}
 				row[lx] = t
@@ -515,6 +522,18 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
+	case 'ϒ': // acacia on savanna
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropAcacia, c.Color, groundColor(worldgen.Savanna), game.TexSavanna
+	case 'Ψ': // palm on the beach
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPalm, c.Color, groundColor(worldgen.Sand), game.TexSand
+	case '♠': // fir in the snow
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropFir, c.Color, groundColor(worldgen.Snow), game.TexSnow
+	case '‖': // cattail reeds in the swamp
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropReed, c.Color, groundColor(worldgen.Swamp), game.TexSwamp
+	case 'Δ': // rocky crag on the hills
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCrag, c.Color, groundColor(worldgen.Hill), game.TexDirt
+	case 'Λ': // a traveler's campfire
+		t.Prop, t.PropHex, t.Ground = game.PropCampfire, c.Color, groundColor(c.Biome)
 	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
 		if c.Biome == worldgen.Hill {
 			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt
@@ -553,9 +572,9 @@ func texForBiome(b worldgen.Biome) game.TileTex {
 func groundColor(b worldgen.Biome) string {
 	switch b {
 	case worldgen.Grass:
-		return "#5FA86B"
+		return "#5EAE63"
 	case worldgen.Forest:
-		return "#3F8A5A"
+		return "#2E6B40"
 	case worldgen.Hill:
 		return "#9C8D67"
 	case worldgen.Sand:
@@ -563,13 +582,13 @@ func groundColor(b worldgen.Biome) string {
 	case worldgen.Mountain:
 		return "#9AA0A8"
 	case worldgen.Path:
-		return "#9B8B6A"
+		return "#8C7A56"
 	case worldgen.Snow:
 		return "#E8EEF5"
 	case worldgen.Savanna:
-		return "#B8A659"
+		return "#CDBA5C"
 	case worldgen.Swamp:
-		return "#4A5A3A"
+		return "#45533C"
 	default:
 		return ""
 	}

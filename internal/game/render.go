@@ -12,11 +12,13 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// PlayerW, PlayerH is a player's collision footprint in tiles. Avatars are
-// drawn as larger half-block sprites overhanging this footprint.
+// PlayerW, PlayerH is a player's collision footprint in tiles. A single tile,
+// so the hero reads as one small figure in a large world; the HD avatar sprite
+// is drawn to roughly fill that tile, while the glyph renderer shows a single
+// token (it can't fit a face in one cell).
 const (
-	PlayerW = 2
-	PlayerH = 2
+	PlayerW = 1
+	PlayerH = 1
 )
 
 // Camera is the window of a (possibly larger-than-screen) map that is drawn.
@@ -58,6 +60,10 @@ type Light struct {
 }
 
 const nightFloor = 0.12
+
+// lightBands is how many discrete brightness steps the radial light snaps to —
+// stepped rings (retro) rather than a smooth gradient.
+const lightBands = 4
 
 var shadowColor = mustHex("#05070B")
 
@@ -103,13 +109,17 @@ func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, f
 	if cam.W <= 0 || cam.H <= 0 {
 		cam = Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	}
-	grid := buildGrid(th, tm, cam, light, frame)
+	grid := buildGrid(th, tm, cam, light, frame, originX, originY)
 	stampPlayers(grid, th, players, self, frame, originX, originY)
 	return serializeGrid(th, grid)
 }
 
 // buildGrid lays the terrain into a cell grid with day/night tint and lighting.
-func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) [][]rcell {
+// Tile indices into tm are cam-relative (cam.X+vx), but lighting is evaluated in
+// absolute world coordinates (originX+vx) — for a window tilemap cam.X is 0
+// while originX is the window's true world origin, so the two differ and the
+// radial light must use the world origin to stay centered on its source.
+func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame, originX, originY int) [][]rcell {
 	ambHex, ambStr := ui.Ambient(ui.Now())
 	amb := mustHex(ambHex)
 	base := map[TileKind]colorful.Color{
@@ -136,7 +146,7 @@ func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame int) []
 				continue
 			}
 			ch, col, bold := tileLook(t, frame, base, labelC, portalC, amb, ambStr)
-			col = applyLight(col, x, y, light)
+			col = applyLight(col, originX+vx, originY+vy, light)
 			grid[vy][vx] = rcell{ch: ch, fg: col, bold: bold}
 		}
 	}
@@ -224,6 +234,11 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if f > 1 {
 		f = 1
 	}
+	// Quantize brightness into discrete bands so the light reads as stepped
+	// retro rings (lit / dim / dark) instead of a smooth modern gradient.
+	t := (f - nightFloor) / (1 - nightFloor)
+	t = math.Round(t*lightBands) / lightBands
+	f = nightFloor + t*(1-nightFloor)
 	return col.BlendLab(shadowColor, 1-f).Clamped()
 }
 
@@ -251,14 +266,6 @@ func stampPlayers(grid [][]rcell, th *ui.Theme, players []world.Player, self str
 func portalColor(frame int) colorful.Color {
 	s := 0.5 + 0.5*math.Sin(float64(frame)*0.6)
 	return mustHex(string(ui.Blend(ui.HexPortalA, ui.HexPortalB, s)))
-}
-
-// tintedHex applies the current time-of-day ambient tint to a hex color — used
-// by the HD renderer to color a tile's ground surface the same way buildGrid
-// tints terrain.
-func tintedHex(hex string) colorful.Color {
-	ambHex, ambStr := ui.Ambient(ui.Now())
-	return tint(mustHex(hex), mustHex(ambHex), ambStr)
 }
 
 func tint(base, ambient colorful.Color, strength float64) colorful.Color {

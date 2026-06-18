@@ -16,12 +16,12 @@ type dayKey struct {
 }
 
 var dayCycle = []dayKey{
-	{0, "#0E1B3A", 0.38},  // deep night — cool blue
+	{0, "#0A1228", 0.55},  // deep night — dark, cool blue (lights pop against it)
 	{6, "#FFC08A", 0.20},  // dawn — warm amber
 	{9, "#EAF2FF", 0.06},  // morning — faint cool wash
 	{13, "#FFFFFF", 0.03}, // midday — essentially neutral
 	{18, "#FF8A4C", 0.24}, // dusk — amber
-	{21, "#16244A", 0.34}, // evening — blue
+	{21, "#14203F", 0.46}, // evening — blue
 }
 
 // Ambient returns the time-of-day tint and its strength for t's local clock.

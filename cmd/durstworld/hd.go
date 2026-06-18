@@ -33,7 +33,7 @@ import (
 // just the Wilds: walk through a portal and the destination renders in pixels
 // too. It shares the live world, so HD and bubbletea players see each other.
 const (
-	hdScale    = 36 // pixels per tile — larger on-screen tiles
+	hdScale    = 26 // pixels per tile — zoomed out so the 1-tile hero reads as small in a big world
 	hdFPS      = 12 // tile-animation / world-reflection rate (the `frame` counter)
 	hdRenderHz = 30 // max on-screen redraw rate; input is coalesced to this cadence
 	hdRefresh  = 48 // frames between full repaints
@@ -208,6 +208,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			light = l.HDLight() // the Wilds' discovery circle
 		}
 		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, light, ox, oy, hdScale, false, style)
+		game.OverlayWalkable(img, tm, hdScale) // debug: tint blocked tiles (toggle with F2)
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
 		// HD has no glyph layer, so slides are rasterized straight onto the image.
@@ -431,6 +432,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				draw()
 			} else if key == "e" { // pick up an item under the player
 				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+				draw()
+			} else if key == "f2" { // toggle the walkability debug overlay
+				game.DebugWalkable = !game.DebugWalkable
 				draw()
 			} else if key == "\r" || key == "\n" { // open chat
 				chatActive, chatInput = true, ""

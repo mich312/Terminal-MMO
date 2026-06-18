@@ -29,9 +29,12 @@ var groundArt = map[TileTex][][]string{
 		{"BBBBBB", "BBLBBB", "DBBBBB", "BBBBDB", "BLBBBB", "BBBBBB"},
 		{"BBBBBB", "LBBBBB", "BBBDBB", "BBBBBB", "BBLBBD", "BBBBBB"},
 	},
+	// Forest floor: dense leaf litter — clumped dark flecks (D) with the odd
+	// dapple of light (L) through the canopy. Busier than open grass.
 	TexForest: {
-		{"BBBBBB", "BLBBBB", "BBBBDB", "BBBBBB", "BDBBLB", "BBBBBB"},
-		{"BBBBBB", "BBBLBB", "DBBBBB", "BBBBDB", "BBBBBB", "BLBBBB"},
+		{"BBBBBB", "BDBBDB", "BBLBBB", "BBBDBB", "BDBBDB", "BBBBBB"},
+		{"BBBBBB", "BBDBLB", "BDBBBB", "BBBDDB", "BBLBBB", "BBBBBB"},
+		{"BBBBBB", "BLBBDB", "BBBDBB", "BDBBBB", "BBBDLB", "BBBBBB"},
 	},
 	TexRock: {
 		{"BLBBBB", "BBBBDB", "DDBBBB", "BBBDBB", "BBBBBB", "BBLBBB"},
@@ -44,12 +47,12 @@ var groundArt = map[TileTex][][]string{
 		{"BBBBBB", "BBBBLB", "BBLBBB", "BBBBBB", "BBDLBB", "BBBBBB"},
 		{"BBBBBB", "BLBBBB", "BBBBBB", "BBBLDB", "BBLBBB", "BBBBBB"},
 	},
-	// Savanna: dry, sun-bleached grass — scattered dark flecks of parched
-	// tussock, sparser than the lush grass tile.
+	// Savanna: dry, sun-bleached grass lying flat — short horizontal dashes of
+	// parched tussock (DD pairs), a distinct grain from upright lush grass.
 	TexSavanna: {
-		{"BBBBBB", "BDBBDB", "BBBBBB", "BDBBBB", "BBBDBB", "BBBBBB"},
-		{"BBBBBB", "BBBDBB", "BDBBBB", "BBBBDB", "BBDBBB", "BBBBBB"},
-		{"BBBBBB", "BBDBBD", "BBBBBB", "DBBDBB", "BBBBBB", "BBBBBB"},
+		{"BBBBBB", "BDDBBB", "BBBBDB", "BBBBBB", "BBDDBB", "BBBBBB"},
+		{"BBBBBB", "BBBDDB", "BDDBBB", "BBBBBB", "BBBDDB", "BBBBBB"},
+		{"BBBBBB", "BBDDBB", "BBBBBB", "BDDBDB", "BBBBBB", "BBBBBB"},
 	},
 	// Swamp: waterlogged muck — clumped dark mud blotches (D) with the
 	// occasional algae sheen (L) catching the light.
@@ -91,14 +94,6 @@ var propArt = map[TileProp][]string{
 		"......",
 		"......",
 	},
-	PropTree: {
-		"..PP..",
-		".PpPP.",
-		"PPPPPP",
-		".PpPP.",
-		"..TT..",
-		"..TT..",
-	},
 	PropBoulder: {
 		"......",
 		".PPPp.",
@@ -130,6 +125,24 @@ var propArt = map[TileProp][]string{
 		"PpppPP",
 		".PppP.",
 		"......",
+	},
+	// Cattail reeds: thin vertical stalks with darker seed-heads. Walkable.
+	PropReed: {
+		"..P.P.",
+		".PPPP.",
+		".PpPp.",
+		".PpPp.",
+		".pp.p.",
+		"......",
+	},
+	// A traveler's campfire: an animated flame (G, pulses) over charred logs.
+	PropCampfire: {
+		"..G...",
+		".GGG..",
+		"GGWGG.",
+		".GGG..",
+		"DppD..",
+		".DD...",
 	},
 	// PropHouse is a single-tile cottage: roof (p), walls (P), a dark door (p).
 	PropHouse: {
@@ -189,12 +202,23 @@ var propArt = map[TileProp][]string{
 		"oPPPPo",
 		"pPPPPp",
 	},
+	// A collectible gem: mostly the item's own color (so a red berry reads red,
+	// a purple mushroom purple) with light facets and a single white glint — not
+	// the all-white sparkle that used to look like snow.
 	PropGem: {
-		"..W...",
-		".WGW..",
-		"WGGGW.",
-		".WGW..",
-		"..W...",
+		"..L...",
+		".LPL..",
+		"LPPPW.",
+		".LPPL.",
+		"..p...",
+		"......",
+	},
+	PropGemGlow: { // same sprite as PropGem; the glow is added by the light pass
+		"..L...",
+		".LPL..",
+		"LPPPW.",
+		".LPPL.",
+		"..p...",
 		"......",
 	},
 	PropLamp: {
@@ -271,3 +295,96 @@ var portalArt = []string{
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').
 var trunkColor = mustHex("#6B4A2B")
+
+// treeArt holds the canopy sprites for forest trees. Unlike single-tile props
+// these are taller than one tile and drawn in a back-to-front structure pass so
+// they overhang upward and overlap their neighbors — a stand of them reads as a
+// continuous canopy rather than a grid of identical stamps. Codes: P canopy
+// (the tree's color), p canopy shade, L sun-dapple highlight, T trunk. Variants
+// give size/shape variety; the live color (incl. autumn) adds the rest.
+var treeArt = [][]string{
+	{ // broad oak
+		"..ppp..",
+		".pPPPp.",
+		"pPPPPPp",
+		"pPPLPPp",
+		"pLPPPPp",
+		"pPPPPPp",
+		"pPPPPpp",
+		".pPPPp.",
+		"...T...",
+		"...T...",
+	},
+	{ // young/small tree
+		".ppp.",
+		"pPPPp",
+		"pPLPp",
+		"pPPPp",
+		".ppp.",
+		"..T..",
+		"..T..",
+	},
+	{ // conifer / pine
+		"...P...",
+		"..ppp..",
+		"..PPP..",
+		".pPPPp.",
+		".PPLPP.",
+		"pPPPPPp",
+		".PPPPP.",
+		"pPPPPPp",
+		"PPPPPPP",
+		"...T...",
+		"...T...",
+	},
+}
+
+// Signature biome canopies, drawn through the same back-to-front overhang path
+// as treeArt (P body, p rim, L dapple, W glint/snow, T trunk). One bold,
+// symmetric silhouette each, on the same 6-px grid so they stay retro.
+var (
+	acaciaArt = []string{ // flat-topped umbrella
+		"..PPPPP..",
+		".PPPPPPP.",
+		"PPPPPPPPP",
+		".pp.P.pp.",
+		"....T....",
+		"....T....",
+		"....T....",
+	}
+	palmArt = []string{ // fronds radiating from a leaning trunk
+		"P..P..P",
+		".PpPpP.",
+		"..PPP..",
+		"...T...",
+		"...T...",
+		"...T...",
+		"..T....",
+	}
+	firArt = []string{ // snow-tipped conifer (W = snow)
+		"...W...",
+		"...P...",
+		"..WPW..",
+		"..PPP..",
+		".WPPPW.",
+		".PPPPP.",
+		"WPPPPPW",
+		"PPPPPPP",
+		"...T...",
+		"...T...",
+	}
+	// A jagged rock spire that overhangs upward, lit on the left (L), body (P),
+	// shaded right face (D). No 'p', so the canopy rim-dither leaves it solid —
+	// hard rock, not feathered foliage — and it reads as a crag, not a boulder.
+	cragArt = []string{
+		"...P...",
+		"..LPD..",
+		"..LPD..",
+		".LLPDD.",
+		".LLPDD.",
+		"LLLPDDD",
+		"LLPPDDD",
+		"LLPPPDD",
+		"LLPPPDD",
+	}
+)

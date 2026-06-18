@@ -60,11 +60,10 @@ func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 		}
 		sx, sy := w.X, w.Y
 		for i := 0; i < steps; i++ {
-			nx, ny := w.X+dx, w.Y+dy
-			if !footprintWalkable(w.Map.Walkable, nx, ny) {
+			if !CanStep(w.Map.Walkable, w.X, w.Y, dx, dy) {
 				break
 			}
-			w.X, w.Y = nx, ny
+			w.X, w.Y = w.X+dx, w.Y+dy
 		}
 		if w.X != sx || w.Y != sy {
 			w.Ctx.World.Move(w.Ctx.Name, w.X, w.Y)

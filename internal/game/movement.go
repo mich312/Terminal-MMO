@@ -55,6 +55,21 @@ func MoveKey(key string) (dx, dy, steps int, ok bool) {
 	return dx, dy, steps, true
 }
 
+// CanStep reports whether a body at (x,y) may move by (dx,dy). The destination
+// footprint must fit, and a diagonal step additionally requires at least one of
+// the two adjacent orthogonal cells to be open — so you can't slip through the
+// corner where two blockers (e.g. two tree canopies) meet. This keeps movement
+// matching what's drawn: you go where there's a visible gap.
+func CanStep(walk func(x, y int) bool, x, y, dx, dy int) bool {
+	if !footprintWalkable(walk, x+dx, y+dy) {
+		return false
+	}
+	if dx != 0 && dy != 0 && !footprintWalkable(walk, x+dx, y) && !footprintWalkable(walk, x, y+dy) {
+		return false // both orthogonal cells blocked — would cut the corner
+	}
+	return true
+}
+
 // footprintWalkable reports whether a PlayerW×PlayerH body with its top-left
 // at (x,y) fits — every covered tile must be walkable.
 func footprintWalkable(walk func(x, y int) bool, x, y int) bool {

@@ -47,6 +47,7 @@ func DrawHUD(img *image.RGBA, areaName, hint string) {
 	bh := 2*lh + 4*s
 	by := H - bh
 	pixel.Shade(img, 0, by, W, bh, 0.8)
+	pixel.Frame(img, 0, by, W, bh)
 
 	y := by + 2*s
 	pixel.DrawText(img, 4*s, y, s, areaName, hudAccent)
@@ -80,6 +81,7 @@ func DrawToast(img *image.RGBA, text string) {
 	tw := pixel.TextWidth(text, s)
 	x, y := (W-tw)/2, 6*s
 	pixel.Shade(img, x-3*s, y-2*s, tw+6*s, 16*s+2*s, 0.72)
+	pixel.Frame(img, x-3*s, y-2*s, tw+6*s, 16*s+2*s)
 	pixel.DrawText(img, x, y, s, text, hudToast)
 }
 
