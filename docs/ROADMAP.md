@@ -225,6 +225,24 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
   the hole-filled footprint) rather than an angular-sector polygon, so they're
   jagged and can follow concave bays around woods and lakes instead of rounding
   off; gates are punched where lanes meet the wall.
+- ✅ City street-life pass (no NPCs, just structures and light):
+  - **Cobbled streets** (pale) read distinctly from the darker packed ground
+    between buildings, and city houses **terrace** into solid blocks (shared
+    walls) instead of standing apart.
+  - **Night braziers** flank every gate and dot the squares and citadel bailey,
+    casting warm flickering pools of firelight after dark.
+  - **Market stalls** (striped awnings) cluster on the plaza; a **smithy** whose
+    forge-mouth glows warm day and night, and a **tavern** with cosy lamplit
+    windows, front the central square (placed by an outward ring search so a lane
+    can't crowd them out).
+  - **Roof material variety by district**: golden thatch on cottages, barns and
+    the smithy; red clay tile and blue-grey slate on the wealthy townhouses,
+    market halls and the tavern; lead/slate on the grand churches and the keep —
+    so a tiled-roof core reads against thatched outskirts.
+  - **Plank bridges** span water a city straddles: the enclosed water counts as
+    interior (the wall wraps it), and a bridge is laid where a street meets the
+    bank, straight across to walkable ground on the far side (never a stub — a
+    test asserts every bridge joins two walkable banks).
 
 ## Parked polish
 
