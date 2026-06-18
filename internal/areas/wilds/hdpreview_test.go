@@ -155,6 +155,9 @@ func TestHDPreview(t *testing.T) {
 		renderSettlementPNG(t, tx, ty, 130, 9, "/tmp/town_hd.png")
 		renderSettlementPNG(t, tx, ty, 70, 17, "/tmp/town_closeup_hd.png")
 		renderSettlementPNG(t, tx, ty, 38, 30, "/tmp/town_center_hd.png")
+		ui.Now = func() time.Time { return time.Date(2026, 6, 18, 23, 0, 0, 0, time.UTC) } // night
+		renderSettlementPNG(t, tx, ty, 56, 20, "/tmp/town_night_hd.png")
+		ui.Now = func() time.Time { return time.Date(2026, 6, 18, 13, 0, 0, 0, time.UTC) }
 	} else {
 		t.Log("no town found in range")
 	}

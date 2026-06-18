@@ -165,6 +165,7 @@ const (
 	lPlaza                    // a cobbled market square, for towns (walkable)
 	lPaved                    // packed/cobbled ground between city buildings (walkable)
 	lCourtyard                // the open bailey inside a city's citadel (walkable)
+	lBrazier                  // a fire brazier lighting a city's gates/squares (blocks)
 	lBuildAnchor              // base tile of a building (blocks) — bt names the kind
 	lBuildBody                // a non-base tile of a building (blocks)
 )
@@ -922,6 +923,53 @@ func (g *Generator) genLayout(s settlement) *layout {
 			}
 		}
 	}
+
+	// Braziers light a city after dark — one flanking each gate, plus a scatter
+	// across the market square and the citadel bailey. Placed only on open paving
+	// (never a narrow street) so they never block a lane.
+	if s.town {
+		open := func(gx, gy int) bool {
+			if !l.in(gx, gy) {
+				return false
+			}
+			switch l.at(gx, gy).kind {
+			case lPlaza, lPaved, lCourtyard:
+				return true
+			}
+			return false
+		}
+		clear := func(gx, gy, rad int) bool {
+			for dy := -rad; dy <= rad; dy++ {
+				for dx := -rad; dx <= rad; dx++ {
+					if l.in(gx+dx, gy+dy) && l.at(gx+dx, gy+dy).kind == lBrazier {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		for gy := 0; gy < n; gy++ {
+			for gx := 0; gx < n; gx++ {
+				if l.at(gx, gy).kind != lGate {
+					continue
+				}
+				for _, d := range nb8 {
+					if nx, ny := gx+d[0], gy+d[1]; open(nx, ny) && clear(nx, ny, 3) {
+						l.at(nx, ny).kind = lBrazier
+						break
+					}
+				}
+			}
+		}
+		for gy := 0; gy < n; gy++ {
+			for gx := 0; gx < n; gx++ {
+				if k := l.at(gx, gy).kind; (k == lPlaza || k == lCourtyard) &&
+					unit(hashCoord(s.id^0xB7A21E5, gx, gy)) < 0.05 && clear(gx, gy, 4) {
+					l.at(gx, gy).kind = lBrazier
+				}
+			}
+		}
+	}
 	return l
 }
 
@@ -1236,6 +1284,8 @@ func cellFor(c *lcell) Cell {
 		return Cell{Biome: Path, Glyph: '·', Color: "#83785F", Walkable: true} // darker earth between buildings
 	case lCourtyard:
 		return Cell{Biome: Path, Glyph: '·', Color: "#8F8576", Walkable: true} // castle bailey
+	case lBrazier:
+		return Cell{Biome: Path, Glyph: 'i', Color: "#FF7A1E"} // a street brazier (blocks, glows at night)
 	case lBuildAnchor:
 		return Cell{Biome: c.biome, Glyph: buildingGlyph(c.bt), Color: buildingColor(c.bt, c.biome), Variant: uint8(c.bt)}
 	case lBuildBody:

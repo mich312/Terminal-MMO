@@ -531,6 +531,8 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
 	case 'W': // a village well (blocks)
 		t.Prop, t.PropHex, t.Ground = game.PropWell, c.Color, groundColor(c.Biome)
+	case 'i': // a city brazier — glows warm at night (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropBrazier, c.Color, "#9A8E78"
 	case '=': // a palisade segment (blocks) — orientation carried in Variant
 		switch c.Variant {
 		case 1:

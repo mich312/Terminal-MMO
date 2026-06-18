@@ -141,6 +141,16 @@ var propArt = map[TileProp][]string{
 		".pp.p.",
 		"......",
 	},
+	// A brazier: a flaming fire-bowl (G flame, W white-hot) on a dark iron post —
+	// lights a city's gates and squares warmly after dark.
+	PropBrazier: {
+		"..G...",
+		".GWG..",
+		"GGWGG.",
+		".DPD..",
+		"..P...",
+		"..D...",
+	},
 	// A traveler's campfire: an animated flame (G, pulses) over charred logs.
 	PropCampfire: {
 		"..G...",

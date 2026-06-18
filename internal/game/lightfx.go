@@ -88,6 +88,10 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// Saturated warm light so the fire genuinely warms the ground it reveals,
 		// flickering in both reach and brightness.
 		return whiten(colorful.Color{R: 1, G: 0.5, B: 0.16}, 0.1), 3.0 * flame, flame, true
+	case PropBrazier:
+		// A street brazier: a warm, flickering pool of firelight at the gates and
+		// squares — a touch smaller and steadier than a campfire.
+		return whiten(colorful.Color{R: 1, G: 0.55, B: 0.2}, 0.12), 2.6 * flame, 0.9 * flame, true
 	case PropPortal:
 		return whiten(propCol, 0.6), 2.8, 0.6, true
 	case PropCore, PropFountain:
