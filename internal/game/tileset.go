@@ -436,12 +436,63 @@ var buildingArt = map[TileProp][][]string{
 	PropBldBarn:       bldVariants(2, 2, bldBarn),
 	PropBldChurch:     bldVariants(2, 3, bldChurch),
 	PropBldCathedral:  bldVariants(3, 4, bldChurch),
-	PropBldTownhouse:  bldVariants(2, 3, bldDwelling),
+	PropBldTownhouse:  {genTownhouse(2, 4, 0), genTownhouse(2, 5, 1), genTownhouse(2, 4, 2)},
 	PropBldMarketHall: bldVariants(3, 3, bldDwelling),
 	PropBldSmithy:     bldVariants(2, 2, bldSmithy),
 	PropBldTavern:     bldVariants(2, 2, bldTavern),
 	PropBldKeep:       {genKeep(3, 3)},
 	PropTower:         {towerArt},
+}
+
+// genTownhouse builds a tall, narrow multi-storey merchant house: a wt-tile-wide
+// footprint drawn artTiles tiles tall (overhanging upward past its footprint),
+// with a band of lit windows for each storey and a shallow tiled roof. The extra
+// height is what gives a wealthy quarter a skyline against the thatched streets.
+func genTownhouse(wt, artTiles, style int) []string {
+	w, h := wt*tileArtN, artTiles*tileArtN
+	g := make([][]byte, h)
+	for y := range g {
+		g[y] = make([]byte, w)
+		for x := range g[y] {
+			g[y][x] = '.'
+		}
+	}
+	roofH := tileArtN*3/2 + style // a shallow town roof (~1.5 tiles)
+	wallTop, baseY := roofH, h-1
+	for y := wallTop; y <= baseY; y++ {
+		for x := 0; x < w; x++ {
+			g[y][x] = 'P'
+		}
+	}
+	for x := 0; x < w; x++ {
+		g[baseY][x] = 'D' // base course
+	}
+	for ry := 0; ry < roofH; ry++ { // pitched ridge
+		m := (roofH - 1 - ry) * (w / 2) / roofH
+		for x := m; x < w-m; x++ {
+			g[ry][x] = 'p'
+		}
+	}
+	for wy := wallTop + 2; wy < baseY-1; wy += 3 { // a window band per storey
+		for x := 1; x < w-1; x++ {
+			if (x+style)%2 == 0 {
+				g[wy][x] = 'L'
+			}
+		}
+	}
+	dcx := w / 2 // a door at the base
+	for y := baseY - 1; y <= baseY; y++ {
+		for x := dcx - 1; x <= dcx; x++ {
+			if x >= 0 && x < w {
+				g[y][x] = 'D'
+			}
+		}
+	}
+	out := make([]string, h)
+	for y := range g {
+		out[y] = string(g[y])
+	}
+	return out
 }
 
 // genKeep builds a castle keep: a solid stone block with a flat battlemented
