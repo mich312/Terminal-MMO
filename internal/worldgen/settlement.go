@@ -872,7 +872,20 @@ func (g *Generator) genLayout(s settlement) *layout {
 						}
 					}
 					if abuts {
-						placeBuilding(l, canBuild, gx, gy, btCottage, 0)
+						// Vary the infill so a packed block isn't a grid of identical
+						// cottages: try a larger house where it still fits, falling back
+						// to a cottage in the tighter gaps.
+						h := uint32(gx)*73856093 ^ uint32(gy)*19349663
+						placed := false
+						switch h % 5 {
+						case 0:
+							placed = placeBuilding(l, canBuild, gx, gy, btLonghouse, 0)
+						case 1:
+							placed = placeBuilding(l, canBuild, gx, gy, btHouse, 0)
+						}
+						if !placed {
+							placeBuilding(l, canBuild, gx, gy, btCottage, 0)
+						}
 					}
 				}
 			}
