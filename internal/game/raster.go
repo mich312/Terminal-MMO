@@ -497,6 +497,20 @@ func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color
 	} else {
 		col = col.BlendLab(shadowColor, -j)
 	}
+	// Per-building wall character so a terrace isn't one flat tone: some houses are
+	// limewashed pale, some timber-framed and browner, some left as bare plaster.
+	// Only the humble dwellings vary this way; stone landmarks keep their material.
+	switch prop {
+	case PropBldCottage, PropBldHouse, PropBldLonghouse, PropBldBarn, PropBldTownhouse, PropBldMarketHall:
+		switch (hsh >> 11) % 4 {
+		case 0:
+			col = col.BlendLab(spriteWhite, 0.16) // limewashed
+		case 1:
+			col = col.BlendLab(wallTimber, 0.20) // timber / daub, warmer brown
+		case 2:
+			col = col.BlendLab(wallStone, 0.12) // greyer plaster
+		}
+	}
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
@@ -546,44 +560,59 @@ var (
 	roofTile   = mustHex("#9C4A33")
 	roofSlate  = mustHex("#566270")
 	roofLead   = mustHex("#6E7178")
+	// A few tones per humble material so a street of thatch isn't one flat gold and
+	// a row of tile isn't one flat red: fresh straw, weathered tan, old mossy
+	// brown, sun-bleached pale; clay red, brown-red, ochre.
+	roofThatches = []colorful.Color{
+		mustHex("#B2933F"), mustHex("#967A3C"), mustHex("#6E6038"), mustHex("#C2A861"),
+	}
+	roofTiles = []colorful.Color{
+		mustHex("#9C4A33"), mustHex("#864A39"), mustHex("#A86A3A"),
+	}
+	// Wall-character tint targets for per-building variety.
+	wallTimber = mustHex("#7A5A3A")
+	wallStone  = mustHex("#8C8A82")
 )
 
 // roofColor picks a building's roof material by type — thatch for cottages,
 // barns and longhouses; tile or slate for the wealthier townhouses, market
-// halls and churches; lead-grey for the castle's stone — with a little per-house
-// variation (hsh) so a district isn't uniform. The chosen material is darkened
-// toward the building's own shade so it still sits in the same light.
+// halls and churches; lead-grey for the castle's stone — each drawn from a small
+// per-material palette (keyed on hsh) so a district reads as a mix of weathered
+// roofs rather than one flat tone. The chosen material is nudged in lightness so
+// even same-tone neighbours differ a touch.
 func roofColor(prop TileProp, hsh uint32, body colorful.Color) colorful.Color {
+	thatch := roofThatches[hsh%uint32(len(roofThatches))]
+	tile := roofTiles[(hsh/7)%uint32(len(roofTiles))]
 	var mat colorful.Color
 	switch prop {
 	case PropBldCottage, PropBldBarn, PropBldLonghouse:
-		mat = roofThatch // humble buildings keep thatch
+		mat = thatch // humble buildings keep thatch
 	case PropBldSmithy:
 		mat = roofSlate // a forge wants a fireproof slate roof, not straw
 	case PropBldTavern:
-		mat = roofTile // a prosperous tavern is tiled
+		mat = tile // a prosperous tavern is tiled
 	case PropBldTownhouse, PropBldMarketHall:
 		if hsh&1 == 0 {
-			mat = roofTile
+			mat = tile
 		} else {
 			mat = roofSlate
 		}
 	case PropBldChurch, PropBldCathedral, PropBldKeep:
 		mat = roofLead // grand stone roofs in lead/slate
 	case PropBldHouse:
-		if hsh&1 == 0 {
-			mat = roofThatch
+		if hsh%3 == 0 { // a mix: mostly thatch, some tiled
+			mat = tile
 		} else {
-			mat = roofTile
+			mat = thatch
 		}
 	default:
 		return body.BlendLab(shadowColor, 0.45) // wilderness cabin: shaded body
 	}
-	// Nudge lightness per building so neighbours of the same material differ a touch.
+	// Nudge lightness per building so neighbours of the same tone differ a touch.
 	if hsh&2 == 0 {
-		mat = mat.BlendLab(spriteWhite, 0.06)
+		mat = mat.BlendLab(spriteWhite, 0.05)
 	} else {
-		mat = mat.BlendLab(shadowColor, 0.06)
+		mat = mat.BlendLab(shadowColor, 0.05)
 	}
 	return mat
 }
