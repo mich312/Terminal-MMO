@@ -139,6 +139,60 @@ func (g *Generator) partnerOf(s settlement) (settlement, bool) {
 	return best, found
 }
 
+// partnersOf returns every neighbour a settlement is road-linked to — the local
+// road network, not just the single nearest town. Candidates are the valid
+// settlements in the surrounding macro-cells within linkMax (so towns that are
+// simply too far apart are never joined). A Gabriel-graph rule then prunes
+// redundant links: an edge s→n is dropped if any other settlement sits inside
+// the circle that has s–n as its diameter — so a town links to the neighbours
+// genuinely near it and never throws a long road clear over a closer town. The
+// result is a sparse, natural web; isolated towns simply return an empty list.
+func (g *Generator) partnersOf(s settlement) []settlement {
+	if !s.valid {
+		return nil
+	}
+	key := uint64(uint32(s.mx))<<32 | uint64(uint32(s.my))
+	if v, ok := g.partnersCache.Load(key); ok {
+		return v.([]settlement)
+	}
+	var cand []settlement
+	for dy := -2; dy <= 2; dy++ {
+		for dx := -2; dx <= 2; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			n := g.settlementFor(s.mx+dx, s.my+dy)
+			if !n.valid {
+				continue
+			}
+			d2 := float64((n.cx-s.cx)*(n.cx-s.cx) + (n.cy-s.cy)*(n.cy-s.cy))
+			if d2 <= linkMax*linkMax {
+				cand = append(cand, n)
+			}
+		}
+	}
+	var partners []settlement
+	for _, n := range cand {
+		mx, my := float64(s.cx+n.cx)/2, float64(s.cy+n.cy)/2 // midpoint of s–n
+		rad2 := (float64(s.cx-n.cx)*float64(s.cx-n.cx) + float64(s.cy-n.cy)*float64(s.cy-n.cy)) / 4
+		blocked := false
+		for _, m := range cand {
+			if m.mx == n.mx && m.my == n.my {
+				continue
+			}
+			if (float64(m.cx)-mx)*(float64(m.cx)-mx)+(float64(m.cy)-my)*(float64(m.cy)-my) < rad2 {
+				blocked = true // a nearer town lies between s and n — n is reached through it
+				break
+			}
+		}
+		if !blocked {
+			partners = append(partners, n)
+		}
+	}
+	g.partnersCache.Store(key, partners)
+	return partners
+}
+
 // ── layout grid ──────────────────────────────────────────────────────────────
 
 type lkind uint8
@@ -1656,27 +1710,25 @@ func (g *Generator) connectingRoad(x, y int) (Cell, bool) {
 			if !s.valid {
 				continue
 			}
-			p, ok := g.partnerOf(s)
-			if !ok {
-				continue
-			}
-			d := distPointSeg(float64(x), float64(y), float64(s.cx), float64(s.cy), float64(p.cx), float64(p.cy))
-			if d > 0.7 {
-				continue
-			}
-			// How far along from this village's centre — used to fade the road out.
-			along := math.Hypot(float64(x-s.cx), float64(y-s.cy))
-			if along > linkFade {
-				// Dithered trail: thin to scattered packed-earth patches.
-				if unit(hashCoord(g.seed^0xC0FFEE11, x, y)) > 0.35 {
+			for _, p := range g.partnersOf(s) { // every road this town sends out
+				d := distPointSeg(float64(x), float64(y), float64(s.cx), float64(s.cy), float64(p.cx), float64(p.cy))
+				if d > 0.7 {
 					continue
 				}
+				// How far along from this village's centre — used to fade the road out.
+				along := math.Hypot(float64(x-s.cx), float64(y-s.cy))
+				if along > linkFade {
+					// Dithered trail: thin to scattered packed-earth patches.
+					if unit(hashCoord(g.seed^0xC0FFEE11, x, y)) > 0.35 {
+						continue
+					}
+				}
+				b := g.biomeAt(x, y)
+				if b == Water || b == Mountain || b == Deep {
+					continue
+				}
+				return Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}, true
 			}
-			b := g.biomeAt(x, y)
-			if b == Water || b == Mountain || b == Deep {
-				continue
-			}
-			return Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}, true
 		}
 	}
 	return Cell{}, false

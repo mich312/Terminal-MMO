@@ -48,10 +48,11 @@ type Cell struct {
 // and generated village layouts per macro-cell (villages are sparse, so few are
 // ever held); both are sync.Maps so a Generator stays safe to share.
 type Generator struct {
-	seed         uint64
-	settleCache  sync.Map // macro-cell key → settlement
-	layoutCache  sync.Map // macro-cell key → *layout
-	partnerCache sync.Map // macro-cell key → partnerResult
+	seed          uint64
+	settleCache   sync.Map // macro-cell key → settlement
+	layoutCache   sync.Map // macro-cell key → *layout
+	partnerCache  sync.Map // macro-cell key → partnerResult
+	partnersCache sync.Map // macro-cell key → []settlement (road network)
 }
 
 // New returns a generator for the given seed.
