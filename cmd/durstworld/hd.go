@@ -414,6 +414,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	// repeats into one even step per tick — newest direction wins — until the key
 	// stops repeating. This also caps the camera-pan full-frame rate over SSH.
 	moveInterval := time.Second / hdMoveHz
+	// A held key keeps walking while repeats keep arriving; if none has for
+	// heldTimeout the key is treated as released. It must comfortably exceed the
+	// terminal's repeat gap (and any frame-encode stall in the loop) so a genuine
+	// hold doesn't stutter, yet be short enough that release feels immediate.
+	const heldTimeout = 250 * time.Millisecond
 	var (
 		pendingMove tea.KeyMsg
 		havePending bool
@@ -440,91 +445,126 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	// are A/B/C/D; a ";2" parameter means Shift is held → run.
 	esc := 0
 	var csi []byte
+	var lastKey time.Time // when a movement key last arrived, for release detection
+
+	// handleKey processes one input byte, returning true if the session should
+	// quit. Movement keys only record the held direction (stepped, throttled, by
+	// the move ticker) so a burst of buffered repeats collapses to one intent
+	// rather than marching the avatar on after the key is released.
+	handleKey := func(b byte) (quit bool) {
+		if chatActive { // typing a chat line: capture the byte, skip game keys
+			switch {
+			case b == 3: // Ctrl-C still quits
+				hud()
+				return true
+			case b == '\r' || b == '\n':
+				text := strings.TrimSpace(chatInput)
+				chatActive, chatInput = false, ""
+				if text != "" {
+					sendChat(text)
+				}
+				draw()
+			case b == 0x7f || b == 0x08: // backspace
+				if n := len(chatInput); n > 0 {
+					chatInput = chatInput[:n-1]
+				}
+				draw()
+			case b == 0x1b: // esc cancels
+				chatActive, chatInput = false, ""
+				draw()
+			case b >= 0x20 && b < 0x7f:
+				chatInput += string(b)
+				draw()
+			}
+			return false
+		}
+		var key string
+		switch {
+		case esc == 0 && b == 0x1b:
+			esc = 1
+		case esc == 1:
+			if b == '[' || b == 'O' {
+				esc, csi = 2, csi[:0]
+			} else {
+				esc = 0
+			}
+		case esc == 2:
+			if (b >= 'A' && b <= 'Z') || b == '~' {
+				esc = 0
+				key = csiKey(string(csi), b)
+			} else {
+				csi = append(csi, b)
+			}
+		case b == 3: // Ctrl-C always quits
+			hud()
+			return true
+		case b == 'q' || b == 'Q': // q closes an open panel, else quits
+			if uiPanel != hdPanelNone {
+				uiPanel = hdPanelNone
+				draw()
+			} else {
+				hud()
+				return true
+			}
+		default:
+			key = string(b)
+		}
+		if uiKey(key) {
+			draw()
+		} else if km, ok := moveKeyMsg(key); ok {
+			// Step now if a tick has elapsed, else hold the latest direction for the
+			// move ticker. lastKey marks the input fresh so the ticker keeps walking
+			// while the key repeats and stops within a tick once it is released.
+			pendingMove, lastKey = km, time.Now()
+			if time.Since(lastStep) >= moveInterval {
+				applyMove(km)
+				havePending = false
+			} else {
+				havePending = true
+			}
+		} else if key == "e" { // pick up an item under the player
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			draw()
+		} else if key == "f2" { // toggle the walkability debug overlay
+			game.DebugWalkable = !game.DebugWalkable
+			draw()
+		} else if key == "\r" || key == "\n" { // open chat
+			chatActive, chatInput = true, ""
+			draw()
+		} else if key == "/" { // open chat pre-filled for a command
+			chatActive, chatInput = true, "/"
+			draw()
+		}
+		return false
+	}
+
 	for {
 		select {
 		case b, ok := <-keys:
 			if !ok {
 				return
 			}
-			if chatActive { // typing a chat line: capture the byte, skip game keys
-				switch {
-				case b == 3: // Ctrl-C still quits
-					hud()
-					return
-				case b == '\r' || b == '\n':
-					text := strings.TrimSpace(chatInput)
-					chatActive, chatInput = false, ""
-					if text != "" {
-						sendChat(text)
-					}
-					draw()
-				case b == 0x7f || b == 0x08: // backspace
-					if n := len(chatInput); n > 0 {
-						chatInput = chatInput[:n-1]
-					}
-					draw()
-				case b == 0x1b: // esc cancels
-					chatActive, chatInput = false, ""
-					draw()
-				case b >= 0x20 && b < 0x7f:
-					chatInput += string(b)
-					draw()
-				}
-				continue
-			}
-			var key string
-			switch {
-			case esc == 0 && b == 0x1b:
-				esc = 1
-			case esc == 1:
-				if b == '[' || b == 'O' {
-					esc, csi = 2, csi[:0]
-				} else {
-					esc = 0
-				}
-			case esc == 2:
-				if (b >= 'A' && b <= 'Z') || b == '~' {
-					esc = 0
-					key = csiKey(string(csi), b)
-				} else {
-					csi = append(csi, b)
-				}
-			case b == 3: // Ctrl-C always quits
-				hud()
+			if handleKey(b) {
 				return
-			case b == 'q' || b == 'Q': // q closes an open panel, else quits
-				if uiPanel != hdPanelNone {
-					uiPanel = hdPanelNone
-					draw()
-				} else {
-					hud()
-					return
-				}
-			default:
-				key = string(b)
 			}
-			if uiKey(key) {
-				draw()
-			} else if km, ok := moveKeyMsg(key); ok {
-				// Step now if a tick has elapsed, else hold the latest direction for
-				// the move ticker — so key-repeat bursts collapse to an even pace.
-				if time.Since(lastStep) >= moveInterval {
-					applyMove(km)
-				} else {
-					pendingMove, havePending = km, true
+			// Drain the rest of the buffered burst right now, coalescing it. While
+			// the loop is busy encoding a frame, held-key repeats pile up in the
+			// channel (and the kernel SSH buffer); processing them one-per-select
+			// would let that backlog keep driving movement long after release. Empty
+			// it in one go so a release stops the avatar within a tick.
+		drain:
+			for {
+				select {
+				case b2, ok2 := <-keys:
+					if !ok2 {
+						return
+					}
+					if handleKey(b2) {
+						return
+					}
+				default:
+					break drain
 				}
-			} else if key == "e" { // pick up an item under the player
-				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-				draw()
-			} else if key == "f2" { // toggle the walkability debug overlay
-				game.DebugWalkable = !game.DebugWalkable
-				draw()
-			} else if key == "\r" || key == "\n" { // open chat
-				chatActive, chatInput = true, ""
-				draw()
-			} else if key == "/" { // open chat pre-filled for a command
-				chatActive, chatInput = true, "/"
-				draw()
 			}
 		case ev, ok := <-events:
 			if !ok {
@@ -557,9 +597,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				dirty = false
 			}
 		case <-ticker.C:
-			// Release one held-key step per move tick, so walking continues at an
-			// even hdMoveHz pace while a key keeps repeating.
-			if havePending && time.Since(lastStep) >= moveInterval {
+			// Continue a held key one step per move tick, but only while it is still
+			// being pressed: once released the repeat stream stops, lastKey goes
+			// stale, and movement halts within a tick — so a key-up never strands the
+			// avatar mid-stride even though the terminal sends no key-up event.
+			if havePending && time.Since(lastKey) < heldTimeout && time.Since(lastStep) >= moveInterval {
 				applyMove(pendingMove)
 				havePending = false
 			}
