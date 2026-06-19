@@ -55,8 +55,35 @@ func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 
 // Light is a radial light source: tiles fade toward darkness past Radius from
 // (X,Y) in world coordinates. A zero Radius means uniform light.
+//
+// Floor sets how dark the ground outside Radius gets (0 = use the default
+// nightFloor; 1 = no darkening at all). DayFadedLight raises it with the
+// time-of-day clock so a light can fade out by midday.
 type Light struct {
 	X, Y, Radius int
+	Floor        float64
+}
+
+// floor is the brightness the radial falloff bottoms out at outside Radius.
+func (l Light) floor() float64 {
+	if l.Floor <= 0 {
+		return nightFloor
+	}
+	if l.Floor > 1 {
+		return 1
+	}
+	return l.Floor
+}
+
+// DayFadedLight eases a light's outside-radius darkness with the time-of-day
+// cycle: after dusk the surroundings fall to the usual night floor, but by
+// midday they brighten to full daylight so the lit circle fades out entirely.
+// Used for the Wilds' sight light, which should read as a torch at night, not a
+// permanent vignette in broad daylight.
+func DayFadedLight(l Light) Light {
+	_, _, night := sunState()
+	l.Floor = nightFloor + (1-nightFloor)*(1-night)
+	return l
 }
 
 const nightFloor = 0.12
@@ -224,21 +251,25 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if light.Radius <= 0 {
 		return col
 	}
+	floor := light.floor()
+	if floor >= 1 { // fully faded (e.g. midday day-fade): no darkening at all
+		return col
+	}
 	dx := float64(x - light.X)
 	dy := float64(y - light.Y)
 	d := math.Sqrt(dx*dx + dy*dy)
 	f := 1 - d/float64(light.Radius)
-	if f < nightFloor {
-		f = nightFloor
+	if f < floor {
+		f = floor
 	}
 	if f > 1 {
 		f = 1
 	}
 	// Quantize brightness into discrete bands so the light reads as stepped
 	// retro rings (lit / dim / dark) instead of a smooth modern gradient.
-	t := (f - nightFloor) / (1 - nightFloor)
+	t := (f - floor) / (1 - floor)
 	t = math.Round(t*lightBands) / lightBands
-	f = nightFloor + t*(1-nightFloor)
+	f = floor + t*(1-floor)
 	return col.BlendLab(shadowColor, 1-f).Clamped()
 }
 

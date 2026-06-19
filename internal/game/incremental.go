@@ -249,15 +249,19 @@ func lightBand(wx, wy int, light Light) int {
 	if light.Radius <= 0 {
 		return lightBands
 	}
+	floor := light.floor()
+	if floor >= 1 {
+		return lightBands
+	}
 	d := math.Hypot(float64(wx-light.X), float64(wy-light.Y))
 	f := 1 - d/float64(light.Radius)
-	if f < nightFloor {
-		f = nightFloor
+	if f < floor {
+		f = floor
 	}
 	if f > 1 {
 		f = 1
 	}
-	t := (f - nightFloor) / (1 - nightFloor)
+	t := (f - floor) / (1 - floor)
 	return int(math.Round(t * lightBands))
 }
 
