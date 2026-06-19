@@ -436,7 +436,7 @@ var buildingArt = map[TileProp][][]string{
 	PropBldBarn:       bldVariants(2, 2, bldBarn),
 	PropBldChurch:     bldVariants(2, 3, bldChurch),
 	PropBldCathedral:  bldVariants(3, 4, bldChurch),
-	PropBldTownhouse:  {genTownhouse(2, 4, 0), genTownhouse(2, 5, 1), genTownhouse(2, 4, 2)},
+	PropBldTownhouse:  {genTownhouse(2, 3, 0), genTownhouse(2, 4, 1), genTownhouse(2, 3, 2)},
 	PropBldMarketHall: bldVariants(3, 3, bldDwelling),
 	PropBldSmithy:     bldVariants(2, 2, bldSmithy),
 	PropBldTavern:     bldVariants(2, 2, bldTavern),
@@ -457,7 +457,7 @@ func genTownhouse(wt, artTiles, style int) []string {
 			g[y][x] = '.'
 		}
 	}
-	roofH := tileArtN*3/2 + style // a shallow town roof (~1.5 tiles)
+	roofH := tileArtN*4/5 + style/2 // a low hipped town roof (~0.8 tile), not a spire
 	wallTop, baseY := roofH, h-1
 	for y := wallTop; y <= baseY; y++ {
 		for x := 0; x < w; x++ {
@@ -467,16 +467,25 @@ func genTownhouse(wt, artTiles, style int) []string {
 	for x := 0; x < w; x++ {
 		g[baseY][x] = 'D' // base course
 	}
-	for ry := 0; ry < roofH; ry++ { // pitched ridge
-		m := (roofH - 1 - ry) * (w / 2) / roofH
+	// Hipped roof: the eaves overhang the wall and the slope stops short of a point,
+	// leaving a flat ridge band — so it reads as a house roof, not a turret.
+	for ry := 0; ry < roofH; ry++ {
+		m := (roofH - 1 - ry) * (w/2 - 1) / roofH
 		for x := m; x < w-m; x++ {
 			g[ry][x] = 'p'
 		}
 	}
-	for wy := wallTop + 2; wy < baseY-1; wy += 3 { // a window band per storey
+	// Storeys: a window band every three rows, with a trim line between floors so the
+	// height reads as stacked storeys rather than one tall blank wall.
+	for wy := wallTop + 2; wy < baseY-1; wy += 3 {
 		for x := 1; x < w-1; x++ {
 			if (x+style)%2 == 0 {
 				g[wy][x] = 'L'
+			}
+		}
+		if wy-1 > wallTop {
+			for x := 0; x < w; x++ {
+				g[wy-1][x] = 'R' // floor line / eaves band
 			}
 		}
 	}
