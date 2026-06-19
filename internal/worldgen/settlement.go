@@ -666,6 +666,61 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
+	// Wards: a city is a patchwork of quarters, each with its own character — a
+	// wealthy merchant quarter of tall tiled townhouses, ordinary common streets, a
+	// craftsmen's quarter of workshops and barns, and a poor quarter of packed
+	// little cottages. A handful of seed points (a coarse Voronoi) parcel the
+	// interior into wards; types are assigned roughly inside-out (wealth toward the
+	// centre) with jitter, so adjacent quarters read as distinctly different places
+	// — which the building mix, and through it the roof materials, then express.
+	type wardType uint8
+	const (
+		wMerchant wardType = iota
+		wCommon
+		wCraft
+		wPoor
+	)
+	type wseed struct {
+		x, y float64
+		t    wardType
+	}
+	var wards []wseed
+	if s.town {
+		nW := 5 + rng.n(4)
+		wards = make([]wseed, nW)
+		for i := range wards {
+			a := rng.f() * 2 * math.Pi
+			d := reach * rng.rng(0.0, 0.95)
+			var t wardType
+			switch dd := d / reach; {
+			case dd < 0.32: // the wealthy heart
+				t = wMerchant
+			case dd < 0.62:
+				if rng.f() < 0.5 {
+					t = wCommon
+				} else {
+					t = wCraft
+				}
+			default: // the poor and working edges
+				if rng.f() < 0.55 {
+					t = wPoor
+				} else {
+					t = wCraft
+				}
+			}
+			wards[i] = wseed{float64(cgx) + math.Cos(a)*d, float64(cgy) + math.Sin(a)*d, t}
+		}
+	}
+	wardAt := func(gx, gy int) wardType {
+		best, bt := math.MaxFloat64, wCommon
+		for _, w := range wards {
+			if d := math.Hypot(float64(gx)-w.x, float64(gy)-w.y); d < best {
+				best, bt = d, w.t
+			}
+		}
+		return bt
+	}
+
 	buildR := reach - 4 // buildings stay inside this; the wall encloses them
 	base, slope, floor := 0.95, 0.6, 0.22
 	if s.town { // a city: nearly every plot built, just thinning a touch outward
@@ -678,19 +733,29 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 		return p
 	}
-	chooseType := func(r float64, rr *srng) buildType {
-		if s.town { // a city has districts: a wealthy core, plainer outskirts
-			switch {
-			case r > buildR*0.7: // outskirts: poorer housing and warehouses by the gates
+	chooseType := func(r float64, ward wardType, rr *srng) buildType {
+		if s.town { // a city's quarters each favour their own kind of building
+			switch ward {
+			case wMerchant: // the wealthy quarter: tall multi-storey tiled townhouses
+				if rr.n(4) == 0 {
+					return btHouse
+				}
+				return btTownhouse
+			case wCraft: // the craftsmen's quarter: workshops, barns and longhouses
 				switch rr.n(4) {
 				case 0:
 					return btBarn
 				case 1:
-					return btLonghouse
-				default:
 					return btCottage
+				default:
+					return btLonghouse
 				}
-			case r > buildR*0.4: // middling streets: ordinary houses
+			case wPoor: // the poor quarter: a tangle of packed little cottages
+				if rr.n(6) == 0 {
+					return btLonghouse
+				}
+				return btCottage
+			default: // common streets: ordinary houses with the odd longhouse
 				switch rr.n(4) {
 				case 0:
 					return btCottage
@@ -698,13 +763,6 @@ func (g *Generator) genLayout(s settlement) *layout {
 					return btLonghouse
 				default:
 					return btHouse
-				}
-			default: // wealthy core: tall multi-storey townhouses
-				switch rr.n(3) {
-				case 0:
-					return btHouse
-				default:
-					return btTownhouse
 				}
 			}
 		}
@@ -789,7 +847,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if s.town {
 				gap = 0 // cities terrace: houses share walls into solid blocks
 			}
-			placeBuilding(l, canBuild, gx, gy, chooseType(r, cellHash), gap)
+			placeBuilding(l, canBuild, gx, gy, chooseType(r, wardAt(gx, gy), cellHash), gap)
 		}
 	}
 
