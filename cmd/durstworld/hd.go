@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"log"
 	"math/rand"
@@ -36,6 +38,7 @@ const (
 	hdScale    = 26 // pixels per tile — zoomed out so the 1-tile hero reads as small in a big world
 	hdFPS      = 12 // tile-animation / world-reflection rate (the `frame` counter)
 	hdRenderHz = 30 // max on-screen redraw rate; input is coalesced to this cadence
+	hdMoveHz   = 10 // max movement steps/sec — a held key walks at this even cadence instead of the terminal's jittery key-repeat rate
 	hdRefresh  = 48 // frames between full repaints
 	hdMaxTile  = 140
 	// Cap the rendered buffer so per-frame cost (render + dirty-diff + encode +
@@ -136,6 +139,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	}
 
 	name, events := w.Join(s.User())
+	w.MarkPoller(name) // HD repaints from world state each frame; skip the move/tick stream
 	st.RecordVisit(name)
 	setupAvatar(w, st, name)
 	log.Printf("%s connected (HD/%s, TERM=%s)", name, proto, ptyReq.Term)
@@ -152,9 +156,40 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	cellW, cellH := hdCellSize(ptyReq.Window)
 	win := ptyReq.Window
 
-	out := bufio.NewWriterSize(s, 1<<20)
-	out.WriteString("\x1b[2J\x1b[?25l")
-	defer func() { out.WriteString("\x1b[?25h\x1b[0m\r\n"); out.Flush() }()
+	// A dedicated writer goroutine owns the SSH socket so a slow/congested link
+	// never blocks the input+render loop. Output is handed over as whole jobs;
+	// control sequences (clears, the goodbye line) are always sent, while frames
+	// are gated by frameInFlight below — at most one frame is ever outstanding, so
+	// a link that can't keep up simply drops to a lower frame rate instead of
+	// stalling movement. Frame jobs signal frameDone when flushed.
+	type wjob struct {
+		data  []byte
+		frame bool
+	}
+	jobs := make(chan wjob, 64)
+	frameDone := make(chan struct{}, 1)
+	writerDone := make(chan struct{})
+	go func() {
+		bw := bufio.NewWriterSize(s, 1<<20)
+		for j := range jobs {
+			bw.Write(j.data)
+			bw.Flush() // may block on a slow socket — only this goroutine waits
+			if j.frame {
+				select {
+				case frameDone <- struct{}{}:
+				default:
+				}
+			}
+		}
+		close(writerDone)
+	}()
+	ctrl := func(seq string) { jobs <- wjob{data: []byte(seq)} }
+	ctrl("\x1b[2J\x1b[?25l")
+	defer func() {
+		ctrl("\x1b[?25h\x1b[0m\r\n")
+		close(jobs)
+		<-writerDone
+	}()
 
 	keys := make(chan byte, 256)
 	go func() {
@@ -172,6 +207,15 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	}()
 
 	fw := &pixel.FrameWriter{Kitty: useKitty, CellW: cellW, CellH: cellH}
+	var inc game.IncrementalRenderer // re-rasterizes only changed tiles each frame
+	var frameImg *image.RGBA         // reused scratch: terrain copy + UI overlays
+	frameCopy := func(src *image.RGBA) *image.RGBA {
+		if frameImg == nil || frameImg.Bounds() != src.Bounds() {
+			frameImg = image.NewRGBA(src.Bounds())
+		}
+		copy(frameImg.Pix, src.Pix)
+		return frameImg
+	}
 	var (
 		frame      int
 		sent       int
@@ -194,7 +238,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		lastChat = time.Now()
 	}
 
+	frameInFlight := false // a frame is queued/being written; don't compute another
 	render := func() {
+		if frameInFlight {
+			return // backpressure: the writer is still draining the last frame
+		}
 		cols, rows := win.Width, win.Height
 		if cols < 8 || rows < 6 {
 			return
@@ -202,12 +250,17 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		vw := clamp(cols*cellW/hdScale, 8, min(hdMaxTile, hdMaxPxW/hdScale))
 		vh := clamp((rows-1)*cellH/hdScale, 8, min(hdMaxTile, hdMaxPxH/hdScale))
 		tm, ox, oy := hv.HDView(vw, vh)
-		cam := game.Camera{W: vw, H: vh}
 		light := game.Light{}
 		if l, ok := area.(game.HDLighter); ok {
 			light = l.HDLight() // the Wilds' discovery circle
 		}
-		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, light, ox, oy, hdScale, false, style)
+		full := frame%hdRefresh == 0
+		// Incremental terrain: only tiles that actually changed are re-rasterized.
+		// The result is byte-identical to a full RenderRGBA (see IncrementalRenderer),
+		// so the on-wire delta — and what the player sees — is unchanged.
+		base := inc.Render(tm, w.PlayersInArea(areaID), name, frame, light, ox, oy, hdScale, style, full)
+		// Composite UI onto a copy so overlays never bleed into the cached terrain.
+		img := frameCopy(base)
 		game.OverlayWalkable(img, tm, hdScale) // debug: tint blocked tiles (toggle with F2)
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
@@ -244,9 +297,15 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawInventoryPanel(img, ctx)
 		}
 
-		sent += fw.WriteFrame(out, img, frame%hdRefresh == 0)
-		out.Flush()
+		var buf bytes.Buffer
+		n := fw.WriteFrame(&buf, img, full)
+		if buf.Len() == 0 {
+			return // nothing changed — no job, stay idle
+		}
+		sent += n
 		framesSent++
+		frameInFlight = true
+		jobs <- wjob{data: buf.Bytes(), frame: true} // room guaranteed: no frame in flight
 	}
 
 	// Input handlers mark the frame dirty rather than rendering inline, so a slow
@@ -260,10 +319,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		if dur <= 0 {
 			dur = 1
 		}
-		out.WriteString("\x1b[?25h\x1b[0m\r\n")
-		fmt.Fprintf(out, "HD session over: %d frames, %.0f KB sent, %.1f KB/s avg over %.0fs\r\n",
-			framesSent, float64(sent)/1024, float64(sent)/1024/dur, dur)
-		out.Flush()
+		ctrl(fmt.Sprintf("\x1b[?25h\x1b[0m\r\nHD session over: %d frames, %.0f KB sent, %.1f KB/s avg over %.0fs\r\n",
+			framesSent, float64(sent)/1024, float64(sent)/1024/dur, dur))
 	}
 
 	// uiKey handles HD interface keys: 'c'/'i' toggle the character/inventory
@@ -337,7 +394,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if len(f) > 1 {
 				if dest := strings.ToLower(f[1]); dest != areaID && game.AreaRegistered(dest) {
 					fw.Reset()
-					out.WriteString("\x1b[2J")
+					inc.Reset() // new area → discard the cached terrain
+					ctrl("\x1b[2J")
 					areaID, area, hv = enterHD(ctx, areaID, dest)
 				} else {
 					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
@@ -346,6 +404,33 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		default:
 			appendChat(game.HDLine{Text: "try chat, /me, /w <name> msg, /goto <area>", Col: hudDim})
 		}
+	}
+
+	// Movement is throttled to hdMoveHz. A held key repeats far faster than that
+	// at the terminal's key-repeat rate (and SSH has no key-up event), which made
+	// walking lurch and overshoot: the first repeat steps, the OS pauses, then a
+	// burst of repeats sprints the avatar past where you released. We take the
+	// first step immediately (so a tap stays responsive) and coalesce further
+	// repeats into one even step per tick — newest direction wins — until the key
+	// stops repeating. This also caps the camera-pan full-frame rate over SSH.
+	moveInterval := time.Second / hdMoveHz
+	var (
+		pendingMove tea.KeyMsg
+		havePending bool
+		lastStep    time.Time
+	)
+	applyMove := func(km tea.KeyMsg) {
+		next, _ := area.Update(km)
+		if t, isTransition := next.(game.Transition); isTransition {
+			fw.Reset() // new scene → full repaint
+			inc.Reset() // new area → discard the cached terrain
+			ctrl("\x1b[2J")
+			areaID, area, hv = enterHD(ctx, areaID, t.To)
+		} else {
+			area = next
+		}
+		lastStep = time.Now()
+		draw()
 	}
 
 	render() // first paint; thereafter the ticker renders when something is dirty
@@ -421,15 +506,13 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if uiKey(key) {
 				draw()
 			} else if km, ok := moveKeyMsg(key); ok {
-				next, _ := area.Update(km)
-				if t, isTransition := next.(game.Transition); isTransition {
-					fw.Reset() // new scene → full repaint
-					out.WriteString("\x1b[2J")
-					areaID, area, hv = enterHD(ctx, areaID, t.To)
+				// Step now if a tick has elapsed, else hold the latest direction for
+				// the move ticker — so key-repeat bursts collapse to an even pace.
+				if time.Since(lastStep) >= moveInterval {
+					applyMove(km)
 				} else {
-					area = next
+					pendingMove, havePending = km, true
 				}
-				draw()
 			} else if key == "e" { // pick up an item under the player
 				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 				draw()
@@ -463,16 +546,32 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			cellW, cellH = hdCellSize(win) // the client may report new pixel dims
 			fw.CellW, fw.CellH = cellW, cellH
 			fw.Reset() // size changed → force a full repaint
-			out.WriteString("\x1b[2J")
+			ctrl("\x1b[2J")
 			draw()
+		case <-frameDone:
+			// The last frame finished writing; paint any pending change now, so a
+			// slow link self-paces — the next frame goes out as soon as it can.
+			frameInFlight = false
+			if dirty {
+				render()
+				dirty = false
+			}
 		case <-ticker.C:
+			// Release one held-key step per move tick, so walking continues at an
+			// even hdMoveHz pace while a key keeps repeating.
+			if havePending && time.Since(lastStep) >= moveInterval {
+				applyMove(pendingMove)
+				havePending = false
+			}
 			// Advance the animation/world-reflection counter on wall-clock time so
 			// it stays at hdFPS regardless of the (higher) render cadence.
 			if nf := int(time.Since(start) / (time.Second / hdFPS)); nf != frame {
 				frame = nf
 				dirty = true
 			}
-			if dirty {
+			// Render only when the writer is free; if it's still draining, leave the
+			// frame dirty and frameDone will pick it up (dropping intermediate ones).
+			if dirty && !frameInFlight {
 				render()
 				dirty = false
 			}
