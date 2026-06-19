@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -49,6 +50,50 @@ func TestCycleHourCompressedToOneHour(t *testing.T) {
 		got := CycleHour(time.Date(2026, 6, 16, 10, c.min, c.sec, 0, time.UTC))
 		if got != c.want {
 			t.Errorf("CycleHour(min=%d sec=%d) = %v, want %v", c.min, c.sec, got, c.want)
+		}
+	}
+}
+
+// Daylight length tracks Brixen's real seasons: long summer days, short winter
+// ones, ~12h at the equinoxes — while one in-game day stays one real hour.
+func TestSeasonalDayLength(t *testing.T) {
+	summer := DayLength(time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC))
+	winter := DayLength(time.Date(2026, 12, 21, 0, 0, 0, 0, time.UTC))
+	equinox := DayLength(time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC))
+	t.Logf("Brixen daylight — summer %.2fh, equinox %.2fh, winter %.2fh", summer, equinox, winter)
+
+	if summer <= winter {
+		t.Errorf("summer day (%.2fh) should be longer than winter (%.2fh)", summer, winter)
+	}
+	if summer < 15 || summer > 16.5 {
+		t.Errorf("summer solstice daylight %.2fh outside the plausible Brixen range", summer)
+	}
+	if winter < 7.5 || winter > 9.5 {
+		t.Errorf("winter solstice daylight %.2fh outside the plausible Brixen range", winter)
+	}
+	if equinox < 11.5 || equinox > 12.5 {
+		t.Errorf("equinox daylight %.2fh should be near 12h", equinox)
+	}
+}
+
+// SolarHour warps the daylight span by season but keeps midnight and noon pinned,
+// and a longer daylight span means more of the in-game hour reads as "lit": the
+// canonical hour at a fixed mid-morning clock position is further along in summer.
+func TestSolarHourSeasonalWarp(t *testing.T) {
+	// minute 15 of the hour == CycleHour 6 (a fixed clock position partway through
+	// the hour). In summer the sun is already well up; in winter it's barely dawn.
+	atMin15 := func(month time.Month) float64 {
+		return SolarHour(time.Date(2026, month, 21, 10, 15, 0, 0, time.UTC))
+	}
+	summer, winter := atMin15(6), atMin15(12)
+	t.Logf("canonical hour at clock-minute 15 — summer %.2f, winter %.2f", summer, winter)
+	if summer <= winter {
+		t.Errorf("at a fixed mid-morning clock position the sun should be higher in summer (%.2f) than winter (%.2f)", summer, winter)
+	}
+	// Noon (minute 30) stays pinned to canonical 12 year-round.
+	for _, m := range []time.Month{time.June, time.December} {
+		if h := SolarHour(time.Date(2026, m, 21, 10, 30, 0, 0, time.UTC)); math.Abs(h-12) > 1e-9 {
+			t.Errorf("%v: noon should stay pinned at canonical 12, got %.4f", m, h)
 		}
 	}
 }

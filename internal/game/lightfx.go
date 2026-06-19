@@ -9,12 +9,14 @@ import (
 	"github.com/durst-group/durstworld/internal/ui"
 )
 
-// sunState derives lighting from the time-of-day clock (ui.Now):
-//   elev  — sun height: 1 at noon, 0 at the horizon (06:00 / 18:00), <0 at night.
+// sunState derives lighting from the time-of-day clock (ui.Now). It reads the
+// shared ui.SolarHour, so the sun rises and sets with Brixen's seasonal daylight
+// (canonical hour 6 = sunrise, 18 = sunset, whatever real time those fall at):
+//   elev  — sun height: 1 at noon, 0 at the horizon (sunrise / sunset), <0 at night.
 //   azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
 //   night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
 func sunState() (elev, azX, night float64) {
-	h := ui.CycleHour(ui.Now())
+	h := ui.SolarHour(ui.Now())
 	elev = math.Sin(math.Pi * (h - 6) / 12)
 	azX = math.Max(-1, math.Min(1, (h-12)/6))
 	night = math.Max(0, math.Min(1, 1-elev*1.3))
