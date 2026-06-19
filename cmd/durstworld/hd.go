@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"log"
 	"math/rand"
@@ -206,6 +207,15 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	}()
 
 	fw := &pixel.FrameWriter{Kitty: useKitty, CellW: cellW, CellH: cellH}
+	var inc game.IncrementalRenderer // re-rasterizes only changed tiles each frame
+	var frameImg *image.RGBA         // reused scratch: terrain copy + UI overlays
+	frameCopy := func(src *image.RGBA) *image.RGBA {
+		if frameImg == nil || frameImg.Bounds() != src.Bounds() {
+			frameImg = image.NewRGBA(src.Bounds())
+		}
+		copy(frameImg.Pix, src.Pix)
+		return frameImg
+	}
 	var (
 		frame      int
 		sent       int
@@ -240,12 +250,17 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		vw := clamp(cols*cellW/hdScale, 8, min(hdMaxTile, hdMaxPxW/hdScale))
 		vh := clamp((rows-1)*cellH/hdScale, 8, min(hdMaxTile, hdMaxPxH/hdScale))
 		tm, ox, oy := hv.HDView(vw, vh)
-		cam := game.Camera{W: vw, H: vh}
 		light := game.Light{}
 		if l, ok := area.(game.HDLighter); ok {
 			light = l.HDLight() // the Wilds' discovery circle
 		}
-		img := game.RenderRGBA(nil, tm, w.PlayersInArea(areaID), name, frame, cam, light, ox, oy, hdScale, false, style)
+		full := frame%hdRefresh == 0
+		// Incremental terrain: only tiles that actually changed are re-rasterized.
+		// The result is byte-identical to a full RenderRGBA (see IncrementalRenderer),
+		// so the on-wire delta — and what the player sees — is unchanged.
+		base := inc.Render(tm, w.PlayersInArea(areaID), name, frame, light, ox, oy, hdScale, style, full)
+		// Composite UI onto a copy so overlays never bleed into the cached terrain.
+		img := frameCopy(base)
 		game.OverlayWalkable(img, tm, hdScale) // debug: tint blocked tiles (toggle with F2)
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
@@ -283,7 +298,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 
 		var buf bytes.Buffer
-		n := fw.WriteFrame(&buf, img, frame%hdRefresh == 0)
+		n := fw.WriteFrame(&buf, img, full)
 		if buf.Len() == 0 {
 			return // nothing changed — no job, stay idle
 		}
@@ -379,6 +394,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if len(f) > 1 {
 				if dest := strings.ToLower(f[1]); dest != areaID && game.AreaRegistered(dest) {
 					fw.Reset()
+					inc.Reset() // new area → discard the cached terrain
 					ctrl("\x1b[2J")
 					areaID, area, hv = enterHD(ctx, areaID, dest)
 				} else {
@@ -407,6 +423,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		next, _ := area.Update(km)
 		if t, isTransition := next.(game.Transition); isTransition {
 			fw.Reset() // new scene → full repaint
+			inc.Reset() // new area → discard the cached terrain
 			ctrl("\x1b[2J")
 			areaID, area, hv = enterHD(ctx, areaID, t.To)
 		} else {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/durst-group/durstworld/internal/pixel"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -61,6 +62,116 @@ func BenchmarkEncodeSixelTypical(b *testing.B) {
 		sent = len(out)
 	}
 	b.ReportMetric(float64(sent), "payload-bytes")
+}
+
+// benchPlayers / benchLight build a single idle hero centered in the window.
+func benchHero(px, py int) []world.Player {
+	return []world.Player{{Name: "me", X: px, Y: py, Color: "#FFC861", LastMoved: time.Now().Add(-time.Hour)}}
+}
+
+// BenchmarkIncrementalStill measures the steady-state cost of a still camera
+// (the hangout/idle case): only animated tiles (water, portals, campfires) are
+// re-rasterized each frame. Compare against BenchmarkRenderRGBA (full every frame).
+func BenchmarkIncrementalStill(b *testing.B) {
+	orig := ui.Now
+	ui.Now = func() time.Time { return time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC) }
+	defer func() { ui.Now = orig }()
+	style := DefaultStyle()
+	vw, vh := benchVW, benchVH
+	px, py := 100, 100
+	ox, oy := px-vw/2, py-vh/2
+	light := Light{X: px, Y: py, Radius: 30}
+	players := benchHero(px, py)
+	win := windowOf(ox, oy, vw, vh)
+	var inc IncrementalRenderer
+	inc.Render(win, players, "me", 0, light, ox, oy, benchScale, style, true) // prime
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		inc.Render(win, players, "me", i+1, light, ox, oy, benchScale, style, false)
+	}
+}
+
+// sparseWindow is a realistic open-Wilds view: mostly static grass with a
+// forest patch, one compact pond and a single campfire — so only a small,
+// localized fraction of tiles animate (unlike the deliberately busy worldTile).
+func sparseWindow(ox, oy, vw, vh int) *TileMap {
+	tiles := make([][]Tile, vh)
+	for ty := 0; ty < vh; ty++ {
+		tiles[ty] = make([]Tile, vw)
+		for tx := 0; tx < vw; tx++ {
+			wx, wy := ox+tx, oy+ty
+			t := Tile{Kind: TileFloor, Walkable: true, Tex: TexGrass, Ground: "#3A7D44"}
+			if hashNoise(wx, wy, 0x55) > 0.85 {
+				t.Tex, t.Ground, t.Prop, t.PropHex = TexForest, "#2E5E34", PropTree, "#2E5E34"
+			}
+			if absI(wx-105) <= 3 && absI(wy-103) <= 2 { // a small pond
+				t = Tile{Kind: TileFloor, Walkable: true, Tex: TexWater, Ground: "#2E6BFF"}
+			}
+			if wx == 98 && wy == 98 { // one campfire
+				t.Prop, t.PropHex = PropCampfire, "#FF8030"
+			}
+			tiles[ty][tx] = t
+		}
+	}
+	return &TileMap{W: vw, H: vh, Tiles: tiles}
+}
+
+func absI(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// BenchmarkIncrementalStillSparse is the realistic hangout case: standing in open
+// terrain, only a pond and a campfire animate. This is where the dirty-tile
+// renderer pays off most.
+func BenchmarkIncrementalStillSparse(b *testing.B) {
+	orig := ui.Now
+	ui.Now = func() time.Time { return time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC) }
+	defer func() { ui.Now = orig }()
+	style := DefaultStyle()
+	vw, vh := benchVW, benchVH
+	px, py := 100, 100
+	ox, oy := px-vw/2, py-vh/2
+	light := Light{X: px, Y: py, Radius: 30}
+	players := benchHero(px, py)
+	win := sparseWindow(ox, oy, vw, vh)
+	var inc IncrementalRenderer
+	inc.Render(win, players, "me", 0, light, ox, oy, benchScale, style, true)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		inc.Render(win, players, "me", i+1, light, ox, oy, benchScale, style, false)
+	}
+}
+
+// BenchmarkIncrementalPan measures a walking camera (panning one tile/frame):
+// the kept pixels are shifted and only the newly-revealed strip, band-crossings
+// and animated tiles are re-rasterized.
+func BenchmarkIncrementalPan(b *testing.B) {
+	orig := ui.Now
+	ui.Now = func() time.Time { return time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC) }
+	defer func() { ui.Now = orig }()
+	style := DefaultStyle()
+	vw, vh := benchVW, benchVH
+	px, py := 100, 100
+	var inc IncrementalRenderer
+	inc.Render(windowOf(px-vw/2, py-vh/2, vw, vh), benchHero(px, py), "me", 0,
+		Light{X: px, Y: py, Radius: 30}, px-vw/2, py-vh/2, benchScale, style, true)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		px++ // walk east
+		ox, oy := px-vw/2, py-vh/2
+		win := windowOf(ox, oy, vw, vh)
+		players := benchHero(px, py)
+		light := Light{X: px, Y: py, Radius: 30}
+		b.StartTimer()
+		inc.Render(win, players, "me", i+1, light, ox, oy, benchScale, style, false)
+	}
 }
 
 // BenchmarkEncodeSixelFull measures sixel encoding of a whole production frame —
