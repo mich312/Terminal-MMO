@@ -39,7 +39,7 @@ const (
 // reach, scaled from its own size. The half-extent stays below settleCell so a
 // settlement spans at most one macro-cell.
 func (s settlement) dims() (reach, half, outpost int) {
-	return s.reach, s.reach + 18, s.reach + 10
+	return s.reach, s.reach + 22, s.reach + 18
 }
 
 // nb4/nb8 are the 4- and 8-neighbour offsets used by the layout flood fills.
@@ -1171,7 +1171,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// Outlying worksites — a quarry on nearby hills, a lumber camp at the forest
 	// edge, a fishing hut on the shore — each placed in fitting terrain past the
 	// wall and linked back through a gate by a spur road.
-	placeOutbuildings(l, canBuild, insideAt, cgx, cgy, outpost)
+	placeOutbuildings(l, canBuild, insideAt, cgx, cgy, reachI, outpost, s.id)
 
 	// Fields along the approach: open ground just outside the wall on the road axis.
 	for gy := 0; gy < n; gy++ {
@@ -1420,7 +1420,7 @@ func placeBuilding(l *layout, canBuild func(int, int) bool, gx, gy int, bt build
 // placeOutbuildings sites the village's resource buildings in the surrounding
 // terrain and links each back to the village by a spur road. Each is optional —
 // it only appears if its terrain (hills / forest / water) lies within reach.
-func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(int, int) bool, cgx, cgy, outpost int) {
+func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(int, int) bool, cgx, cgy, reach, outpost int, seed uint64) {
 	n := l.n
 
 	// find returns the matching-biome cell nearest the village but outside its wall.
@@ -1534,6 +1534,49 @@ func placeOutbuildings(l *layout, canBuild func(int, int) bool, insideAt func(in
 			jetty(tx, ty, tx+(tx-hx), ty+(ty-hy)) // a little further out
 			carveSpur(hx, hy)
 		}
+	}
+
+	// Outlying farmsteads: granges scattered on the open land around the town, each
+	// a barn and cottage with a patch of field and a cart track back to the nearest
+	// gate. Unlike the quarry, wood and fishery these need no special terrain, so
+	// every town has roads running out to its fields — not just the lucky few with
+	// rock, forest or water close at hand.
+	openLandNear := func(tx, ty int) (int, int, bool) {
+		bx, by, bd, ok := 0, 0, math.MaxFloat64, false
+		for gy := ty - 6; gy <= ty+6; gy++ {
+			for gx := tx - 6; gx <= tx+6; gx++ {
+				if !l.in(gx, gy) || l.at(gx, gy).kind != lEmpty || !canBuild(gx, gy) || insideAt(gx, gy) {
+					continue
+				}
+				if d := math.Hypot(float64(gx-tx), float64(gy-ty)); d < bd {
+					bx, by, bd, ok = gx, gy, d, true
+				}
+			}
+		}
+		return bx, by, ok
+	}
+	fr := &srng{s: seed ^ 0xFA27C0DE}
+	nFarms := 2 + fr.n(2) // two or three steadings
+	for i := 0; i < nFarms; i++ {
+		a := fr.f() * 2 * math.Pi
+		rr := float64(reach) + fr.rng(4, float64(outpost-reach))
+		tx := cgx + int(math.Cos(a)*rr)
+		ty := cgy + int(math.Sin(a)*rr)
+		bx, by, ok := openLandNear(tx, ty)
+		if !ok || !placeBuilding(l, canBuild, bx, by, btBarn, 1) {
+			continue
+		}
+		if cx, cy, ok2 := openLandNear(bx+3, by); ok2 { // a cottage beside the barn
+			placeBuilding(l, canBuild, cx, cy, btCottage, 1)
+		}
+		for gy := by - 2; gy <= by+2; gy++ { // a patch of field around the steading
+			for gx := bx - 2; gx <= bx+3; gx++ {
+				if l.in(gx, gy) && l.at(gx, gy).kind == lEmpty && canBuild(gx, gy) && !insideAt(gx, gy) && fr.f() < 0.7 {
+					l.at(gx, gy).kind = lField
+				}
+			}
+		}
+		carveSpur(bx, by)
 	}
 }
 
