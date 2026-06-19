@@ -556,8 +556,10 @@ var (
 func roofColor(prop TileProp, hsh uint32, body colorful.Color) colorful.Color {
 	var mat colorful.Color
 	switch prop {
-	case PropBldCottage, PropBldBarn, PropBldLonghouse, PropBldSmithy:
+	case PropBldCottage, PropBldBarn, PropBldLonghouse:
 		mat = roofThatch // humble buildings keep thatch
+	case PropBldSmithy:
+		mat = roofSlate // a forge wants a fireproof slate roof, not straw
 	case PropBldTavern:
 		mat = roofTile // a prosperous tavern is tiled
 	case PropBldTownhouse, PropBldMarketHall:

@@ -535,6 +535,12 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropBrazier, c.Color, "#9A8E78"
 	case 's': // a market stall on the square (blocks)
 		t.Prop, t.PropHex, t.Ground = game.PropStall, c.Color, packedEarth
+	case 'b': // a plank bridge over water (walkable) — Variant carries its run
+		t.Prop = game.PropBridgeH
+		if c.Variant == 1 {
+			t.Prop = game.PropBridgeV
+		}
+		t.PropHex, t.Ground = c.Color, "#6B4A2B"
 	case '=': // a palisade segment (blocks) — orientation carried in Variant
 		switch c.Variant {
 		case 1:

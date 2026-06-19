@@ -161,6 +161,25 @@ var propArt = map[TileProp][]string{
 		"DGWGGD",
 		"DD..DD",
 	},
+	// A plank bridge deck running east–west: timber planks (P) with seam lines (p)
+	// and dark guard-rails (D) along the two long sides over the open water.
+	PropBridgeH: {
+		"DDDDDD",
+		"PPPPPP",
+		"pppppp",
+		"PPPPPP",
+		"pppppp",
+		"DDDDDD",
+	},
+	// The same deck running north–south: rails down the left and right edges.
+	PropBridgeV: {
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+	},
 	// A traveler's campfire: an animated flame (G, pulses) over charred logs.
 	PropCampfire: {
 		"..G...",
@@ -611,15 +630,26 @@ func genBuilding(wt, ht int, k bldKind, style int) []string {
 			}
 		}
 	}
-	if k == bldTavern { // an extra row of warm-lit windows and a hanging sign (R)
-		wy := wallTop + 1
-		for x := 1; x < w-1; x++ {
-			if x%2 == 0 {
-				g[wy][x] = 'L'
+	if k == bldTavern { // warm-lit windows and a hanging sign board out front
+		for r := 0; r < 2; r++ { // two rows of lit windows — a busy, lit-up tavern
+			wy := wallTop + 1 + r*2
+			if wy >= baseY {
+				break
+			}
+			for x := 1; x < w-1; x++ {
+				if (x+r)%2 == 0 {
+					g[wy][x] = 'L'
+				}
 			}
 		}
-		if sy := baseY - 2; sy > wallTop && w >= 2 { // a sign board by the door
-			g[sy][1] = 'R'
+		// A sign on a bracket arm jutting from the right of the front wall: a dark
+		// iron arm (D) and a bright hanging board (R) — the tavern's calling card.
+		ay := wallTop + 2
+		if ay < baseY-1 && w >= 4 {
+			g[ay][w-1] = 'D' // bracket arm
+			for sy := ay + 1; sy <= ay+2 && sy < baseY; sy++ {
+				g[sy][w-2], g[sy][w-1] = 'R', 'R' // the swinging board
+			}
 		}
 	}
 	out := make([]string, h)

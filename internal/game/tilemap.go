@@ -104,6 +104,8 @@ const (
 	PropTower         // a stone wall tower, for towns (blocks, overhangs upward)
 	PropBrazier       // a fire brazier on a post — lights a city's gates and squares at night
 	PropStall         // a market stall with a striped awning, on a city's square (blocks)
+	PropBridgeH       // a plank bridge deck running east–west (walkable)
+	PropBridgeV       // a plank bridge deck running north–south (walkable)
 )
 
 // Tile is one cell of a parsed map.

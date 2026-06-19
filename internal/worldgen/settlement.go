@@ -914,10 +914,12 @@ func (g *Generator) genLayout(s settlement) *layout {
 	}
 
 	// Bridges: where a street runs up to the bank of the water the city straddles,
-	// lay a plank bridge straight across to walkable ground on the far side, so the
-	// two banks connect. Started only from streets/roads (so crossings sit at the
-	// ends of through-routes rather than decking the whole channel) and landed only
-	// on walkable ground (never a building or the wall) so a bridge is never a stub.
+	// lay a slender plank bridge straight across to walkable ground on the far
+	// side, so the two banks connect. Started only from streets/roads (so crossings
+	// sit at the ends of through-routes) and landed only on walkable ground (never
+	// a building or the wall) so a bridge is never a stub. Each new crossing keeps
+	// clear of existing bridges, so a wide channel gets a few discrete spans rather
+	// than its whole bank decked over into a causeway.
 	isWalkBank := func(gx, gy int) bool {
 		if !l.in(gx, gy) || isOpenWater(gx, gy) {
 			return false
@@ -930,6 +932,16 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 		return insideAt(gx, gy) // inside, open ground becomes walkable yard later
 	}
+	noBridgeNear := func(gx, gy, rad int) bool {
+		for dy := -rad; dy <= rad; dy++ {
+			for dx := -rad; dx <= rad; dx++ {
+				if l.in(gx+dx, gy+dy) && l.at(gx+dx, gy+dy).kind == lBridge {
+					return false
+				}
+			}
+		}
+		return true
+	}
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			switch l.at(gx, gy).kind {
@@ -938,7 +950,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 				continue
 			}
 			for _, d := range nb4 {
-				if !isOpenWater(gx+d[0], gy+d[1]) {
+				if !isOpenWater(gx+d[0], gy+d[1]) || !noBridgeNear(gx+d[0], gy+d[1], 4) {
 					continue
 				}
 				k := 1
@@ -948,8 +960,13 @@ func (g *Generator) genLayout(s settlement) *layout {
 					}
 				}
 				if k <= bridgeSpan && isWalkBank(gx+d[0]*k, gy+d[1]*k) {
+					orient := uint8(0) // 0 = deck runs east–west, 1 = north–south
+					if d[1] != 0 {
+						orient = 1
+					}
 					for j := 1; j < k; j++ {
-						l.at(gx+d[0]*j, gy+d[1]*j).kind = lBridge
+						c := l.at(gx+d[0]*j, gy+d[1]*j)
+						c.kind, c.fv = lBridge, orient
 					}
 				}
 			}
@@ -1410,7 +1427,9 @@ func cellFor(c *lcell) Cell {
 	case lJetty:
 		return Cell{Biome: Path, Glyph: '·', Color: "#7A5A38", Walkable: true} // dock planks
 	case lBridge:
-		return Cell{Biome: Path, Glyph: 'b', Color: "#8A5A30", Walkable: true} // a plank bridge over water
+		// A plank bridge over water; Variant carries the deck's run (0 east–west,
+		// 1 north–south) so the sprite lays its planks across the span.
+		return Cell{Biome: Path, Glyph: 'b', Color: "#8A5A30", Walkable: true, Variant: c.fv}
 	case lWall:
 		return Cell{Biome: Hill, Glyph: '#', Color: "#8E9099"} // stone curtain wall (blocks)
 	case lTower:
@@ -1473,7 +1492,7 @@ func buildingColor(bt buildType, b Biome) string {
 	case btSmithy:
 		return "#6E6A66" // dark soot-stained stone
 	case btTavern:
-		return "#A8703C" // warm timber tavern
+		return "#C68A3E" // warm limewashed-amber tavern, brighter than the houses
 	case btBarn:
 		return "#7C5A38" // dark timber
 	}
