@@ -6,6 +6,19 @@ import "time"
 // the wall clock; tests and art tools override it to sample a fixed hour.
 var Now = time.Now
 
+// CyclePeriod is how long one full day/night cycle takes in real time. The
+// 24-hour ambient ring is compressed into this span, so dawn → noon → dusk →
+// night all pass within a single real hour rather than a real day.
+const CyclePeriod = time.Hour
+
+// CycleHour maps a wall-clock instant onto the 0..24 day/night ring, compressed
+// so one full cycle elapses every CyclePeriod. Both the ambient tint and the
+// sun/lighting model read it, so the tint and the shadows stay in lockstep.
+func CycleHour(t time.Time) float64 {
+	elapsed := t.Sub(t.Truncate(CyclePeriod)).Seconds()
+	return elapsed / CyclePeriod.Seconds() * 24
+}
+
 // dayKey is one anchor in the 24-hour ambient cycle: at hour H the world is
 // tinted toward Hex by Strength (0 = untinted, 1 = fully the tint color).
 // Values between anchors are interpolated, and the ring wraps midnight.
@@ -28,7 +41,7 @@ var dayCycle = []dayKey{
 // Tiles blend their color toward this tint by the strength; player glyphs are
 // left untouched so avatars stay readable at night.
 func Ambient(t time.Time) (hex string, strength float64) {
-	h := float64(t.Hour()) + float64(t.Minute())/60 + float64(t.Second())/3600
+	h := CycleHour(t)
 
 	n := len(dayCycle)
 	for i := 0; i < n; i++ {

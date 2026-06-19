@@ -58,8 +58,11 @@ func TestDayFadedLightFadesByDay(t *testing.T) {
 	th := trueColorTheme()
 	cam := Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 
-	at := func(hour int) (unlit, lit string) {
-		ui.Now = func() time.Time { return time.Date(2026, 1, 1, hour, 0, 0, 0, time.UTC) }
+	// The cycle is compressed into one real hour, so the minute-of-hour drives
+	// the time of day: minute 0 is midnight, minute 30 is noon.
+	at := func(cycleHour int) (unlit, lit string) {
+		min := cycleHour * 60 / 24
+		ui.Now = func() time.Time { return time.Date(2026, 1, 1, 0, min, 0, 0, time.UTC) }
 		unlit = RenderViewport(th, tm, nil, "", 0, cam)
 		lit = RenderLitViewport(th, tm, nil, "", 0, cam, DayFadedLight(Light{X: 0, Y: 0, Radius: 4}))
 		return

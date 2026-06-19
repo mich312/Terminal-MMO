@@ -14,8 +14,7 @@ import (
 //   azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
 //   night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
 func sunState() (elev, azX, night float64) {
-	t := ui.Now()
-	h := float64(t.Hour()) + float64(t.Minute())/60
+	h := ui.CycleHour(ui.Now())
 	elev = math.Sin(math.Pi * (h - 6) / 12)
 	azX = math.Max(-1, math.Min(1, (h-12)/6))
 	night = math.Max(0, math.Min(1, 1-elev*1.3))
