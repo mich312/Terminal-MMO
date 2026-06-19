@@ -413,7 +413,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 		w              float64 // carve half-width
 	}
 	const (
-		wMain  = 1.5 // main thoroughfares
+		wMain  = 1.3 // main thoroughfares
 		wRing  = 1.0 // ring roads
 		wAlley = 0.7 // back alleys
 		wLane  = 0.8 // a village lane
@@ -464,7 +464,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 				segs = append(segs, seg{rp[j][0], rp[j][1], rp[(j+1)%k][0], rp[(j+1)%k][1], wRing})
 			}
 		}
-		for i := 0; i < 12+rng.n(10); i++ { // narrow back alleys splitting the blocks
+		for i := 0; i < 8+rng.n(7); i++ { // narrow back alleys splitting the blocks
 			a := rng.f() * 2 * math.Pi
 			r1 := reach * rng.rng(0.2, 0.92)
 			a2, r2 := a+rng.rng(-0.5, 0.5), r1+rng.rng(-7, 7)
@@ -724,7 +724,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	buildR := reach - 4 // buildings stay inside this; the wall encloses them
 	base, slope, floor := 0.95, 0.6, 0.22
 	if s.town { // a city: nearly every plot built, just thinning a touch outward
-		base, slope, floor = 1.35, 0.45, 0.8
+		base, slope, floor = 1.35, 0.45, 0.9
 	}
 	density := func(r float64) float64 {
 		p := base - slope*(r/buildR) // dense core, thinning toward the edge
@@ -858,7 +858,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// the deep centre of a large block is left open as a green court (an emergent
 	// perimeter block). Garden courts (lGarden) and lanes are never touched.
 	if s.town {
-		for sweep := 0; sweep < 2; sweep++ {
+		for sweep := 0; sweep < 3; sweep++ {
 			for gy := 0; gy < n; gy++ {
 				for gx := 0; gx < n; gx++ {
 					if l.at(gx, gy).kind != lEmpty || !inCity(gx, gy) || !canBuild(gx, gy) {
