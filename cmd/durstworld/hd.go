@@ -36,6 +36,7 @@ const (
 	hdScale    = 26 // pixels per tile — zoomed out so the 1-tile hero reads as small in a big world
 	hdFPS      = 12 // tile-animation / world-reflection rate (the `frame` counter)
 	hdRenderHz = 30 // max on-screen redraw rate; input is coalesced to this cadence
+	hdMoveHz   = 10 // max movement steps/sec — a held key walks at this even cadence instead of the terminal's jittery key-repeat rate
 	hdRefresh  = 48 // frames between full repaints
 	hdMaxTile  = 140
 	// Cap the rendered buffer so per-frame cost (render + dirty-diff + encode +
@@ -348,6 +349,32 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		}
 	}
 
+	// Movement is throttled to hdMoveHz. A held key repeats far faster than that
+	// at the terminal's key-repeat rate (and SSH has no key-up event), which made
+	// walking lurch and overshoot: the first repeat steps, the OS pauses, then a
+	// burst of repeats sprints the avatar past where you released. We take the
+	// first step immediately (so a tap stays responsive) and coalesce further
+	// repeats into one even step per tick — newest direction wins — until the key
+	// stops repeating. This also caps the camera-pan full-frame rate over SSH.
+	moveInterval := time.Second / hdMoveHz
+	var (
+		pendingMove tea.KeyMsg
+		havePending bool
+		lastStep    time.Time
+	)
+	applyMove := func(km tea.KeyMsg) {
+		next, _ := area.Update(km)
+		if t, isTransition := next.(game.Transition); isTransition {
+			fw.Reset() // new scene → full repaint
+			out.WriteString("\x1b[2J")
+			areaID, area, hv = enterHD(ctx, areaID, t.To)
+		} else {
+			area = next
+		}
+		lastStep = time.Now()
+		draw()
+	}
+
 	render() // first paint; thereafter the ticker renders when something is dirty
 	ticker := time.NewTicker(time.Second / hdRenderHz)
 	defer ticker.Stop()
@@ -421,15 +448,13 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if uiKey(key) {
 				draw()
 			} else if km, ok := moveKeyMsg(key); ok {
-				next, _ := area.Update(km)
-				if t, isTransition := next.(game.Transition); isTransition {
-					fw.Reset() // new scene → full repaint
-					out.WriteString("\x1b[2J")
-					areaID, area, hv = enterHD(ctx, areaID, t.To)
+				// Step now if a tick has elapsed, else hold the latest direction for
+				// the move ticker — so key-repeat bursts collapse to an even pace.
+				if time.Since(lastStep) >= moveInterval {
+					applyMove(km)
 				} else {
-					area = next
+					pendingMove, havePending = km, true
 				}
-				draw()
 			} else if key == "e" { // pick up an item under the player
 				area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 				draw()
@@ -466,6 +491,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			out.WriteString("\x1b[2J")
 			draw()
 		case <-ticker.C:
+			// Release one held-key step per move tick, so walking continues at an
+			// even hdMoveHz pace while a key keeps repeating.
+			if havePending && time.Since(lastStep) >= moveInterval {
+				applyMove(pendingMove)
+				havePending = false
+			}
 			// Advance the animation/world-reflection counter on wall-clock time so
 			// it stays at hdFPS regardless of the (higher) render cadence.
 			if nf := int(time.Since(start) / (time.Second / hdFPS)); nf != frame {
