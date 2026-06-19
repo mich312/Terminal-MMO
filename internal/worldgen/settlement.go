@@ -187,6 +187,12 @@ const (
 	btMarketHall           // 3×3 (a city's market hall)
 	btSmithy               // 2×2 (a blacksmith's forge, glows warm at night)
 	btTavern               // 2×2 (a tavern, warm lit windows)
+	// Burgage plots: a medieval town's blocks are divided into narrow, deep
+	// parcels, so its streets are lined with houses of varied frontage and depth
+	// rather than uniform squares.
+	btRowhouse    // 2×3 (a deep burgage house)
+	btNarrowhouse // 1×2 (a narrow-fronted, deep house)
+	btDeephouse   // 2×4 (a deep, tall burgage house)
 )
 
 // footprint reports a building's width and height in tiles. The anchor is the
@@ -211,6 +217,12 @@ func footprint(bt buildType) (w, h int) {
 		return 3, 3
 	case btSmithy, btTavern:
 		return 2, 2
+	case btRowhouse:
+		return 2, 3
+	case btNarrowhouse:
+		return 1, 2
+	case btDeephouse:
+		return 2, 4
 	default:
 		return 1, 1
 	}
@@ -736,31 +748,47 @@ func (g *Generator) genLayout(s settlement) *layout {
 	chooseType := func(r float64, ward wardType, rr *srng) buildType {
 		if s.town { // a city's quarters each favour their own kind of building
 			switch ward {
-			case wMerchant: // the wealthy quarter: tall multi-storey tiled townhouses
-				if rr.n(4) == 0 {
+			case wMerchant: // the wealthy quarter: tall townhouses and deep merchant houses
+				switch rr.n(5) {
+				case 0:
 					return btHouse
+				case 1:
+					return btDeephouse
+				default:
+					return btTownhouse
 				}
-				return btTownhouse
-			case wCraft: // the craftsmen's quarter: workshops, barns and longhouses
-				switch rr.n(4) {
+			case wCraft: // the craftsmen's quarter: barns, longhouses and narrow workshops
+				switch rr.n(5) {
 				case 0:
 					return btBarn
 				case 1:
-					return btCottage
+					return btNarrowhouse
+				case 2:
+					return btRowhouse
 				default:
 					return btLonghouse
 				}
-			case wPoor: // the poor quarter: a tangle of packed little cottages
-				if rr.n(6) == 0 {
-					return btLonghouse
+			case wPoor: // the poor quarter: packed narrow-fronted cottages
+				switch rr.n(5) {
+				case 0:
+					return btNarrowhouse
+				case 1:
+					return btRowhouse
+				default:
+					return btCottage
 				}
-				return btCottage
-			default: // common streets: ordinary houses with the odd longhouse
-				switch rr.n(4) {
+			default: // common streets: a burgage mix of frontages and depths
+				switch rr.n(6) {
 				case 0:
 					return btCottage
 				case 1:
 					return btLonghouse
+				case 2:
+					return btNarrowhouse
+				case 3:
+					return btRowhouse
+				case 4:
+					return btDeephouse
 				default:
 					return btHouse
 				}
@@ -877,11 +905,15 @@ func (g *Generator) genLayout(s settlement) *layout {
 						// to a cottage in the tighter gaps.
 						h := uint32(gx)*73856093 ^ uint32(gy)*19349663
 						placed := false
-						switch h % 5 {
+						switch h % 6 {
 						case 0:
-							placed = placeBuilding(l, canBuild, gx, gy, btLonghouse, 0)
+							placed = placeBuilding(l, canBuild, gx, gy, btRowhouse, 0)
 						case 1:
+							placed = placeBuilding(l, canBuild, gx, gy, btLonghouse, 0)
+						case 2:
 							placed = placeBuilding(l, canBuild, gx, gy, btHouse, 0)
+						case 3:
+							placed = placeBuilding(l, canBuild, gx, gy, btNarrowhouse, 0)
 						}
 						if !placed {
 							placeBuilding(l, canBuild, gx, gy, btCottage, 0)
@@ -1697,6 +1729,12 @@ func buildingGlyph(bt buildType) rune {
 		return 'B'
 	case btHouse:
 		return 'H'
+	case btRowhouse:
+		return 'r'
+	case btNarrowhouse:
+		return 'n'
+	case btDeephouse:
+		return 'd'
 	default:
 		return 'h'
 	}

@@ -438,8 +438,11 @@ var buildingArt = map[TileProp][][]string{
 	PropBldCathedral:  bldVariants(3, 4, bldChurch),
 	PropBldTownhouse:  {genTownhouse(2, 3, 0), genTownhouse(2, 4, 1), genTownhouse(2, 3, 2)},
 	PropBldMarketHall: bldVariants(3, 3, bldDwelling),
-	PropBldSmithy:     bldVariants(2, 2, bldSmithy),
-	PropBldTavern:     bldVariants(2, 2, bldTavern),
+	PropBldSmithy:      bldVariants(2, 2, bldSmithy),
+	PropBldTavern:      bldVariants(2, 2, bldTavern),
+	PropBldRowhouse:    bldVariants(2, 3, bldDwelling),
+	PropBldNarrowhouse: bldVariants(1, 2, bldDwelling),
+	PropBldDeephouse:   bldVariants(2, 4, bldDwelling),
 	PropBldKeep:       {genKeep(3, 3)},
 	PropTower:         {towerArt},
 }

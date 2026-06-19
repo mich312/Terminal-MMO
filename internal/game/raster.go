@@ -501,7 +501,8 @@ func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color
 	// limewashed pale, some timber-framed and browner, some left as bare plaster.
 	// Only the humble dwellings vary this way; stone landmarks keep their material.
 	switch prop {
-	case PropBldCottage, PropBldHouse, PropBldLonghouse, PropBldBarn, PropBldTownhouse, PropBldMarketHall:
+	case PropBldCottage, PropBldHouse, PropBldLonghouse, PropBldBarn, PropBldTownhouse, PropBldMarketHall,
+		PropBldRowhouse, PropBldNarrowhouse, PropBldDeephouse:
 		switch (hsh >> 11) % 4 {
 		case 0:
 			col = col.BlendLab(spriteWhite, 0.16) // limewashed
@@ -585,7 +586,7 @@ func roofColor(prop TileProp, hsh uint32, body colorful.Color) colorful.Color {
 	tile := roofTiles[(hsh/7)%uint32(len(roofTiles))]
 	var mat colorful.Color
 	switch prop {
-	case PropBldCottage, PropBldBarn, PropBldLonghouse:
+	case PropBldCottage, PropBldBarn, PropBldLonghouse, PropBldNarrowhouse:
 		mat = thatch // humble buildings keep thatch
 	case PropBldSmithy:
 		mat = roofSlate // a forge wants a fireproof slate roof, not straw
@@ -599,7 +600,7 @@ func roofColor(prop TileProp, hsh uint32, body colorful.Color) colorful.Color {
 		}
 	case PropBldChurch, PropBldCathedral, PropBldKeep:
 		mat = roofLead // grand stone roofs in lead/slate
-	case PropBldHouse:
+	case PropBldHouse, PropBldRowhouse, PropBldDeephouse:
 		if hsh%3 == 0 { // a mix: mostly thatch, some tiled
 			mat = tile
 		} else {

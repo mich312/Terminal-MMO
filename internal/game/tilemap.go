@@ -84,28 +84,31 @@ const (
 	// Multi-tile village buildings (drawn bottom-left-anchored, overhanging up
 	// and right). PropBldBody marks a footprint tile that the anchor's sprite
 	// covers — it blocks movement but draws nothing itself.
-	PropBldCottage    // 1×1 cottage
-	PropBldHouse      // 2×2 house
-	PropBldLonghouse  // 3×2 longhouse
-	PropBldBarn       // 2×2 barn
-	PropBldChurch     // 2×3 church with a steeple
-	PropBldKeep       // 3×3 castle keep (a city's stronghold)
-	PropBldCathedral  // 3×4 great church (a city's grand centrepiece)
-	PropBldTownhouse  // 2×3 tall multi-storey townhouse
-	PropBldMarketHall // 3×3 market hall
-	PropBldSmithy     // 2×2 blacksmith's forge (glows warm at night)
-	PropBldTavern     // 2×2 tavern with warm lit windows
-	PropBldBody       // a covered footprint tile (no draw)
-	PropCrop          // ripe grain standing in a field (harvestable)
-	PropStone         // cut-stone rubble at a quarry (harvestable)
-	PropLog           // a stack of logs at a lumber camp (harvestable)
-	PropFish          // a fish by a jetty (harvestable)
-	PropStoneWall     // a stone curtain wall segment, for towns (blocks)
-	PropTower         // a stone wall tower, for towns (blocks, overhangs upward)
-	PropBrazier       // a fire brazier on a post — lights a city's gates and squares at night
-	PropStall         // a market stall with a striped awning, on a city's square (blocks)
-	PropBridgeH       // a plank bridge deck running east–west (walkable)
-	PropBridgeV       // a plank bridge deck running north–south (walkable)
+	PropBldCottage     // 1×1 cottage
+	PropBldHouse       // 2×2 house
+	PropBldLonghouse   // 3×2 longhouse
+	PropBldBarn        // 2×2 barn
+	PropBldChurch      // 2×3 church with a steeple
+	PropBldKeep        // 3×3 castle keep (a city's stronghold)
+	PropBldCathedral   // 3×4 great church (a city's grand centrepiece)
+	PropBldTownhouse   // 2×3 tall multi-storey townhouse
+	PropBldMarketHall  // 3×3 market hall
+	PropBldSmithy      // 2×2 blacksmith's forge (glows warm at night)
+	PropBldTavern      // 2×2 tavern with warm lit windows
+	PropBldRowhouse    // 2×3 deep burgage house
+	PropBldNarrowhouse // 1×2 narrow-fronted deep house
+	PropBldDeephouse   // 2×4 deep, tall burgage house
+	PropBldBody        // a covered footprint tile (no draw)
+	PropCrop           // ripe grain standing in a field (harvestable)
+	PropStone          // cut-stone rubble at a quarry (harvestable)
+	PropLog            // a stack of logs at a lumber camp (harvestable)
+	PropFish           // a fish by a jetty (harvestable)
+	PropStoneWall      // a stone curtain wall segment, for towns (blocks)
+	PropTower          // a stone wall tower, for towns (blocks, overhangs upward)
+	PropBrazier        // a fire brazier on a post — lights a city's gates and squares at night
+	PropStall          // a market stall with a striped awning, on a city's square (blocks)
+	PropBridgeH        // a plank bridge deck running east–west (walkable)
+	PropBridgeV        // a plank bridge deck running north–south (walkable)
 )
 
 // Tile is one cell of a parsed map.
