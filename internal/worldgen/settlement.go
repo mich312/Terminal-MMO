@@ -584,6 +584,44 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
+	// Garden courtyards: kitchen-garden and tree-shaded pockets scattered through a
+	// city's blocks, so it has the village's crofts and greenery rather than
+	// wall-to-wall building. Stamped as lGarden (which the houses build around)
+	// before the terraces go down; a larger one keeps a grassy centre that the
+	// greenery pass later plants with a tree or hedge. This is also what keeps the
+	// blocks from reading as one solid mass.
+	if s.town {
+		for i := 0; i < 5+int(reach)/3; i++ {
+			a := rng.f() * 2 * math.Pi
+			d := float64(reach) * rng.rng(0.18, 0.94)
+			qx, qy := cgx+int(math.Cos(a)*d), cgy+int(math.Sin(a)*d)
+			cw, ch := 3, 3 // a 3×3 garden with a grassy, plantable centre
+			if rng.f() < 0.4 {
+				cw, ch = 2, 2 // some smaller bare kitchen plots
+			}
+			fits := true
+			for yy := qy; yy < qy+ch && fits; yy++ {
+				for xx := qx; xx < qx+cw; xx++ {
+					if !inCity(xx, yy) || !canBuild(xx, yy) || l.at(xx, yy).kind != lEmpty {
+						fits = false
+						break
+					}
+				}
+			}
+			if !fits {
+				continue
+			}
+			for yy := qy; yy < qy+ch; yy++ {
+				for xx := qx; xx < qx+cw; xx++ {
+					l.at(xx, yy).kind = lGarden
+				}
+			}
+			if cw == 3 && ch == 3 { // a grassy centre for a tree/hedge, walled in by the garden
+				l.at(qx+1, qy+1).kind = lYard
+			}
+		}
+	}
+
 	// A duck pond beside the green, in some villages — placed before the houses
 	// so they build around it.
 	if rng.f() < 0.4 {
@@ -1008,6 +1046,56 @@ func (g *Generator) genLayout(s settlement) *layout {
 			}
 			if insideAt(gx, gy) && canBuild(gx, gy) {
 				c.kind = yardKind
+			}
+		}
+	}
+
+	// City courtyards: a city's interior isn't all bare paving. Wide-open pockets
+	// of paving — the breathing space behind the terraced blocks and the green
+	// strip just inside the wall — become grassy yards, so the gardens and greenery
+	// passes below plant them like a village's crofts. Narrow through-lanes (which
+	// always touch a building in their 3×3) stay cobbled, so this also reads the
+	// circulation apart from the open ground.
+	if s.town {
+		openGround := func(gx, gy int) bool {
+			if !l.in(gx, gy) {
+				return false
+			}
+			switch l.at(gx, gy).kind {
+			case lPaved, lYard, lPlaza, lGreen, lCourtyard:
+				return true
+			}
+			return false
+		}
+		seed := make([]bool, n*n) // paved cells sitting deep in an open pocket
+		for gy := 1; gy < n-1; gy++ {
+			for gx := 1; gx < n-1; gx++ {
+				if l.at(gx, gy).kind != lPaved {
+					continue
+				}
+				all := true
+				for _, d := range nb8 {
+					if !openGround(gx+d[0], gy+d[1]) {
+						all = false
+						break
+					}
+				}
+				seed[gy*n+gx] = all
+			}
+		}
+		for gy := 0; gy < n; gy++ {
+			for gx := 0; gx < n; gx++ {
+				if !seed[gy*n+gx] {
+					continue
+				}
+				if c := l.at(gx, gy); c.kind == lPaved {
+					c.kind = lYard
+				}
+				for _, d := range nb8 { // pull the pocket's rim grassy too
+					if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && l.at(nx, ny).kind == lPaved {
+						l.at(nx, ny).kind = lYard
+					}
+				}
 			}
 		}
 	}
