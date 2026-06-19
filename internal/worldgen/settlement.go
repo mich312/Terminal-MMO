@@ -405,7 +405,19 @@ func (g *Generator) genLayout(s settlement) *layout {
 	// straight highway), and a rough loop lane rings the core with a couple of
 	// connecting lanes — so houses cluster in two dimensions around a nucleus
 	// rather than strung out along one street.
-	type seg struct{ ax, ay, bx, by float64 }
+	// Each segment carries a half-width: main roads are broad and legible, ring
+	// roads middling, and the tangle of alleys narrow. Broad lanes are what read the
+	// city into blocks rather than letting the built mass bleed together.
+	type seg struct {
+		ax, ay, bx, by float64
+		w              float64 // carve half-width
+	}
+	const (
+		wMain  = 1.5 // main thoroughfares
+		wRing  = 1.0 // ring roads
+		wAlley = 0.7 // back alleys
+		wLane  = 0.8 // a village lane
+	)
 	reach := float64(reachI)
 	dx, dy := math.Cos(axis), math.Sin(axis)
 	px, py := -dy, dx // perpendicular
@@ -413,9 +425,13 @@ func (g *Generator) genLayout(s settlement) *layout {
 	bend := rng.rng(-3, 3)
 	cfx, cfy := float64(cgx)+px*off, float64(cgy)+py*off // road passes just off-centre
 	mid := [2]float64{cfx + px*bend, cfy + py*bend}
+	mainW := wLane
+	if s.town {
+		mainW = wMain
+	}
 	segs := []seg{
-		{cfx + dx*reach, cfy + dy*reach, mid[0], mid[1]},
-		{mid[0], mid[1], cfx - dx*reach, cfy - dy*reach},
+		{cfx + dx*reach, cfy + dy*reach, mid[0], mid[1], mainW},
+		{mid[0], mid[1], cfx - dx*reach, cfy - dy*reach, mainW},
 	}
 	if s.town {
 		// A tangled medieval street plan: winding lanes radiating from the market
@@ -431,7 +447,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 				rr := reach * float64(st) / float64(steps)
 				a += rng.rng(-0.22, 0.22) // wind as the lane runs outward
 				nx, ny := float64(cgx)+math.Cos(a)*rr, float64(cgy)+math.Sin(a)*rr
-				segs = append(segs, seg{prevx, prevy, nx, ny})
+				segs = append(segs, seg{prevx, prevy, nx, ny, wMain}) // broad radials
 				prevx, prevy = nx, ny
 			}
 		}
@@ -445,16 +461,16 @@ func (g *Generator) genLayout(s settlement) *layout {
 				rp[j] = [2]float64{float64(cgx) + math.Cos(a)*rr, float64(cgy) + math.Sin(a)*rr}
 			}
 			for j := 0; j < k; j++ {
-				segs = append(segs, seg{rp[j][0], rp[j][1], rp[(j+1)%k][0], rp[(j+1)%k][1]})
+				segs = append(segs, seg{rp[j][0], rp[j][1], rp[(j+1)%k][0], rp[(j+1)%k][1], wRing})
 			}
 		}
-		for i := 0; i < 10+rng.n(10); i++ { // short connecting alleys
+		for i := 0; i < 12+rng.n(10); i++ { // narrow back alleys splitting the blocks
 			a := rng.f() * 2 * math.Pi
 			r1 := reach * rng.rng(0.2, 0.92)
 			a2, r2 := a+rng.rng(-0.5, 0.5), r1+rng.rng(-7, 7)
 			segs = append(segs, seg{
 				float64(cgx) + math.Cos(a)*r1, float64(cgy) + math.Sin(a)*r1,
-				float64(cgx) + math.Cos(a2)*r2, float64(cgy) + math.Sin(a2)*r2,
+				float64(cgx) + math.Cos(a2)*r2, float64(cgy) + math.Sin(a2)*r2, wAlley,
 			})
 		}
 	} else {
@@ -470,14 +486,14 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 		for i := 0; i < loopK; i++ {
 			j := (i + 1) % loopK
-			segs = append(segs, seg{lp[i][0], lp[i][1], lp[j][0], lp[j][1]})
+			segs = append(segs, seg{lp[i][0], lp[i][1], lp[j][0], lp[j][1], wLane})
 		}
 		for i := 0; i < 2; i++ {
 			if i == 1 && rng.f() < 0.4 {
 				continue
 			}
 			v := lp[rng.n(loopK)]
-			segs = append(segs, seg{v[0], v[1], cfx + dx*rng.rng(-5, 5), cfy + dy*rng.rng(-5, 5)})
+			segs = append(segs, seg{v[0], v[1], cfx + dx*rng.rng(-5, 5), cfy + dy*rng.rng(-5, 5), wLane})
 		}
 	}
 
@@ -489,6 +505,16 @@ func (g *Generator) genLayout(s settlement) *layout {
 			}
 		}
 		return best
+	}
+	// onStreet reports whether a cell falls inside any segment's own half-width —
+	// so broad thoroughfares carve wide and back alleys carve narrow.
+	onStreet := func(gx, gy float64) bool {
+		for _, sg := range segs {
+			if distPointSeg(gx, gy, sg.ax, sg.ay, sg.bx, sg.by) < sg.w {
+				return true
+			}
+		}
+		return false
 	}
 
 	// Carve roads (skip non-buildable so a road meets water/rock instead of
@@ -503,7 +529,7 @@ func (g *Generator) genLayout(s settlement) *layout {
 			if s.town {
 				ok, laneKind = inCity(gx, gy), lStreet // cities are cobbled
 			}
-			if ok && onAnyRoad(float64(gx), float64(gy)) < 0.8 {
+			if ok && onStreet(float64(gx), float64(gy)) {
 				l.at(gx, gy).kind = laneKind
 			}
 		}
@@ -739,9 +765,9 @@ func (g *Generator) genLayout(s settlement) *layout {
 			greenD := math.Hypot(float64(gx)-gpx, float64(gy)-gpy)
 			cellHash := &srng{s: s.id ^ uint64(uint32(gx*73856093^gy*19349663))}
 			if s.town {
-				// A city packs solid within its terrain footprint: every plot that
-				// isn't a lane or the square gets a building; the lanes and the
-				// one-tile gaps between buildings are the streets.
+				// A city packs each block solid between its streets; the wide lanes
+				// (carved below) are what separate the blocks, and a scattered garden
+				// court breaks up the bigger ones.
 				if !inCity(gx, gy) || greenD < squareR+0.6 {
 					continue
 				}
@@ -764,6 +790,34 @@ func (g *Generator) genLayout(s settlement) *layout {
 				gap = 0 // cities terrace: houses share walls into solid blocks
 			}
 			placeBuilding(l, canBuild, gx, gy, chooseType(r, cellHash), gap)
+		}
+	}
+
+	// Pack the blocks: fill the gaps left between a city's placed houses with small
+	// cottages so each block reads as a solid built mass rather than a scatter of
+	// roofs on bare earth. Only cells abutting a building fill, and only a couple of
+	// sweeps run — so the fill grows inward from each block's street frontage but
+	// the deep centre of a large block is left open as a green court (an emergent
+	// perimeter block). Garden courts (lGarden) and lanes are never touched.
+	if s.town {
+		for sweep := 0; sweep < 2; sweep++ {
+			for gy := 0; gy < n; gy++ {
+				for gx := 0; gx < n; gx++ {
+					if l.at(gx, gy).kind != lEmpty || !inCity(gx, gy) || !canBuild(gx, gy) {
+						continue
+					}
+					abuts := false
+					for _, d := range nb8 {
+						if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) && occupiedBuilding(l.at(nx, ny).kind) {
+							abuts = true
+							break
+						}
+					}
+					if abuts {
+						placeBuilding(l, canBuild, gx, gy, btCottage, 0)
+					}
+				}
+			}
 		}
 	}
 
@@ -1032,20 +1086,32 @@ func (g *Generator) genLayout(s settlement) *layout {
 		}
 	}
 
-	// Everything left inside the wall becomes ground: trodden grassy yard in a
-	// village, packed/cobbled paving between a city's tight buildings.
-	yardKind := lYard
-	if s.town {
-		yardKind = lPaved
+	// Everything left inside the wall becomes ground. A village is trodden grassy
+	// yard throughout. A city cobbles the strip along its lanes (the street surface
+	// and the little yards between the terraced houses) but leaves the depth of each
+	// block — the ground enclosed behind the perimeter rows — as a grassy court, so
+	// the greenery and garden passes plant it into the block's private garden.
+	onStreetEdge := func(gx, gy int) bool { // directly fronting a carved lane/square
+		for _, d := range nb4 {
+			if nx, ny := gx+d[0], gy+d[1]; l.in(nx, ny) {
+				switch l.at(nx, ny).kind {
+				case lStreet, lGate, lPlaza:
+					return true
+				}
+			}
+		}
+		return false
 	}
 	for gy := 0; gy < n; gy++ {
 		for gx := 0; gx < n; gx++ {
 			c := l.at(gx, gy)
-			if c.kind != lEmpty {
+			if c.kind != lEmpty || !insideAt(gx, gy) || !canBuild(gx, gy) {
 				continue
 			}
-			if insideAt(gx, gy) && canBuild(gx, gy) {
-				c.kind = yardKind
+			if s.town && onStreetEdge(gx, gy) {
+				c.kind = lPaved // a thin paved shoulder along the lane
+			} else {
+				c.kind = lYard // everything behind it is a green court
 			}
 		}
 	}
