@@ -394,11 +394,35 @@ type seam struct {
 	tile game.Tile
 }
 
-var seams = []seam{
-	{"stone", game.Tile{Kind: game.TileObject, Ch: '◊', Walkable: true, Color: "#C2C8D0", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropStone, PropHex: "#C2C8D0"}},
-	{"stone", game.Tile{Kind: game.TileObject, Ch: '◊', Walkable: true, Color: "#C2C8D0", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropStone, PropHex: "#C2C8D0"}},
-	{"nugget", game.Tile{Kind: game.TileObject, Ch: '◆', Walkable: true, Color: "#FFC861", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGem, PropHex: "#FFC861"}},
-	{"crystal", game.Tile{Kind: game.TileObject, Ch: '◆', Walkable: true, Color: "#7DF0FF", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGemGlow, PropHex: "#7DF0FF"}},
+var (
+	stoneSeam   = seam{"stone", game.Tile{Kind: game.TileObject, Ch: '◊', Walkable: true, Color: "#C2C8D0", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropStone, PropHex: "#C2C8D0"}}
+	goldSeam    = seam{"nugget", game.Tile{Kind: game.TileObject, Ch: '◆', Walkable: true, Color: "#FFC861", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGem, PropHex: "#FFC861"}}
+	crystalSeam = seam{"crystal", game.Tile{Kind: game.TileObject, Ch: '◆', Walkable: true, Color: "#7DF0FF", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGemGlow, PropHex: "#7DF0FF"}}
+)
+
+// seamFor picks a mineral seam for a rock face by the height of the land above:
+// under the peaks the rock runs to gold and glittering crystal, while the lower
+// hills give up mostly plain stone.
+func seamFor(surf float64, rng *rand.Rand) seam {
+	r := rng.Float64()
+	if surf >= caveDeepElev { // under the mountains — the precious veins
+		switch {
+		case r < 0.34:
+			return crystalSeam
+		case r < 0.66:
+			return goldSeam
+		default:
+			return stoneSeam
+		}
+	}
+	switch {
+	case r < 0.80:
+		return stoneSeam
+	case r < 0.93:
+		return goldSeam
+	default:
+		return crystalSeam
+	}
 }
 
 // The cave is the underground of the patch of Wilds its mouths span. Its grid is
@@ -414,6 +438,8 @@ const (
 	caveMinDim    = 40   // smallest cave grid (a lone mouth still gets room)
 	caveMaxDim    = 150  // safety cap on a cave's size
 	caveFloorElev = 0.50 // surface elevation above which the cave can open out
+	caveDeepElev  = 0.78 // …above which the rock runs to precious veins (under peaks)
+	caveLowElev   = 0.58 // …below which cave water gathers (under the low ground)
 )
 
 func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand) (*game.TileMap, [][2]int, map[[2]int]string, int, int) {
@@ -454,7 +480,7 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 		tiles[d[1]][d[0]] = caveMouth
 	}
 	texture(tiles, c.w, c.h)
-	nodes := scatterLife(rng, tiles, region, doors, c.w, c.h)
+	nodes := c.scatterLife(rng, tiles, region, doors)
 	clutter(rng, tiles, region, c.w, c.h)
 	return &game.TileMap{W: c.w, H: c.h, Tiles: tiles}, doors, nodes, c.w, c.h
 }
@@ -466,21 +492,25 @@ type carver struct {
 	w, h   int
 	ox, oy int // overworld coordinates of local (0,0)
 	wall   [][]bool
+	surf   [][]float64 // surface elevation overhead, per cell — the cave's echo of the land
 }
 
 func (c *carver) border(x, y int) bool { return x == 0 || y == 0 || x == c.w-1 || y == c.h-1 }
 
 // hill reports whether the land overhead stands high enough for the cave to open
 // out here; under valleys and water the rock stays solid.
-func (c *carver) hill(x, y int) bool { return c.g.Elevation(c.ox+x, c.oy+y) >= caveFloorElev }
+func (c *carver) hill(x, y int) bool { return c.surf[y][x] >= caveFloorElev }
 
 // carve hollows chambers where the hills rise, then links every mouth to the
 // first by a winding passage bored at the mouths' true offsets.
 func (c *carver) carve(doors [][2]int) {
 	c.wall = make([][]bool, c.h)
+	c.surf = make([][]float64, c.h)
 	for y := 0; y < c.h; y++ {
 		c.wall[y] = make([]bool, c.w)
+		c.surf[y] = make([]float64, c.w)
 		for x := 0; x < c.w; x++ {
+			c.surf[y][x] = c.g.Elevation(c.ox+x, c.oy+y)
 			c.wall[y][x] = c.border(x, y) || !c.hill(x, y) || c.rng.Float64() < 0.46
 		}
 	}
@@ -746,83 +776,106 @@ func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, w, h int) {
 // the gatherable ones (position → item). Mineral seams stud the rock faces; cave
 // mushrooms cluster on the floor of the deep dark away from the mouth; still
 // glow-pools pool in the wider chambers. All three light the dark.
-func scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors [][2]int, w, h int) map[[2]int]string {
+func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors [][2]int) map[[2]int]string {
+	w, h := c.w, c.h
 	nodes := map[[2]int]string{}
-	inBounds := func(c [2]int) bool { return c[0] >= 0 && c[1] >= 0 && c[0] < w && c[1] < h }
-	free := func(c [2]int) bool { return inBounds(c) && tiles[c[1]][c[0]].Kind == game.TileFloor }
-	openCount := func(c [2]int) int {
+	inBounds := func(p [2]int) bool { return p[0] >= 0 && p[1] >= 0 && p[0] < w && p[1] < h }
+	free := func(p [2]int) bool { return inBounds(p) && tiles[p[1]][p[0]].Kind == game.TileFloor }
+	openCount := func(p [2]int) int {
 		n := 0
 		for dy := -1; dy <= 1; dy++ {
 			for dx := -1; dx <= 1; dx++ {
-				if x, y := c[0]+dx, c[1]+dy; x >= 0 && y >= 0 && x < w && y < h && tiles[y][x].Kind != game.TileWall {
+				if x, y := p[0]+dx, p[1]+dy; x >= 0 && y >= 0 && x < w && y < h && tiles[y][x].Kind != game.TileWall {
 					n++
 				}
 			}
 		}
 		return n
 	}
-	farFromMouths := func(c [2]int, d int) bool {
+	farFromMouths := func(p [2]int, d int) bool {
 		for _, m := range doors {
-			if abs(c[0]-m[0])+abs(c[1]-m[1]) <= d {
+			if abs(p[0]-m[0])+abs(p[1]-m[1]) <= d {
 				return false
 			}
 		}
 		return true
 	}
 
-	// Mineral seams on rock faces — you work the cavern walls.
-	var faces [][2]int
-	for _, c := range region {
-		if !free(c) {
+	// Mineral seams on rock faces — you work the cavern walls. The land overhead
+	// sets what they yield: the richest veins lie under the peaks.
+	var faces, richFaces [][2]int
+	for _, p := range region {
+		if !free(p) {
 			continue
 		}
 		for _, d := range nb4 {
-			if nx, ny := c[0]+d[0], c[1]+d[1]; nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[ny][nx].Kind == game.TileWall {
-				faces = append(faces, c)
+			if nx, ny := p[0]+d[0], p[1]+d[1]; nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[ny][nx].Kind == game.TileWall {
+				faces = append(faces, p)
+				if c.surf[p[1]][p[0]] >= caveDeepElev {
+					richFaces = append(richFaces, p) // under the mountains — work them harder
+				}
 				break
 			}
 		}
 	}
+	place := func(p [2]int) {
+		if _, taken := nodes[p]; taken || !free(p) {
+			return
+		}
+		s := seamFor(c.surf[p[1]][p[0]], rng)
+		nodes[p] = s.item
+		tiles[p[1]][p[0]] = s.tile
+	}
 	rng.Shuffle(len(faces), func(i, j int) { faces[i], faces[j] = faces[j], faces[i] })
 	for i := 0; i < len(region)/40+6 && i < len(faces); i++ {
-		c := faces[i]
-		s := seams[rng.Intn(len(seams))]
-		nodes[c] = s.item
-		tiles[c[1]][c[0]] = s.tile
+		place(faces[i])
+	}
+	rng.Shuffle(len(richFaces), func(i, j int) { richFaces[i], richFaces[j] = richFaces[j], richFaces[i] })
+	for i := 0; i < len(richFaces)/8+1 && i < len(richFaces); i++ { // a bonus seam under the peaks
+		place(richFaces[i])
 	}
 
 	// Mushroom clusters in the deep dark, well away from any mouth.
 	var deep [][2]int
-	for _, c := range region {
-		if free(c) && farFromMouths(c, 14) {
-			deep = append(deep, c)
+	for _, p := range region {
+		if free(p) && farFromMouths(p, 14) {
+			deep = append(deep, p)
 		}
 	}
 	rng.Shuffle(len(deep), func(i, j int) { deep[i], deep[j] = deep[j], deep[i] })
 	for i := 0; i < len(deep)/90+4 && i < len(deep); i++ {
-		for _, c := range append([][2]int{deep[i]}, neighboursOf(deep[i], rng)...) {
-			if free(c) {
-				if _, taken := nodes[c]; !taken {
-					nodes[c] = "mushroom"
-					tiles[c[1]][c[0]] = mushroom
+		for _, p := range append([][2]int{deep[i]}, neighboursOf(deep[i], rng)...) {
+			if free(p) {
+				if _, taken := nodes[p]; !taken {
+					nodes[p] = "mushroom"
+					tiles[p[1]][p[0]] = mushroom
 				}
 			}
 		}
 	}
 
-	// Glow-pools in the wider chambers (kept walkable so they never seal a way).
-	var chambers [][2]int
-	for _, c := range region {
-		if free(c) && openCount(c) >= 8 && farFromMouths(c, 8) {
-			chambers = append(chambers, c)
+	// Glow-pools: cave water gathers in the chambers under the low ground — under
+	// the valleys and the foot of the hills, where the water table runs nearest —
+	// rather than up under the peaks. Kept walkable so they never seal a way.
+	var basins [][2]int
+	for _, p := range region {
+		if free(p) && openCount(p) >= 7 && farFromMouths(p, 8) && c.surf[p[1]][p[0]] < caveLowElev {
+			basins = append(basins, p)
 		}
 	}
-	rng.Shuffle(len(chambers), func(i, j int) { chambers[i], chambers[j] = chambers[j], chambers[i] })
-	for i := 0; i < len(chambers)/60+2 && i < len(chambers); i++ {
-		for _, c := range append([][2]int{chambers[i]}, neighboursOf(chambers[i], rng)...) {
-			if free(c) {
-				if _, taken := nodes[c]; !taken {
-					tiles[c[1]][c[0]] = glowPool
+	if len(basins) == 0 { // a dry, high cave still keeps a pool or two in its widest room
+		for _, p := range region {
+			if free(p) && openCount(p) >= 8 && farFromMouths(p, 8) {
+				basins = append(basins, p)
+			}
+		}
+	}
+	rng.Shuffle(len(basins), func(i, j int) { basins[i], basins[j] = basins[j], basins[i] })
+	for i := 0; i < len(basins)/30+2 && i < len(basins); i++ {
+		for _, p := range append([][2]int{basins[i]}, neighboursOf(basins[i], rng)...) {
+			if free(p) {
+				if _, taken := nodes[p]; !taken {
+					tiles[p[1]][p[0]] = glowPool
 				}
 			}
 		}
