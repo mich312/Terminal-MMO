@@ -92,7 +92,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	// Track salient pixels only when the style recolors with salience awareness
 	// (gameboy); other styles leave mask nil and the marking calls are no-ops.
 	var mask *salienceMask
-	if style.Palette.MapSalient != nil {
+	if style.Palette.Recolor != nil {
 		mask = &salienceMask{on: make([]bool, imgW*imgH), w: imgW}
 	}
 
@@ -190,8 +190,12 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY, mask)
 	switch {
-	case style.Palette.MapSalient != nil:
-		applySalientColorMap(img, mask, style.Palette.MapSalient)
+	case style.Palette.Recolor != nil:
+		apx := scale / tileArtN // on-screen size of one source art pixel
+		if apx < 1 {
+			apx = 1
+		}
+		style.Palette.Recolor(img, apx, mask.at)
 	case style.Palette.Map != nil:
 		applyColorMap(img, style.Palette.Map)
 	}
@@ -255,18 +259,6 @@ func applyColorMap(img *image.RGBA, m func(colorful.Color) colorful.Color) {
 	for i := 0; i+3 < len(p); i += 4 {
 		c := colorful.Color{R: float64(p[i]) / 255, G: float64(p[i+1]) / 255, B: float64(p[i+2]) / 255}
 		c = m(c).Clamped()
-		p[i], p[i+1], p[i+2] = f2b(c.R), f2b(c.G), f2b(c.B)
-	}
-}
-
-// applySalientColorMap is applyColorMap with per-pixel salience: each pixel is
-// remapped through m together with whether the mask flagged it as a gameplay
-// element, so a monochrome style can keep those on a separate, legible shade.
-func applySalientColorMap(img *image.RGBA, mask *salienceMask, m func(colorful.Color, bool) colorful.Color) {
-	p := img.Pix
-	for i := 0; i+3 < len(p); i += 4 {
-		c := colorful.Color{R: float64(p[i]) / 255, G: float64(p[i+1]) / 255, B: float64(p[i+2]) / 255}
-		c = m(c, mask.at(i/4)).Clamped()
 		p[i], p[i+1], p[i+2] = f2b(c.R), f2b(c.G), f2b(c.B)
 	}
 }

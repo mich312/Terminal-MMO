@@ -1,6 +1,7 @@
 package game
 
 import (
+	"image"
 	"math"
 	"strings"
 
@@ -8,6 +9,17 @@ import (
 
 	"github.com/durst-group/durstworld/internal/ui"
 )
+
+// clamp01 constrains v to [0,1].
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
 
 // Style is the art direction for the HD ("real pixel") renderer: the ground and
 // prop sprite sets, the multi-tile portal art, a few shading mix factors, and a
@@ -55,7 +67,7 @@ func StyleByName(name string) *Style {
 	s := DefaultStyle()
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "gameboy", "gb":
-		s.Palette = ui.Palette{Name: "gameboy", PortalA: "#306230", PortalB: "#9BBC0F", MapSalient: gameboyMapSalient}
+		s.Palette = ui.Palette{Name: "gameboy", PortalA: "#306230", PortalB: "#9BBC0F", Recolor: gameboyRecolor}
 	case "neon":
 		s.Palette = ui.Palette{Name: "neon", PortalA: "#1B2CFF", PortalB: "#39FFF6", Map: neonMap}
 	}
@@ -97,35 +109,100 @@ func gameboyMap(c colorful.Color) colorful.Color {
 	return gbShades[idx]
 }
 
-// gameboyMapSalient collapses to the DMG ramp but splits the ramp by salience so
-// gameplay elements stay readable: terrain and scenery use the two middle shades
-// (a mid-tone backdrop), while collectibles, hats, portals, gates and avatars are
-// rendered as crisp high-contrast 2-tone (the darkest and lightest shades) — the
-// classic Game Boy background/sprite separation. Because the two sets share no
-// shade, an item can never vanish into same-luminance terrain.
-func gameboyMapSalient(c colorful.Color, salient bool) colorful.Color {
+// gameboyShadeLevel places a color on the DMG ramp as a continuous level, split
+// by salience so gameplay elements stay readable: terrain and scenery ride the
+// two middle shades (level 1..2, the fractional part driving dithering), while
+// collectibles, hats, portals, gates and avatars snap to the reserved dark/light
+// ends (level 0 or 3) as crisp high-contrast sprites — the classic Game Boy
+// background/sprite separation. The two sets share no shade, so an item can never
+// vanish into same-luminance terrain.
+func gameboyShadeLevel(c colorful.Color, salient bool) float64 {
 	l := gbLuma(c)
 	if salient {
 		// Lean bright: a lower split sends more of a sprite to the light shade so
 		// items read as bright shapes, with only their shadows/outline going dark.
 		if l >= gbSpriteSplit {
-			return gbShades[3] // lightest — sprite highlight
+			return 3 // lightest — sprite highlight
 		}
-		return gbShades[0] // darkest — sprite body/outline
+		return 0 // darkest — sprite body/outline
 	}
-	if l >= gbTerrainSplit {
-		return gbShades[2] // mid-light terrain
-	}
-	return gbShades[1] // mid-dark terrain
+	return 1 + clamp01(l) // mid-tone terrain band, shade 1 → 2
 }
 
-// Tuned split points (on the perceptual gbLuma scale) between the two terrain
-// shades and the two sprite shades. The sprite split is biased dark so sprites
-// skew toward the bright shade and pop; terrain splits at the perceptual midpoint.
-const (
-	gbTerrainSplit = 0.50
-	gbSpriteSplit  = 0.42
-)
+// gameboyMapSalient is the un-dithered shade for a color — gameboyShadeLevel
+// rounded to the nearest DMG shade. Retained as the simple, position-independent
+// mapping (and the unit of the readability/separation tests).
+func gameboyMapSalient(c colorful.Color, salient bool) colorful.Color {
+	idx := int(gameboyShadeLevel(c, salient) + 0.5)
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(gbShades) {
+		idx = len(gbShades) - 1
+	}
+	return gbShades[idx]
+}
+
+// gbSpriteSplit is the perceptual-luma split between a sprite's dark and light
+// shade, biased dark so sprites skew bright and pop against the terrain.
+const gbSpriteSplit = 0.42
+
+// gbBayer is the normalized 4×4 ordered-dither matrix (thresholds in 0..1). The
+// fractional ramp level is compared against it per pixel, so a terrain tone
+// halfway between two shades becomes a fine checker of both — the authentic Game
+// Boy way to fake intermediate shades from a 4-tone palette.
+var gbBayer = [4][4]float64{
+	{0.5 / 16, 8.5 / 16, 2.5 / 16, 10.5 / 16},
+	{12.5 / 16, 4.5 / 16, 14.5 / 16, 6.5 / 16},
+	{3.5 / 16, 11.5 / 16, 1.5 / 16, 9.5 / 16},
+	{15.5 / 16, 7.5 / 16, 13.5 / 16, 5.5 / 16},
+}
+
+// gbLCDGrid is how far an LCD dot-matrix grid line is blended toward shadow —
+// a faint lattice on the source-pixel boundaries that evokes the DMG screen.
+const gbLCDGrid = 0.16
+
+// gameboyRecolor rewrites a finished frame into the DMG look: each pixel is
+// placed on the 4-tone ramp by gameboyShadeLevel, ordered-dithered between
+// adjacent shades (so terrain gains apparent tones the 4-tone palette can't hold
+// flatly), then a faint dot-matrix grid is laid on the art-pixel lattice for the
+// handheld-LCD feel. apx is the on-screen size of one source art pixel; salient
+// flags gameplay pixels, which stay crisp (their integer level never dithers).
+func gameboyRecolor(img *image.RGBA, apx int, salient func(px int) bool) {
+	W := img.Bounds().Dx()
+	p := img.Pix
+	for i := 0; i+3 < len(p); i += 4 {
+		pi := i / 4
+		x, y := pi%W, pi/W
+		c := colorful.Color{R: float64(p[i]) / 255, G: float64(p[i+1]) / 255, B: float64(p[i+2]) / 255}
+
+		lvl := gameboyShadeLevel(c, salient(pi))
+		idx := int(lvl)
+		// Dither at the source-art-pixel grid (the Game Boy's native pixel), not
+		// per device pixel: each art pixel becomes one uniform shade and adjacent
+		// ones checker, which is both the authentic chunky DMG dither and far
+		// kinder to sixel RLE (runs stay ~apx long instead of alternating every px).
+		if frac := lvl - float64(idx); frac > gbBayer[(y/apx)&3][(x/apx)&3] {
+			idx++ // order-dither up to the next shade
+		}
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(gbShades) {
+			idx = len(gbShades) - 1
+		}
+		out := gbShades[idx]
+
+		// LCD dot-matrix: darken just the lattice intersections (a sparse dot at
+		// each source-pixel corner). Dots rather than full grid lines keep the long
+		// horizontal runs sixel RLE relies on, so the handheld texture costs a
+		// fraction of the bandwidth a full grid would.
+		if apx > 1 && x%apx == 0 && y%apx == 0 {
+			out = out.BlendLab(shadowColor, gbLCDGrid).Clamped()
+		}
+		p[i], p[i+1], p[i+2] = f2b(out.R), f2b(out.G), f2b(out.B)
+	}
+}
 
 // neonMap pushes saturation and a slight lift for a synthwave glow.
 func neonMap(c colorful.Color) colorful.Color {

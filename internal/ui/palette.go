@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/lucasb-eyer/go-colorful"
+import (
+	"image"
+
+	"github.com/lucasb-eyer/go-colorful"
+)
 
 // Palette names an HD art style's portal colors and an optional whole-frame
 // recolor pass. The pixel renderer draws terrain, props and avatars in their
@@ -13,12 +17,13 @@ type Palette struct {
 	PortalB string // hex, portal swirl phase B
 	Map     func(colorful.Color) colorful.Color
 
-	// MapSalient, when non-nil, supersedes Map and additionally receives whether
-	// the pixel belongs to a gameplay-salient element — a collectible, hat,
-	// portal, sealed gate or player avatar. A few-tone monochrome style (gameboy)
-	// uses it to route those pixels onto reserved, high-contrast shades so they
-	// stay legible instead of dissolving into same-luminance terrain. The renderer
-	// only builds the per-pixel salience mask when this is set, so the full-color
-	// and neon paths pay nothing.
-	MapSalient func(c colorful.Color, salient bool) colorful.Color
+	// Recolor, when non-nil, supersedes Map and rewrites the finished frame with
+	// full knowledge of pixel position — so a few-tone monochrome style (gameboy)
+	// can order-dither between shades and overlay an LCD dot-matrix grid, neither
+	// of which a per-pixel color map can express. apx is the on-screen size of one
+	// source art pixel (for aligning the grid); salient(px) reports whether pixel
+	// index px belongs to a gameplay element (collectible, hat, portal, gate,
+	// avatar) so those can be kept on legible, reserved shades. The renderer only
+	// builds the salience mask when this is set, so other styles pay nothing.
+	Recolor func(img *image.RGBA, apx int, salient func(px int) bool)
 }
