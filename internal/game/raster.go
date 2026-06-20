@@ -557,9 +557,10 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 				base = base.BlendLab(moon, k).Clamped()
 			}
 			// Dappled moonbreak through the leaves — sampled in world space so the
-			// speckle pattern is stable as the camera scrolls.
-			if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > 0.62 {
-				base = base.BlendLab(moon, night*0.26).Clamped()
+			// speckle pattern is stable as the camera scrolls. Kept subtle so the
+			// canopy gets texture without looking frosted.
+			if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > 0.74 {
+				base = base.BlendLab(moon, night*0.12).Clamped()
 			}
 		}
 		return colorfulToRGBA(base)
