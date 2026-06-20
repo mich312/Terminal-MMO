@@ -131,7 +131,9 @@ func (w *Walker) HDView(vw, vh int) (*TileMap, int, int) {
 		row := make([]Tile, vw)
 		for lx := 0; lx < vw; lx++ {
 			t := w.Map.At(ox+lx, oy+ly)
-			if t.Kind == TilePortal {
+			if t.Kind == TilePortal && t.Prop == PropNone {
+				// A portal with no sprite of its own becomes the animated gate; one
+				// that already carries a prop (e.g. a cave mouth) keeps it.
 				t.Prop, t.PropHex = PropPortal, t.Color
 				if t.PropHex == "" {
 					t.PropHex = ui.HexPortalB

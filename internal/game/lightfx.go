@@ -111,6 +111,13 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// Only luminous loot (crystals, mushrooms) twinkles; mundane forage and
 		// hats stay dark.
 		return whiten(propCol, 0.5), 1.1, 0.4, true
+	case PropCaveShroom:
+		// Bioluminescent fungi: a soft, steady blue-green wash over the rock.
+		return whiten(propCol, 0.4), 1.6 * gentle, 0.5 * gentle, true
+	case PropGlowPool:
+		// A still pool lit from within by glowing algae — a wider, cooler pool of
+		// light than the mushrooms.
+		return whiten(propCol, 0.45), 2.2 * gentle, 0.55 * gentle, true
 	}
 	return colorful.Color{}, 0, 0, false
 }

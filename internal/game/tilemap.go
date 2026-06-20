@@ -109,6 +109,10 @@ const (
 	PropStall          // a market stall with a striped awning, on a city's square (blocks)
 	PropBridgeH        // a plank bridge deck running east–west (walkable)
 	PropBridgeV        // a plank bridge deck running north–south (walkable)
+	// Caves: a dark arched mouth in the hills, and the bioluminescent life within.
+	PropCaveMouth  // a cave entrance — a dark arch cut into the rock
+	PropCaveShroom // a cluster of glowing cave mushrooms (bioluminescent, glows)
+	PropGlowPool   // a still cave pool lit from within by glowing algae (glows)
 )
 
 // Tile is one cell of a parsed map.

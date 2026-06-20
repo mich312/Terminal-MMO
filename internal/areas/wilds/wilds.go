@@ -540,6 +540,11 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
 	if c.Object {
+		if c.Portal == "cave" {
+			// A cave mouth is a dark arch in the hillside, not a glowing gate.
+			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCaveMouth, "#5C5560", "#6B5A44", game.TexRock
+			return t
+		}
 		// Landmark area-entrances are animated portal gates, color-coded to the
 		// destination — distinct from decorative houses.
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPortal, c.Color, groundColor(worldgen.Grass), game.TexGrass
