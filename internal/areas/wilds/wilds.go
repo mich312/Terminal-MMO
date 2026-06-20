@@ -300,6 +300,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			a.collectItem() // items are gathered just by walking over them
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
+				// Persist the cell we stepped in from, not the portal itself, so
+				// returning to the Wilds drops us beside the entrance (a cave mouth
+				// out in the hills) rather than back at the distant HQ spawn.
+				a.wx, a.wy = nx-dx, ny-dy
 				a.persist()
 				return game.Transition{To: portal}, nil
 			}
