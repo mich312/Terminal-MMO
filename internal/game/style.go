@@ -67,8 +67,22 @@ var gbShades = []colorful.Color{
 	mustHex("#0F380F"), mustHex("#306230"), mustHex("#8BAC0F"), mustHex("#9BBC0F"),
 }
 
-// gbLuma is the perceptual luminance (Rec.601) of a color, 0..1.
-func gbLuma(c colorful.Color) float64 { return 0.299*c.R + 0.587*c.G + 0.114*c.B }
+// gbLuma is the perceptual lightness of a color, 0..1. It linearizes the sRGB
+// channels, takes the Rec.709 luminance, then re-encodes through a gamma so the
+// value is spaced by perceived brightness — a hard split on the raw (gamma-
+// encoded) channels crushes shadows together and washes highlights out, which
+// left most natural terrain dumped into a single shade. The re-encode puts the
+// ramp thresholds at visually even steps so the four tones are actually used.
+func gbLuma(c colorful.Color) float64 {
+	lin := func(u float64) float64 {
+		if u <= 0.04045 {
+			return u / 12.92
+		}
+		return math.Pow((u+0.055)/1.055, 2.4)
+	}
+	y := 0.2126*lin(c.R) + 0.7152*lin(c.G) + 0.0722*lin(c.B)
+	return math.Pow(y, 1.0/2.2)
+}
 
 // gameboyMap maps any color to the nearest DMG green by luminance — the plain
 // 4-tone collapse, kept as the salience-unaware fallback and for tests.
@@ -90,18 +104,28 @@ func gameboyMap(c colorful.Color) colorful.Color {
 // classic Game Boy background/sprite separation. Because the two sets share no
 // shade, an item can never vanish into same-luminance terrain.
 func gameboyMapSalient(c colorful.Color, salient bool) colorful.Color {
-	light := gbLuma(c) >= 0.5
+	l := gbLuma(c)
 	if salient {
-		if light {
+		// Lean bright: a lower split sends more of a sprite to the light shade so
+		// items read as bright shapes, with only their shadows/outline going dark.
+		if l >= gbSpriteSplit {
 			return gbShades[3] // lightest — sprite highlight
 		}
 		return gbShades[0] // darkest — sprite body/outline
 	}
-	if light {
+	if l >= gbTerrainSplit {
 		return gbShades[2] // mid-light terrain
 	}
 	return gbShades[1] // mid-dark terrain
 }
+
+// Tuned split points (on the perceptual gbLuma scale) between the two terrain
+// shades and the two sprite shades. The sprite split is biased dark so sprites
+// skew toward the bright shade and pop; terrain splits at the perceptual midpoint.
+const (
+	gbTerrainSplit = 0.50
+	gbSpriteSplit  = 0.42
+)
 
 // neonMap pushes saturation and a slight lift for a synthwave glow.
 func neonMap(c colorful.Color) colorful.Color {
