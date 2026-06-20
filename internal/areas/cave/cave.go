@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -46,6 +47,7 @@ type area struct {
 	mined      map[[2]int]bool   // worked out this visit
 	discovered map[[2]int]uint64 // uncovered fog chunks (chunk coord → 64-cell mask)
 	dirty      map[[2]int]bool   // chunks changed since the last flush
+	showMap    bool              // the fill-in cave map is open (m)
 	toast      string
 	toastUntil time.Time
 }
@@ -78,11 +80,20 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && (key.String() == "e" || key.String() == " ") {
-		if pos, item, ok := a.nodeNear(); ok {
-			a.gather(pos, item)
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "e", " ":
+			if pos, item, ok := a.nodeNear(); ok {
+				a.gather(pos, item)
+			}
+			return a, nil
+		case "m":
+			a.showMap = !a.showMap // toggle the fill-in map
+			return a, nil
 		}
-		return a, nil
+		if a.showMap {
+			a.showMap = false // any other key closes the map (and still acts)
+		}
 	}
 	portal, handled := a.HandleCommon(msg)
 	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
@@ -230,7 +241,10 @@ func (a *area) View(width, height int) string {
 	tm, ox, oy := a.window(width, height)
 	players := a.Ctx.World.PlayersInArea(a.AreaID)
 	view := game.RenderWindow(a.Ctx.Theme, tm, players, a.Ctx.Name, a.Frame, ox, oy, a.HDLight())
-	if msg, show := a.Toast(); show {
+	if a.showMap {
+		panel := a.minimap()
+		view = ui.Overlay(view, panel, (width-lipgloss.Width(panel))/2, 1)
+	} else if msg, show := a.Toast(); show {
 		th := a.Ctx.Theme
 		if th == nil {
 			th = ui.Default
@@ -239,6 +253,76 @@ func (a *area) View(width, height int) string {
 		view = ui.Overlay(view, line, (width-lipgloss.Width(line))/2, 1)
 	}
 	return view
+}
+
+// minimap draws the cave as a small chart that fills in as you explore: rock,
+// floor, the glittering seams and pools you've found, and the mouth(s) to the
+// surface, with the unexplored dark left blank.
+func (a *area) minimap() string {
+	th := a.Ctx.Theme
+	if th == nil {
+		th = ui.Default
+	}
+	const sx, sy = 2, 2 // two cave cells per map character
+	var b strings.Builder
+	b.WriteString(th.PanelTitle.Render("Map — the cave") + "\n")
+	for my := 0; my < caveH; my += sy {
+		for mx := 0; mx < caveW; mx += sx {
+			if a.X >= mx && a.X < mx+sx && a.Y >= my && a.Y < my+sy {
+				b.WriteString(th.Bright.Render("☺"))
+				continue
+			}
+			glyph, color, ok := a.miniBlock(mx, my, sx, sy)
+			if !ok {
+				b.WriteByte(' ') // unexplored dark
+				continue
+			}
+			b.WriteString(th.Fg(lipgloss.Color(color)).Render(glyph))
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString(th.Dim.Render("m or move to close"))
+	return th.Panel.Render(b.String())
+}
+
+// miniBlock summarises an sx×sy patch of cave for the map, picking the most
+// telling feature in it (a mouth or a seam over plain rock/floor). ok is false
+// when nothing in the patch has been uncovered.
+func (a *area) miniBlock(mx, my, sx, sy int) (glyph, color string, ok bool) {
+	glyph, color = "", ""
+	rank := -1
+	rankOf := func(t game.Tile) (string, string, int) {
+		switch t.Prop {
+		case game.PropCaveMouth:
+			return "∩", "#9BE0FF", 5
+		case game.PropGemGlow:
+			return "◆", "#7DF0FF", 4
+		case game.PropGlowPool:
+			return "≈", "#6CE0E6", 4
+		case game.PropCaveShroom:
+			return "♣", "#7CF2C4", 4
+		case game.PropGem:
+			return "◆", "#FFC861", 4
+		case game.PropStone:
+			return "◊", "#C2C8D0", 3
+		}
+		if t.Kind == game.TileWall || t.Kind == game.TileDecor {
+			return "█", "#473F4F", 1
+		}
+		return "·", "#5A5260", 2
+	}
+	for y := my; y < my+sy && y < caveH; y++ {
+		for x := mx; x < mx+sx && x < caveW; x++ {
+			if !a.seen(x, y) {
+				continue
+			}
+			ok = true
+			if g, c, r := rankOf(a.Map.At(x, y)); r > rank {
+				glyph, color, rank = g, c, r
+			}
+		}
+	}
+	return glyph, color, ok
 }
 
 // caveFog is the unbroken black of cave the lantern hasn't found yet.
