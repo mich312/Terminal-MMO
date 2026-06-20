@@ -118,6 +118,13 @@ func (g *Generator) Elevation(x, y int) float64 {
 	return e
 }
 
+// Climate exposes the terrain fields at a cell — elevation, moisture and
+// temperature (each ~0..1) — so the cave can take its mood from the land above.
+func (g *Generator) Climate(x, y int) (elev, moist, temp float64) {
+	e, m, t, _ := g.climate(x, y)
+	return e, m, t
+}
+
 // caveMouthCell returns the cell for a cave mouth at (x,y), or ok=false.
 func (g *Generator) caveMouthCell(x, y int) (Cell, bool) {
 	if _, _, ok := g.CaveSystemAt(x, y); ok {

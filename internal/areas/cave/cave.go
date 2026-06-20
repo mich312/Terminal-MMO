@@ -405,6 +405,73 @@ var (
 
 var nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 
+// cavePalette is a cave's colour mood — a rock hue and the colours its life and
+// crystal glow — taken from the land overhead so no two stretches of cave look
+// quite alike: ice under the cold heights, moss under wet woods, ochre under
+// warm dry country, cool slate under temperate hills.
+type cavePalette struct {
+	rock    colorful.Color // hue the rock (walls, floor, stone) is shifted toward
+	glow    string         // bioluminescence: mushrooms and pools
+	crystal string         // crystal seams and the geode core
+	slate   bool           // the default mood — leave the rock as authored
+}
+
+func paletteFor(temp, moist float64) cavePalette {
+	switch {
+	case temp < 0.34: // cold heights: blue ice and frost
+		return cavePalette{rock: mustHex("#3B4A6B"), glow: "#8FE0FF", crystal: "#CFEEFF"}
+	case moist > 0.60: // wet woods: green moss and glow
+		return cavePalette{rock: mustHex("#36482F"), glow: "#8BF29C", crystal: "#7DF0C6"}
+	case temp > 0.60 && moist < 0.42: // warm dry country: ochre sandstone
+		return cavePalette{rock: mustHex("#54422C"), glow: "#FFC871", crystal: "#FFE3A0"}
+	default: // temperate hills: cool slate (as authored)
+		return cavePalette{glow: "#7CF2C4", crystal: "#7DF0FF", slate: true}
+	}
+}
+
+// moodTint shifts a colour toward the palette's hue and chroma while keeping its
+// own lightness, so a recolour swaps the rock's colour family without flattening
+// the light floors and dark walls that give the cave its depth.
+func moodTint(hex string, mood colorful.Color, amt float64) string {
+	c, err := colorful.Hex(hex)
+	if err != nil {
+		return hex
+	}
+	_, _, l := c.Hcl()
+	mh, mc, _ := mood.Hcl()
+	target := colorful.Hcl(mh, mc, l).Clamped()
+	return c.BlendHcl(target, amt).Clamped().Hex()
+}
+
+// recolour repaints a finished cave in its palette: rock and stone shift toward
+// the mood hue; the living glow and crystal take the palette's colours; daylight
+// shafts, relics and timber keep their own.
+func (c *carver) recolour(tiles [][]game.Tile, pal cavePalette) {
+	if pal.slate {
+		return
+	}
+	for y := range tiles {
+		for x := range tiles[y] {
+			t := &tiles[y][x]
+			switch t.Prop {
+			case game.PropCaveShroom, game.PropGlowPool:
+				t.PropHex, t.Color = pal.glow, pal.glow
+			case game.PropGemGlow, game.PropGeode:
+				t.PropHex, t.Color = pal.crystal, pal.crystal
+			case game.PropLightShaft, game.PropRelic, game.PropTimbering, game.PropGem:
+				// daylight, relic-glow, wood and gold (a metal) keep their own colours
+			default:
+				if t.Ground != "" {
+					t.Ground = moodTint(t.Ground, pal.rock, 0.55)
+				}
+				if t.PropHex != "" {
+					t.PropHex = moodTint(t.PropHex, pal.rock, 0.45)
+				}
+			}
+		}
+	}
+}
+
 // seam is one mineable mineral: the item it yields and the tile that marks it in
 // the rock. Stone is common, gold rarer, glittering ice crystals (which twinkle
 // their own light in the dark) rarest.
@@ -502,6 +569,8 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 	nodes := c.scatterLife(rng, tiles, region, doors)
 	c.special(tiles, region, doors, nodes)
 	clutter(rng, tiles, region, c.w, c.h)
+	_, moist, temp := g.Climate(overDoors[0][0], overDoors[0][1]) // mood from the land above
+	c.recolour(tiles, paletteFor(temp, moist))
 	return &game.TileMap{W: c.w, H: c.h, Tiles: tiles}, doors, nodes, c.w, c.h
 }
 
