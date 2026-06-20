@@ -543,17 +543,24 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 	dark := colorfulToRGBA(col.BlendLab(shadowColor, 0.52).Clamped())
 	trunk := colorfulToRGBA(trunkColor)
 
-	// Moonlight rim: after dusk the upper crown catches a cool cast, so a stand of
-	// trees reads as silhouetted under moonlight at night instead of flat. Static
-	// (refreshes on the periodic full repaint, like the ambient tint).
+	// Moonlight: after dusk the crown catches a cool cast — graded so the top
+	// silhouette is brightest, plus coherent-noise dapple scattered through the
+	// canopy so the mass has texture instead of reading as a flat dark blob.
+	// Static (refreshes on the periodic full repaint, like the ambient tint).
 	_, _, night := sunState()
 	moon := colorful.Color{R: 0.72, G: 0.82, B: 1.0}
 	rimRows := len(art) * 11 / 20 // upper ~55% of the crown
-	lit := func(base colorful.Color, ay int) color.RGBA {
-		if night > 0.03 && ay < rimRows {
-			// Stronger on the very top rows, easing down the crown.
-			k := night * 0.5 * (1 - float64(ay)/float64(rimRows))
-			base = base.BlendLab(moon, k).Clamped()
+	lit := func(base colorful.Color, ax, ay int) color.RGBA {
+		if night > 0.03 {
+			if ay < rimRows { // top-of-crown rim, strongest at the very top
+				k := night * 0.5 * (1 - float64(ay)/float64(rimRows))
+				base = base.BlendLab(moon, k).Clamped()
+			}
+			// Dappled moonbreak through the leaves — sampled in world space so the
+			// speckle pattern is stable as the camera scrolls.
+			if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > 0.62 {
+				base = base.BlendLab(moon, night*0.26).Clamped()
+			}
 		}
 		return colorfulToRGBA(base)
 	}
@@ -563,7 +570,7 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 			ok := true
 			switch row[ax] {
 			case 'P':
-				c = lit(bodyC, ay)
+				c = lit(bodyC, ax, ay)
 			case 'p':
 				// The shade pixels form the canopy rim; coherently dither them away
 				// so silhouettes feather and neighboring crowns blend into one mass
@@ -573,7 +580,7 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 					ok = false
 				}
 			case 'L':
-				c = lit(dappleC, ay)
+				c = lit(dappleC, ax, ay)
 			case 'D':
 				c = dark // solid shadow face (no dither) — for rock crags
 			case 'W':

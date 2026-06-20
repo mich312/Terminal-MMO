@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"image/png"
+	"math"
 	"os"
 	"time"
 
@@ -15,6 +16,24 @@ import (
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
+
+// previewNoise is a cheap smoothed value-noise in [0,1] for laying out an
+// organic tree stand — just enough coherence to clump trees rather than scatter
+// them as static. (Local to the art tool; the engine has its own.)
+func previewNoise(x, y int) float64 {
+	hash := func(a, b int) float64 {
+		h := uint32(a*374761393+b*668265263) ^ 0x9E3779B1
+		h = (h ^ (h >> 13)) * 1274126177
+		return float64((h^(h>>16))&0xffff) / 65536
+	}
+	fx, fy := float64(x)/3, float64(y)/3
+	x0, y0 := int(math.Floor(fx)), int(math.Floor(fy))
+	tx, ty := fx-float64(x0), fy-float64(y0)
+	tx, ty = tx*tx*(3-2*tx), ty*ty*(3-2*ty)
+	top := hash(x0, y0) + (hash(x0+1, y0)-hash(x0, y0))*tx
+	bot := hash(x0, y0+1) + (hash(x0+1, y0+1)-hash(x0, y0+1))*tx
+	return top + (bot-top)*ty
+}
 
 // scene hand-builds a small forest clearing: grass and a pond, a ring of trees,
 // a traveler's campfire, a lamp post, an active portal and a couple of glowing
@@ -81,6 +100,37 @@ func scene() *game.TileMap {
 	return &game.TileMap{W: W, H: H, Tiles: tiles}
 }
 
+// forestScene is an organic woodland — a dense, naturally-clumped stand of trees
+// with a small clearing, a stream and a campfire — rather than a hand-drawn ring,
+// so the "forest at night" look can be judged as it actually generates in play.
+func forestScene() *game.TileMap {
+	const W, H = 22, 14
+	tiles := make([][]game.Tile, H)
+	for y := 0; y < H; y++ {
+		tiles[y] = make([]game.Tile, W)
+		for x := 0; x < W; x++ {
+			// Coherent noise picks tree density; a clearing is carved in the middle.
+			n := previewNoise(x, y)
+			cx, cy := float64(x-11)/6, float64(y-7)/4
+			clearing := cx*cx+cy*cy < 1.1
+			t := game.Tile{Kind: game.TileFloor, Walkable: true, Tex: game.TexGrass, Ground: "#3A7D44"}
+			if n > 0.52 && !clearing {
+				t = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexForest,
+					Ground: "#2C5E33", Prop: game.PropTree, PropHex: "#2E5E34"}
+			}
+			tiles[y][x] = t
+		}
+	}
+	// A stream snaking through, and a campfire in the clearing.
+	for y := 0; y < H; y++ {
+		x := 4 + y/3
+		tiles[y][x] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexWater, Ground: "#2E6BFF"}
+	}
+	tiles[7][11] = game.Tile{Kind: game.TileFloor, Walkable: true, Tex: game.TexGrass,
+		Ground: "#3A7D44", Prop: game.PropCampfire, PropHex: "#FF7A2C"}
+	return &game.TileMap{W: W, H: H, Tiles: tiles}
+}
+
 // shots are the cycle points we render, labelled for the filename. The cycle is
 // compressed into one real hour (see ui.CyclePeriod), so the minute-of-hour
 // drives the ring: minute 0 = midnight, 15 = dawn, 30 = noon, 45 = dusk.
@@ -125,4 +175,19 @@ func main() {
 		hex, str := ui.Ambient(at)
 		fmt.Printf("wrote %s  (ambient tint %s @ %.0f%%)\n", path, hex, str*100)
 	}
+
+	// A dedicated organic-forest frame at deep night, to judge the woodland look.
+	fst := forestScene()
+	fplayers := []world.Player{{Name: "you", X: 11, Y: 7, Color: "#FFC861", Facing: world.DirS, LastMoved: time.Now()}}
+	ui.Now = func() time.Time { return time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC) }
+	fimg := game.RenderRGBA(nil, fst, fplayers, "you", frame, game.Camera{W: fst.W, H: fst.H}, game.Light{}, 0, 0, scale, false, style)
+	ff, err := os.Create("nightshots/5-forest-night.png")
+	if err != nil {
+		panic(err)
+	}
+	if err := png.Encode(ff, fimg); err != nil {
+		panic(err)
+	}
+	ff.Close()
+	fmt.Println("wrote nightshots/5-forest-night.png")
 }

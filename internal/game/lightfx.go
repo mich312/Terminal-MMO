@@ -211,7 +211,7 @@ func drawMist(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, origi
 					if d >= 1 {
 						continue
 					}
-					w := math.Ceil((1-d)*3) / 3 * night * breathe * 0.34 // 3 bands, visible veil
+					w := math.Ceil((1-d)*3) / 3 * night * breathe * 0.24 // 3 bands, visible but not soupy on flowing water
 					for yy := by; yy < by+apx; yy++ {
 						for xx := bx; xx < bx+apx; xx++ {
 							or, og, ob, ok := getPixel(img, xx, yy)
