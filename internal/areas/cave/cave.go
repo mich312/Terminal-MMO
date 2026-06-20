@@ -904,7 +904,7 @@ func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, w, h int) {
 		switch {
 		case wf >= 0.30 && r < 0.06: // flowstone draping a rock face (in-tile)
 			t.Prop, t.PropHex, t.Ch = game.PropFlowstone, "#BBAA86", '╫'
-		case wf > 0 && wf <= 0.12 && r < 0.05: // a stalagmite by a wall on open floor
+		case wf > 0 && wf < 0.30 && r < 0.06: // a stalagmite rising near a wall
 			t.Prop, t.PropHex, t.Ch = game.PropStalagmite, "#9A92A0", '▲'
 		case wf == 0 && r < 0.016: // a column in a wide chamber (floor-to-ceiling, blocks)
 			t.Kind, t.Walkable = game.TileDecor, false
