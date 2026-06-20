@@ -71,6 +71,7 @@ type World struct {
 	mu        sync.Mutex
 	players   map[string]*Player
 	subs      map[string]chan Event
+	pollers   map[string]bool  // subs that render by polling (HD): skip move/tick spam
 	decks     map[string]*Deck // player-authored presentation decks
 	deckOrder []string         // deck ids in creation order
 	deckSeq   int
@@ -91,6 +92,7 @@ func New() *World {
 	w := &World{
 		players:   make(map[string]*Player),
 		subs:      make(map[string]chan Event),
+		pollers:   make(map[string]bool),
 		stop:      make(chan struct{}),
 		gatePool:  make(map[string]int),
 		gateFixed: make(map[string]bool),
@@ -166,7 +168,10 @@ func (w *World) tickLoop() {
 			w.mu.Lock()
 			w.pulse = !w.pulse
 			ev := Event{Type: EventTick, Pulse: w.pulse, Frame: frame}
-			for _, ch := range w.subs {
+			for subName, ch := range w.subs {
+				if w.pollers[subName] {
+					continue // HD polls its own animation clock; no tick needed
+				}
 				deliver(ch, ev)
 			}
 			w.mu.Unlock()
@@ -210,6 +215,18 @@ func (w *World) Join(desired string) (string, <-chan Event) {
 	return name, ch
 }
 
+// MarkPoller flags a session that renders by polling world state every frame
+// (the HD client) rather than reacting to each event. Such a session needs none
+// of the high-frequency positional stream — EventMoved and EventTick — so we
+// stop delivering those to it. This keeps a movement flood in a busy area from
+// evicting chat, whisper, slide and join/leave events out of its 64-deep buffer
+// before it can read them.
+func (w *World) MarkPoller(name string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pollers[name] = true
+}
+
 // Leave removes a player entirely (disconnect). Idempotent — it is called
 // both from the quit path and the session-closed watchdog.
 func (w *World) Leave(name string) {
@@ -221,6 +238,7 @@ func (w *World) Leave(name string) {
 	}
 	area := p.Area
 	delete(w.players, name)
+	delete(w.pollers, name)
 	if ch, ok := w.subs[name]; ok {
 		delete(w.subs, name)
 		close(ch)
@@ -396,6 +414,9 @@ func (w *World) broadcastToArea(area string, ev Event) {
 		p, ok := w.players[subName]
 		if !ok || p.Area != area {
 			continue
+		}
+		if ev.Type == EventMoved && w.pollers[subName] {
+			continue // HD reads positions from PlayersInArea each frame, not from moves
 		}
 		deliver(ch, ev)
 	}

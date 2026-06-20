@@ -474,31 +474,46 @@ var avatarStyles = []avatarStyle{
 
 // accessories overlay the head's top rows (H accessory, H shade h). Index 0 is
 // "none". Overlays are 12 wide; spaces leave the underlying pixel untouched.
+// Hex is the accessory's own color (worn, on the ground, and as an inventory
+// icon all share it); an empty Hex falls back to the default gold. Append new
+// accessories at the end — indices are persisted in saved avatars. "things like
+// flowers" (flower, shroom) are nature wearables found alongside the hats.
 var accessories = []struct {
 	Name    string
+	Hex     string
 	overlay []string
 }{
-	{"none", nil},
-	{"cap", []string{
+	{"none", "", nil},
+	{"cap", "#6FB7FF", []string{
 		"            ",
 		"..HHHHHHHH..",
 		".hhhhhhhhhh.",
 	}},
-	{"crown", []string{
+	{"crown", "#FFD166", []string{
 		"H..HH..HH..H",
 		".HHHHHHHHHH.",
 	}},
-	{"band", []string{
+	{"band", "#FF8FB1", []string{
 		"            ",
 		"            ",
 		".HHHHHHHHHH.",
 	}},
-	{"horns", []string{
+	{"horns", "#E27396", []string{
 		"H..........H",
 		"HH........HH",
 	}},
-	{"halo", []string{
+	{"halo", "#F2E9A0", []string{
 		"...HHHHHH...",
 		"..H......H..",
+	}},
+	{"flower", "#FF7AA8", []string{
+		"..H.........",
+		".HhH........",
+		"..H.........",
+	}},
+	{"shroom", "#C792EA", []string{
+		"...HHHHHH...",
+		"..HHHHHHHH..",
+		"...hhhhhh...",
 	}},
 }

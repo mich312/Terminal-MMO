@@ -297,6 +297,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			a.wx, a.wy = nx, ny
 			a.reveal()
+			a.collectItem() // items are gathered just by walking over them
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
 				a.persist()
@@ -320,9 +321,6 @@ func (a *area) Hint() string {
 	}
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name
-	}
-	if it, _, _, ok := a.itemUnderBody(); ok {
-		return "e — take " + it.Name
 	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
@@ -367,13 +365,7 @@ func (a *area) pickUp() {
 	if h, x, y, ok := a.hatUnderBody(); ok {
 		a.collected[[2]int{x, y}] = true
 		a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
-		if a.ctx.Hats == nil {
-			a.ctx.Hats = map[int]bool{}
-		}
-		if !a.ctx.Hats[h.idx] {
-			a.ctx.Hats[h.idx] = true
-			a.ctx.Store.UnlockHat(a.ctx.Name, h.idx)
-		}
+		a.unlockHat(h.idx)
 		if self, ok := a.ctx.World.Self(a.ctx.Name); ok {
 			a.ctx.World.SetAvatar(a.ctx.Name, self.Style, h.idx)
 			a.ctx.Store.SaveAvatar(a.ctx.Name, string(self.Color), self.Style, h.idx)
@@ -381,15 +373,46 @@ func (a *area) pickUp() {
 		a.setToast("+ " + h.name + " (now worn!)")
 		return
 	}
+	a.collectItem()
+}
+
+// unlockHat marks accessory idx as owned and persists it, idempotently.
+// Returns whether it was newly unlocked (so callers can announce it).
+func (a *area) unlockHat(idx int) bool {
+	if a.ctx.Hats == nil {
+		a.ctx.Hats = map[int]bool{}
+	}
+	if a.ctx.Hats[idx] {
+		return false
+	}
+	a.ctx.Hats[idx] = true
+	a.ctx.Store.UnlockHat(a.ctx.Name, idx)
+	return true
+}
+
+// collectItem harvests an ordinary item under the player into the pack, marks
+// the cell collected and persists it. Hats are deliberately excluded — wearing
+// one changes your avatar, so that stays a manual 'e' action — which is why this
+// is split out from pickUp: movement calls it to gather loot just by walking
+// over it. A find that has a matching wearable (a mushroom → the shroom
+// accessory) also unlocks it, so some foraged loot doubles as an outfit.
+// Returns whether anything was taken.
+func (a *area) collectItem() bool {
 	it, x, y, ok := a.itemUnderBody()
 	if !ok {
-		return
+		return false
 	}
 	a.collected[[2]int{x, y}] = true
 	a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
 	a.ctx.Inventory[it.ID]++
 	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
 	a.setToast("+ " + it.Name)
+	if acc, ok := wearableFromItem[it.ID]; ok {
+		if idx, ok := game.AccessoryIndex(acc); ok && a.unlockHat(idx) {
+			a.setToast("+ " + it.Name + " - now wearable! (c to equip)")
+		}
+	}
+	return true
 }
 
 // sample builds a vw×vh window of the overworld centered on the player and

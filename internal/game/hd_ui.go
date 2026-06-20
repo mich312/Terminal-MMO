@@ -55,15 +55,18 @@ func DrawHUD(img *image.RGBA, areaName, hint string) {
 		pixel.DrawText(img, 4*s+pixel.TextWidth(areaName+"  ", s), y, s, asciiOnly(hint), hudWhite)
 	}
 	pixel.DrawText(img, 4*s, y+lh, s,
-		"move  e pick  enter chat  c char  i bag  q quit", hudDim)
+		"move  e use  enter chat  c char  i bag  q quit", hudDim)
 }
 
-// panelBox centers a pw×ph panel, clamping it on-screen.
+// panelBox centers a pw×ph panel in the play area above the HUD bar, clamping it
+// on-screen. Reserving the bar's height keeps a tall panel's footer from
+// colliding with the status bar on small frames.
 func panelBox(W, H, pw, ph int) (ox, oy, cw int) {
 	if pw > W-4 {
 		pw = W - 4
 	}
-	ox, oy = (W-pw)/2, (H-ph)/2
+	barH := 36 * hudScale(W) // matches DrawHUD's bottom bar (2*lh + 4*s)
+	ox, oy = (W-pw)/2, (H-barH-ph)/2
 	if ox < 2 {
 		ox = 2
 	}
@@ -147,55 +150,270 @@ func DrawCharPanel(img *image.RGBA, ctx *Ctx, field int) {
 	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
 }
 
-// DrawInventoryPanel draws the player's collected items and unlocked hats.
+// DrawInventoryPanel draws the player's pack: their hero (a large avatar that
+// grows with the screen) with name and worn hat on the left, and a gem-iconed
+// item list with owned hats on the right.
 func DrawInventoryPanel(img *image.RGBA, ctx *Ctx) {
 	W, H := img.Bounds().Dx(), img.Bounds().Dy()
 	s := hudScale(W)
 	lh := 16 * s
+	pad := 8 * s
+	gap := pad // gutter between the two columns
 
-	var rows []string
+	cur, hasSelf := ctx.World.Self(ctx.Name)
+
+	// Right column: collected items (with their gem color) and owned hats.
+	type itemRow struct {
+		name string
+		n    int
+		base color.RGBA
+		hi   color.RGBA
+	}
+	var items []itemRow
 	total := 0
 	for _, it := range Items {
 		if n := ctx.Inventory[it.ID]; n > 0 {
-			rows = append(rows, fmt.Sprintf("%-14s x%d", it.Name, n))
+			c := mustHex(it.Hex)
+			items = append(items, itemRow{it.Name, n, colorfulToRGBA(c),
+				colorfulToRGBA(c.BlendLab(spriteWhite, 0.55).Clamped())})
 			total += n
 		}
 	}
-	var hats []string
+	var hatIdxs []int
 	for _, idx := range OwnedHats(ctx) {
 		if idx != 0 {
-			hats = append(hats, AccessoryName(idx))
+			hatIdxs = append(hatIdxs, idx)
 		}
 	}
-	if len(hats) > 0 {
-		rows = append(rows, "", "Hats: "+strings.Join(hats, ", "))
+	const maxHatRows = 6
+	hatsShown := len(hatIdxs)
+	if hatsShown > maxHatRows {
+		hatsShown = maxHatRows
 	}
-	if len(rows) == 0 {
-		rows = []string{"empty - explore and press e to forage"}
+	equipped := -1
+	if hasSelf {
+		equipped = cur.Accessory
 	}
-	title := fmt.Sprintf("INVENTORY  (%d items)", total)
-	footer := "i or q: close"
 
-	contentW := 0
-	for _, r := range append(append([]string{}, rows...), title, footer) {
-		if w := pixel.TextWidth(r, s); w > contentW {
-			contentW = w
+	gem := lh - 4*s // gem-icon box, fitted to a text line
+	emptyMsg := "Empty - walk over loot to gather it."
+
+	// Left column: the hero, scaled up with the frame ("bigger you on a bigger
+	// screen"), then clamped so it never eats more than a third of the width.
+	aScale := H / 90
+	if aScale > 16 {
+		aScale = 16
+	}
+	if aScale < s*3 {
+		aScale = s * 3
+	}
+	var avW, avH, bw, bh int
+	var bmp []string
+	if hasSelf {
+		bmp = AvatarBitmap(cur.Style, cur.Accessory, world.DirS, 0)
+		bw, bh = len([]rune(bmp[0])), len(bmp)
+		for aScale > s*2 && bw*aScale > W/3 {
+			aScale--
+		}
+		avW, avH = bw*aScale, bh*aScale
+	}
+	name := asciiOnly(ctx.Name)
+	hatLine := ""
+	if hasSelf {
+		hatLine = "Hat: " + AccessoryName(cur.Accessory)
+	}
+	leftW := avW
+	for _, t := range []string{name, hatLine} {
+		if w := pixel.TextWidth(t, s); w > leftW {
+			leftW = w
 		}
 	}
-	pad := 7 * s
-	ph := pad*2 + lh + lh/2 + len(rows)*lh + lh
+	leftH := avH + lh/2 + lh + lh/4 + lh // avatar, name, hat
+
+	// Right-column width: title, item rows (gem + name + count), hat rows.
+	title := fmt.Sprintf("INVENTORY  -  %d item", total)
+	if total != 1 {
+		title += "s"
+	}
+	rightW := pixel.TextWidth("ACCESSORIES", s)
+	for _, r := range items {
+		w := gem + s*3 + pixel.TextWidth(r.name, s) + s*4 + pixel.TextWidth(fmt.Sprintf("x%d", r.n), s)
+		if w > rightW {
+			rightW = w
+		}
+	}
+	if len(items) == 0 {
+		if w := pixel.TextWidth(emptyMsg, s); w > rightW {
+			rightW = w
+		}
+	}
+	for i := 0; i < hatsShown; i++ {
+		label := AccessoryName(hatIdxs[i])
+		if hatIdxs[i] == equipped {
+			label += "  worn"
+		}
+		if w := gem + s*3 + pixel.TextWidth(label, s); w > rightW {
+			rightW = w
+		}
+	}
+
+	itemLines := len(items)
+	if itemLines == 0 {
+		itemLines = 1
+	}
+	rightH := itemLines * lh
+	if len(hatIdxs) > 0 {
+		rightH += lh/2 + lh + hatsShown*lh
+		if len(hatIdxs) > hatsShown {
+			rightH += lh
+		}
+	}
+
+	bodyH := leftH
+	if rightH > bodyH {
+		bodyH = rightH
+	}
+	contentW := leftW + gap + rightW
+	if !hasSelf {
+		contentW = rightW
+	}
+	ph := pad*2 + lh + lh/2 + bodyH + lh/2 + lh
 	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
 	pixel.DrawPanel(img, ox, oy, pw, ph)
 
-	y := oy + pad
-	pixel.DrawText(img, ox+pad, y, s, title, hudAccent)
-	y += lh + lh/2
-	for _, r := range rows {
-		pixel.DrawText(img, ox+pad, y, s, r, hudWhite)
+	// Header.
+	top := oy + pad
+	pixel.DrawText(img, ox+pad, top, s, title, hudAccent)
+	bodyY := top + lh + lh/2
+
+	rightX := ox + pad
+	if hasSelf {
+		// Left column: a shaded pedestal, the avatar, name and worn hat.
+		leftX := ox + pad
+		ax := leftX + (leftW-avW)/2
+		pixel.Shade(img, ax-s, bodyY+avH-2*s, avW+2*s, 3*s, 0.5)
+		drawAvatarInto(img, ax, bodyY, aScale, cur.Style, cur.Accessory, cur.Color)
+		ny := bodyY + avH + lh/2
+		pixel.DrawText(img, leftX+(leftW-pixel.TextWidth(name, s))/2, ny, s, name, hudBright)
+		pixel.DrawText(img, leftX+(leftW-pixel.TextWidth(hatLine, s))/2, ny+lh+lh/4, s, hatLine, hudDim)
+		rightX = leftX + leftW + gap
+	}
+
+	// Right column: items, then owned hats.
+	y := bodyY
+	if len(items) == 0 {
+		pixel.DrawText(img, rightX, y, s, emptyMsg, hudDim)
 		y += lh
 	}
-	y += lh / 2
-	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
+	for _, r := range items {
+		drawGem(img, rightX, y+(lh-gem)/2, gem, r.base, r.hi)
+		pixel.DrawText(img, rightX+gem+s*3, y, s, r.name, hudWhite)
+		cnt := fmt.Sprintf("x%d", r.n)
+		pixel.DrawText(img, rightX+rightW-pixel.TextWidth(cnt, s), y, s, cnt, hudAccent)
+		y += lh
+	}
+	if len(hatIdxs) > 0 {
+		y += lh / 2
+		pixel.DrawText(img, rightX, y, s, "ACCESSORIES", hudDim)
+		y += lh
+		for i := 0; i < hatsShown; i++ {
+			idx := hatIdxs[i]
+			worn := idx == equipped
+			if worn {
+				// Highlight strip behind the equipped accessory.
+				pixel.Shade(img, rightX-s, y-s, rightW+2*s, lh, 0.35)
+			}
+			drawAccessoryIcon(img, rightX, y+(lh-gem)/2, gem, idx)
+			nm := AccessoryName(idx)
+			nameCol := hudWhite
+			if worn {
+				nameCol = hudBright
+			}
+			pixel.DrawText(img, rightX+gem+s*3, y, s, nm, nameCol)
+			if worn {
+				pixel.DrawText(img, rightX+gem+s*3+pixel.TextWidth(nm+"  ", s), y, s, "worn", hudAccent)
+			}
+			y += lh
+		}
+		if extra := len(hatIdxs) - hatsShown; extra > 0 {
+			pixel.DrawText(img, rightX+gem+s*3, y, s, fmt.Sprintf("+%d more", extra), hudDim)
+			y += lh
+		}
+	}
+
+	footer := "i or q: close"
+	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+// drawGem paints a small diamond loot icon (matching the in-world gem), with a
+// lit upper-left facet so it reads as faceted rather than flat.
+func drawGem(img *image.RGBA, x, y, box int, base, hi color.RGBA) {
+	r := box / 2
+	cx, cy := x+r, y+r
+	bnd := img.Bounds()
+	for dy := -r; dy <= r; dy++ {
+		span := r - abs(dy)
+		for dx := -span; dx <= span; dx++ {
+			c := base
+			if dx+dy <= 0 {
+				c = hi // upper-left facet catches the light
+			}
+			px, py := cx+dx, cy+dy
+			if (image.Point{X: px, Y: py}).In(bnd) {
+				img.SetRGBA(px, py, c)
+			}
+		}
+	}
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// drawAccessoryIcon renders an accessory's own silhouette (its overlay shape) as
+// a small icon in its color, cropped to its pixels and centered in a box-sized
+// cell — so a crown reads as a crown and a flower as a flower, not a generic dot.
+func drawAccessoryIcon(img *image.RGBA, x, y, box, accessory int) {
+	ov := accessories[wrapIdx(accessory, len(accessories))].overlay
+	minX, minY, maxX, maxY := 1<<30, 1<<30, -1, -1
+	for r, row := range ov {
+		for c, ch := range row {
+			if ch != ' ' {
+				minX, maxX = min(minX, c), max(maxX, c)
+				minY, maxY = min(minY, r), max(maxY, r)
+			}
+		}
+	}
+	if maxX < 0 {
+		return
+	}
+	bw, bh := maxX-minX+1, maxY-minY+1
+	sc := min(box/bw, box/bh)
+	if sc < 1 {
+		sc = 1
+	}
+	main, shade := accessoryColors(accessory)
+	mc, sh := colorfulToRGBA(main), colorfulToRGBA(shade)
+	offX := x + (box-bw*sc)/2
+	offY := y + (box-bh*sc)/2
+	for r := minY; r <= maxY; r++ {
+		row := []rune(ov[r])
+		for c := minX; c <= maxX && c < len(row); c++ {
+			var col color.RGBA
+			switch row[c] {
+			case 'H':
+				col = mc
+			case 'h':
+				col = sh
+			default:
+				continue
+			}
+			fillRect(img, offX+(c-minX)*sc, offY+(r-minY)*sc, sc, sc, col)
+		}
+	}
 }
 
 // HDLine is one rendered chat line for the HD log: text plus its color.
@@ -268,11 +486,12 @@ func lipToRGBA(c lipgloss.Color) color.RGBA { return colorfulToRGBA(playerColor(
 // into the frame at (x,y), each sprite pixel scaled by scale.
 func drawAvatarInto(img *image.RGBA, x, y, scale, style, accessory int, col lipgloss.Color) {
 	body := playerColor(col)
+	accMain, accShade := accessoryColors(accessory)
 	bmp := AvatarBitmap(style, accessory, world.DirS, 0)
 	for r := 0; r < len(bmp); r++ {
 		row := []rune(bmp[r])
 		for c := 0; c < len(row); c++ {
-			cc, op := spritePixel(row[c], body, false)
+			cc, op := spritePixel(row[c], body, accMain, accShade, false)
 			if !op {
 				continue
 			}

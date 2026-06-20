@@ -75,6 +75,58 @@ func TestPresenceAndMovement(t *testing.T) {
 	}
 }
 
+func TestPollerSkipsMoveAndTickButKeepsChat(t *testing.T) {
+	w := New()
+	defer w.Close()
+
+	anna, annaCh := w.Join("anna") // HD-style poller
+	w.MarkPoller(anna)
+	bert, bertCh := w.Join("bert") // glyph-style event listener
+
+	w.EnterArea(anna, "lobby", 5, 5, "Lobby")
+	w.EnterArea(bert, "lobby", 6, 5, "Lobby")
+	drain(annaCh)
+	drain(bertCh)
+
+	// A move from bert: the poller (anna) must not receive an EventMoved, but the
+	// event listener (bert sees his own area's traffic) still does.
+	w.Move(bert, 6, 6)
+	for _, ev := range drain(annaCh) {
+		if ev.Type == EventMoved {
+			t.Error("poller received an EventMoved it does not need")
+		}
+	}
+
+	// Chat is important and must still reach the poller.
+	w.Chat(bert, "hello")
+	gotChat := false
+	for _, ev := range drain(annaCh) {
+		if ev.Type == EventChat && ev.Detail == "hello" {
+			gotChat = true
+		}
+	}
+	if !gotChat {
+		t.Error("poller missed a chat event")
+	}
+
+	// And ticks are filtered for the poller but delivered to the listener.
+	time.Sleep(700 * time.Millisecond) // span at least one 2 Hz tick
+	for _, ev := range drain(annaCh) {
+		if ev.Type == EventTick {
+			t.Error("poller received an EventTick it does not need")
+		}
+	}
+	sawTick := false
+	for _, ev := range drain(bertCh) {
+		if ev.Type == EventTick {
+			sawTick = true
+		}
+	}
+	if !sawTick {
+		t.Error("non-poller missed the world tick")
+	}
+}
+
 func TestChatIsProximityFiltered(t *testing.T) {
 	w := New()
 	defer w.Close()

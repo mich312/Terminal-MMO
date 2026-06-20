@@ -18,6 +18,13 @@ var biomeItems = map[worldgen.Biome][]string{
 	worldgen.Swamp:   {"mushroom", "herb"},
 }
 
+// wearableFromItem maps a foraged item to an accessory it unlocks, so some
+// finds double as an outfit: the mushroom you pick can then be worn. (Flowers
+// have no item, so they stay a found-on-the-ground wearable.)
+var wearableFromItem = map[string]string{
+	"mushroom": "shroom",
+}
+
 // itemRate is the share of eligible cells that carry an item — sparse, so a
 // find feels earned.
 const itemRate = 0.018
@@ -97,19 +104,24 @@ var hats = buildHats()
 
 func buildHats() []hatLoot {
 	defs := []struct {
-		name, hex string
-		biome     worldgen.Biome
+		name  string
+		biome worldgen.Biome
 	}{
-		{"cap", "#6FB7FF", worldgen.Grass},
-		{"band", "#FF8FB1", worldgen.Savanna},
-		{"horns", "#E27396", worldgen.Swamp},
-		{"crown", "#FFD166", worldgen.Hill},
-		{"halo", "#F2E9A0", worldgen.Snow},
+		{"cap", worldgen.Grass},
+		{"band", worldgen.Savanna},
+		{"horns", worldgen.Swamp},
+		{"crown", worldgen.Hill},
+		{"halo", worldgen.Snow},
+		// A meadow flower as a found wearable; the woodland mushroom cap (shroom)
+		// isn't dropped here — it's unlocked by foraging a mushroom item instead.
+		{"flower", worldgen.Grass},
 	}
 	out := make([]hatLoot, 0, len(defs))
 	for _, d := range defs {
 		if idx, ok := game.AccessoryIndex(d.name); ok {
-			out = append(out, hatLoot{d.name, idx, d.biome, d.hex})
+			// Color comes from the accessory itself, so the loot on the ground, the
+			// worn avatar and the inventory icon all match.
+			out = append(out, hatLoot{d.name, idx, d.biome, game.AccessoryColor(idx)})
 		}
 	}
 	return out

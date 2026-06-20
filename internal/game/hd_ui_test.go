@@ -54,3 +54,47 @@ func TestHDPanelsRender(t *testing.T) {
 	DrawCharPanel(img, ctx, 0)
 	DrawInventoryPanel(img, ctx)
 }
+
+// The redesigned inventory panel includes a screen-scaled avatar and must lay
+// out without panicking across frame sizes and inventory states: empty, full,
+// and more hats than fit (the "+N more" overflow). It draws onto the frame, so
+// each render must touch some pixels.
+func TestInventoryPanelLayouts(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	st := store.Open(t.TempDir() + "/z.db")
+
+	full := map[string]int{}
+	for _, it := range Items {
+		full[it.ID] = 3
+	}
+	manyHats := map[int]bool{}
+	for i := 1; i <= 10; i++ {
+		manyHats[i] = true
+	}
+
+	cases := []struct {
+		name string
+		w, h int
+		ctx  *Ctx
+	}{
+		{"empty-small", 600, 360, &Ctx{World: w, Store: st, Name: name, Inventory: map[string]int{}, Hats: map[int]bool{}}},
+		{"full-large", 1900, 1200, &Ctx{World: w, Store: st, Name: name, Inventory: full, Hats: manyHats}},
+		{"one-item", 1000, 700, &Ctx{World: w, Store: st, Name: name, Inventory: map[string]int{"berry": 1}, Hats: map[int]bool{2: true}}},
+	}
+	for _, c := range cases {
+		img := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
+		DrawInventoryPanel(img, c.ctx)
+		drawn := false
+		for _, b := range img.Pix {
+			if b != 0 {
+				drawn = true
+				break
+			}
+		}
+		if !drawn {
+			t.Errorf("%s: panel drew nothing", c.name)
+		}
+	}
+}
