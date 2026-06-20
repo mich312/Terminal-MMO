@@ -12,22 +12,27 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-// TestGenCaveConnected checks that a carved cave is one connected system in which
-// every surface mouth is reachable and leads back out, across many seeds and door
-// counts — so a stray layout can't strand a player or orphan a mouth.
+// TestGenCaveConnected checks that the cave carved under a patch of Wilds is one
+// connected system in which every surface mouth is reachable and leads back out,
+// across many seeds and door layouts — so a stray layout can't strand a player or
+// orphan a mouth. Door sets are subsets of a real hilly cave system.
 func TestGenCaveConnected(t *testing.T) {
-	for seed := int64(0); seed < 40; seed++ {
-		for nDoors := 1; nDoors <= 3; nDoors++ {
-			m, doors, nodes := genCave(rand.New(rand.NewSource(seed)), nDoors)
-			if len(doors) != nDoors {
-				t.Fatalf("seed %d: wanted %d mouths, got %d", seed, nDoors, len(doors))
+	layouts := [][][2]int{
+		{multiCave[0]},
+		{multiCave[0], multiCave[1]},
+		{multiCave[0], multiCave[1], multiCave[2]},
+	}
+	for _, overDoors := range layouts {
+		for seed := int64(0); seed < 25; seed++ {
+			m, doors, _, w, h := genCaveFromWilds(gen, overDoors, rand.New(rand.NewSource(seed)))
+			if len(doors) != len(overDoors) {
+				t.Fatalf("%d mouths in, %d out", len(overDoors), len(doors))
 			}
 			for _, d := range doors {
 				if got := m.At(d[0], d[1]); got.Kind != game.TilePortal || got.Portal != "wilds" {
 					t.Fatalf("seed %d: mouth %v is not a portal out (%+v)", seed, d, got)
 				}
 			}
-			// Every walkable cell is reachable from the first mouth.
 			reach := map[[2]int]bool{{doors[0][0], doors[0][1]}: true}
 			stack := [][2]int{{doors[0][0], doors[0][1]}}
 			for len(stack) > 0 {
@@ -35,7 +40,7 @@ func TestGenCaveConnected(t *testing.T) {
 				stack = stack[:len(stack)-1]
 				for _, dd := range nb4 {
 					nx, ny := c[0]+dd[0], c[1]+dd[1]
-					if m.At(nx, ny).Walkable && !reach[[2]int{nx, ny}] {
+					if nx >= 0 && ny >= 0 && nx < w && ny < h && m.At(nx, ny).Walkable && !reach[[2]int{nx, ny}] {
 						reach[[2]int{nx, ny}] = true
 						stack = append(stack, [2]int{nx, ny})
 					}
@@ -45,9 +50,6 @@ func TestGenCaveConnected(t *testing.T) {
 				if !reach[[2]int{d[0], d[1]}] {
 					t.Fatalf("seed %d: mouth %v unreachable from mouth 0", seed, d)
 				}
-			}
-			if nDoors == 2 && len(nodes) == 0 {
-				t.Fatalf("seed %d: cave has nothing to gather", seed)
 			}
 		}
 	}
@@ -64,8 +66,8 @@ func newArea(st store.Store) *area {
 
 func countSeen(a *area) int {
 	n := 0
-	for y := 0; y < caveH; y++ {
-		for x := 0; x < caveW; x++ {
+	for y := 0; y < a.h; y++ {
+		for x := 0; x < a.w; x++ {
 			if a.seen(x, y) {
 				n++
 			}

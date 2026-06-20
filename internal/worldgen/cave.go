@@ -111,6 +111,13 @@ func (g *Generator) CaveSystemAt(x, y int) (CaveSystem, int, bool) {
 	return CaveSystem{}, 0, false
 }
 
+// Elevation exposes the raw terrain elevation at a cell (0 deep water … 1 peak),
+// so the cave can carve its underground from the lie of the land overhead.
+func (g *Generator) Elevation(x, y int) float64 {
+	e, _, _, _ := g.climate(x, y)
+	return e
+}
+
 // caveMouthCell returns the cell for a cave mouth at (x,y), or ok=false.
 func (g *Generator) caveMouthCell(x, y int) (Cell, bool) {
 	if _, _, ok := g.CaveSystemAt(x, y); ok {
