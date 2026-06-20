@@ -17,6 +17,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/world"
@@ -192,8 +193,143 @@ func genCave(rng *rand.Rand) (*game.TileMap, int, int, map[[2]int]string) {
 		}
 	}
 	tiles[sy][sx] = caveMouth
+	texture(tiles)
 	nodes := scatterLife(rng, tiles, region, sx, sy)
+	clutter(rng, tiles, region, sx, sy)
 	return &game.TileMap{W: caveW, H: caveH, Tiles: tiles}, sx, sy, nodes
+}
+
+// --- surface texture: what stops a cave looking like a flat grid ----------------
+//
+// Real rock is never one colour. texture gives every floor and wall cell its own
+// shade — damp hollows and dry rises across the floor, deep dark in the heart of
+// the rock and a lit lip where a wall faces open air — and, crucially, an ambient
+// occlusion that pools shadow into every crevice where rock meets floor. The
+// renderer dithers these per-tile colours into one another, so the hard tile grid
+// dissolves into mottled, uneven stone.
+
+func mustHex(s string) colorful.Color { c, _ := colorful.Hex(s); return c }
+
+var (
+	floorBase = mustHex("#655D6B")
+	floorDry  = mustHex("#7C6F5E") // sandy rises
+	floorWet  = mustHex("#37445E") // damp, bluish hollows
+	crevice   = mustHex("#201C28") // the dark that pools against rock
+	wallBase  = mustHex("#3C3644")
+	wallDeep  = mustHex("#1E1A26") // the heart of solid rock
+	wallFace  = mustHex("#544C5E") // a wall edge catching the light
+	tintHi    = mustHex("#9C93A2")
+)
+
+// nhash is a cheap deterministic value in [0,1) for a cell.
+func nhash(x, y int) float64 {
+	h := uint32(x)*0x9E3779B1 + uint32(y)*0x85EBCA77 + 0x632BE5AB
+	h ^= h >> 13
+	h *= 0x2C1B3C6D
+	h ^= h >> 16
+	return float64(h) / float64(1<<32)
+}
+
+// patch is low-frequency noise (coarse blobs) for damp/dry floor patches.
+func patch(x, y int) float64 {
+	return 0.6*nhash(x>>2, y>>2) + 0.3*nhash(x>>1, y>>1) + 0.1*nhash(x, y)
+}
+
+// wallFrac is the share of a cell's 8 neighbours that are solid rock.
+func wallFrac(tiles [][]game.Tile, x, y int) float64 {
+	n := 0
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			if nx, ny := x+dx, y+dy; nx >= 0 && ny >= 0 && nx < caveW && ny < caveH && tiles[ny][nx].Kind == game.TileWall {
+				n++
+			}
+		}
+	}
+	return float64(n) / 8
+}
+
+func grain(c colorful.Color, x, y int, amt float64) colorful.Color {
+	g := nhash(x*7+1, y*13+5)
+	if g > 0.5 {
+		return c.BlendLab(tintHi, (g-0.5)*2*amt)
+	}
+	return c.BlendLab(crevice, (0.5-g)*2*amt)
+}
+
+func texture(tiles [][]game.Tile) {
+	for y := 1; y < caveH-1; y++ {
+		for x := 1; x < caveW-1; x++ {
+			t := &tiles[y][x]
+			switch {
+			case t.Kind == game.TileFloor && t.Prop == game.PropNone:
+				c := floorBase
+				if p := patch(x, y); p < 0.34 {
+					c = c.BlendLab(floorWet, 0.55*(0.34-p)/0.34)
+				} else if p > 0.70 {
+					c = c.BlendLab(floorDry, 0.5*(p-0.70)/0.30)
+				}
+				c = grain(c, x, y, 0.08)
+				// Ambient occlusion: pool shadow where the floor meets rock, fading
+				// out a tile or two in (radius-2 reach for a soft contact shadow).
+				ao := 0.7*wallFrac(tiles, x, y) + 0.3*wallFracR2(tiles, x, y)
+				c = c.BlendLab(crevice, 0.6*ao)
+				t.Ground, t.Color = c.Hex(), c.BlendLab(tintHi, 0.45).Hex()
+			case t.Kind == game.TileWall:
+				deep := wallFrac(tiles, x, y)
+				c := wallBase.BlendLab(wallDeep, deep*0.9)
+				if deep < 1 { // a face onto open air catches a little light
+					c = c.BlendLab(wallFace, 0.3*(1-deep))
+				}
+				c = grain(c, x, y, 0.06)
+				t.Ground, t.Color = c.Hex(), c.Hex()
+			}
+		}
+	}
+}
+
+// wallFracR2 is the share of rock in the 5×5 around a cell — a wider, softer
+// reach for the ambient-occlusion falloff.
+func wallFracR2(tiles [][]game.Tile, x, y int) float64 {
+	n, tot := 0, 0
+	for dy := -2; dy <= 2; dy++ {
+		for dx := -2; dx <= 2; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			tot++
+			if nx, ny := x+dx, y+dy; nx >= 0 && ny >= 0 && nx < caveW && ny < caveH && tiles[ny][nx].Kind == game.TileWall {
+				n++
+			}
+		}
+	}
+	return float64(n) / float64(tot)
+}
+
+// clutter strews the floor with breakdown — small rocks gathered at the foot of
+// walls, the odd boulder or stalagmite out in the open — so chambers read as
+// rubble-strewn rock rather than swept grey rooms.
+func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, sx, sy int) {
+	for _, c := range region {
+		x, y := c[0], c[1]
+		t := &tiles[y][x]
+		if t.Kind != game.TileFloor || t.Prop != game.PropNone || (x == sx && y == sy) {
+			continue
+		}
+		wf := wallFrac(tiles, x, y)
+		r := rng.Float64()
+		switch {
+		case wf >= 0.25 && r < 0.15: // scree banked against the walls
+			t.Prop, t.PropHex = game.PropRock, mustHex("#544E5A").Hex()
+		case wf == 0 && r < 0.012: // a boulder fallen in the open chamber (blocks)
+			t.Kind, t.Walkable = game.TileDecor, false
+			t.Prop, t.PropHex = game.PropBoulder, mustHex("#46414E").Hex()
+		case r < 0.013: // the odd loose stone underfoot
+			t.Prop, t.PropHex = game.PropRock, mustHex("#4E4854").Hex()
+		}
+	}
 }
 
 // carveConnected carves a cellular-automaton cave then joins its separate
