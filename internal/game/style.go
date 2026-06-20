@@ -79,22 +79,57 @@ var gbShades = []colorful.Color{
 	mustHex("#0F380F"), mustHex("#306230"), mustHex("#8BAC0F"), mustHex("#9BBC0F"),
 }
 
-// gbLuma is the perceptual lightness of a color, 0..1. It linearizes the sRGB
-// channels, takes the Rec.709 luminance, then re-encodes through a gamma so the
-// value is spaced by perceived brightness — a hard split on the raw (gamma-
-// encoded) channels crushes shadows together and washes highlights out, which
-// left most natural terrain dumped into a single shade. The re-encode puts the
-// ramp thresholds at visually even steps so the four tones are actually used.
-func gbLuma(c colorful.Color) float64 {
+// The gameboy recolor touches every pixel of every frame, so its perceptual
+// luminance and output shades are fully table-driven — no math.Pow or
+// colorful.Color in the hot loop. gbLin{R,G,B} fold the sRGB→linear transform
+// and the Rec.709 weight into one lookup per channel byte; gbGamma re-encodes the
+// summed linear luminance through 1/2.2; gbShadeRGB / gbShadeGridRGB are the ramp
+// shades (and their LCD-dot-darkened variants) precomputed as bytes.
+const gbGammaN = 1024
+
+var (
+	gbLinR, gbLinG, gbLinB [256]float64
+	gbGamma                [gbGammaN]float64
+	gbShadeRGB             [4][3]uint8
+	gbShadeGridRGB         [4][3]uint8
+)
+
+func init() {
 	lin := func(u float64) float64 {
 		if u <= 0.04045 {
 			return u / 12.92
 		}
 		return math.Pow((u+0.055)/1.055, 2.4)
 	}
-	y := 0.2126*lin(c.R) + 0.7152*lin(c.G) + 0.0722*lin(c.B)
-	return math.Pow(y, 1.0/2.2)
+	for i := 0; i < 256; i++ {
+		u := lin(float64(i) / 255)
+		gbLinR[i] = 0.2126 * u
+		gbLinG[i] = 0.7152 * u
+		gbLinB[i] = 0.0722 * u
+	}
+	for i := 0; i < gbGammaN; i++ {
+		gbGamma[i] = math.Pow(float64(i)/(gbGammaN-1), 1.0/2.2)
+	}
+	for i, s := range gbShades {
+		r, g, b := f2b(s.R), f2b(s.G), f2b(s.B)
+		gbShadeRGB[i] = [3]uint8{r, g, b}
+		d := s.BlendLab(shadowColor, gbLCDGrid).Clamped()
+		gbShadeGridRGB[i] = [3]uint8{f2b(d.R), f2b(d.G), f2b(d.B)}
+	}
 }
+
+// gbLumaBytes is the perceptual lightness (0..1) of an sRGB pixel, table-driven:
+// linearize+weight each channel, sum, then re-encode through 1/2.2. A hard split
+// on the raw (gamma-encoded) channels crushes shadows together and washes
+// highlights out, dumping most natural terrain into a single shade; the perceptual
+// scale puts the ramp thresholds at visually even steps.
+func gbLumaBytes(r, g, b uint8) float64 {
+	y := gbLinR[r] + gbLinG[g] + gbLinB[b] // linear luminance, 0..1
+	return gbGamma[int(y*(gbGammaN-1))]
+}
+
+// gbLuma is gbLumaBytes for a colorful.Color (the map/test entry points).
+func gbLuma(c colorful.Color) float64 { return gbLumaBytes(f2b(c.R), f2b(c.G), f2b(c.B)) }
 
 // gameboyMap maps any color to the nearest DMG green by luminance — the plain
 // 4-tone collapse, kept as the salience-unaware fallback and for tests.
@@ -174,33 +209,34 @@ func gameboyRecolor(img *image.RGBA, apx int, salient func(px int) bool) {
 	for i := 0; i+3 < len(p); i += 4 {
 		pi := i / 4
 		x, y := pi%W, pi/W
-		c := colorful.Color{R: float64(p[i]) / 255, G: float64(p[i+1]) / 255, B: float64(p[i+2]) / 255}
+		l := gbLumaBytes(p[i], p[i+1], p[i+2])
 
-		lvl := gameboyShadeLevel(c, salient(pi))
-		idx := int(lvl)
-		// Dither at the source-art-pixel grid (the Game Boy's native pixel), not
-		// per device pixel: each art pixel becomes one uniform shade and adjacent
-		// ones checker, which is both the authentic chunky DMG dither and far
-		// kinder to sixel RLE (runs stay ~apx long instead of alternating every px).
-		if frac := lvl - float64(idx); frac > gbBayer[(y/apx)&3][(x/apx)&3] {
-			idx++ // order-dither up to the next shade
+		var idx int
+		if salient(pi) {
+			// Sprite: snap to the reserved dark/light ends — never dithered, so
+			// collectibles, hats, portals and avatars stay crisp and legible.
+			if l >= gbSpriteSplit {
+				idx = 3
+			}
+		} else {
+			// Terrain rides the two middle shades (level 1..2), ordered-dithered at
+			// the source-art-pixel grid (the Game Boy's native pixel): each art pixel
+			// is one uniform shade and adjacent ones checker — authentic chunky DMG
+			// dither, and kind to sixel RLE (runs stay ~apx long, not every-pixel).
+			idx = 1
+			if l > gbBayer[(y/apx)&3][(x/apx)&3] {
+				idx = 2
+			}
 		}
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(gbShades) {
-			idx = len(gbShades) - 1
-		}
-		out := gbShades[idx]
 
-		// LCD dot-matrix: darken just the lattice intersections (a sparse dot at
-		// each source-pixel corner). Dots rather than full grid lines keep the long
-		// horizontal runs sixel RLE relies on, so the handheld texture costs a
-		// fraction of the bandwidth a full grid would.
+		rgb := gbShadeRGB[idx]
+		// LCD dot-matrix: darken just the lattice intersections (a sparse dot at each
+		// source-pixel corner). Dots, not full grid lines, keep the long horizontal
+		// runs sixel RLE relies on, so the handheld texture is nearly free on the wire.
 		if apx > 1 && x%apx == 0 && y%apx == 0 {
-			out = out.BlendLab(shadowColor, gbLCDGrid).Clamped()
+			rgb = gbShadeGridRGB[idx]
 		}
-		p[i], p[i+1], p[i+2] = f2b(out.R), f2b(out.G), f2b(out.B)
+		p[i], p[i+1], p[i+2] = rgb[0], rgb[1], rgb[2]
 	}
 }
 
