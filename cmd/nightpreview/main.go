@@ -50,12 +50,20 @@ func scene() *game.TileMap {
 	tree(2, 8)
 	tree(13, 8)
 
-	// A pond in the lower-left to catch the moon-glitter.
+	// A pond in the lower-left to catch the moon-glitter and breathe mist.
 	for y := 6; y <= 8; y++ {
 		for x := 3; x <= 6; x++ {
 			tiles[y][x] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexWater, Ground: "#2E6BFF"}
 		}
 	}
+	// A swampy margin along the pond's edge — also a mist source at night.
+	for x := 7; x <= 9; x++ {
+		tiles[8][x] = game.Tile{Kind: game.TileFloor, Walkable: true, Tex: game.TexSwamp, Ground: "#4A5A3A"}
+	}
+
+	// A little cottage on the right, so its windows light up after dark.
+	tiles[7][12] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexGrass,
+		Ground: "#3A7D44", Prop: game.PropHouse, PropHex: "#B07A4A"}
 
 	set := func(x, y int, prop game.TileProp, hex string) {
 		t := tiles[y][x]

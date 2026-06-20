@@ -177,6 +177,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				}
 			}
 		}
+		// Low ground mist drifting off the wet lowland (water, swamp) at night.
+		drawMist(img, texs, cam, scale, frame, originX, originY)
 		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)
 	}
@@ -535,18 +537,31 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 	left := vx*scale + scale/2 - (w*apx)/2
 	top := (vy+1)*scale - len(art)*apx
 
-	body := colorfulToRGBA(col)
+	bodyC := col
+	dappleC := col.BlendLab(spriteWhite, 0.30).Clamped()
 	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
 	dark := colorfulToRGBA(col.BlendLab(shadowColor, 0.52).Clamped())
-	dapple := colorfulToRGBA(col.BlendLab(spriteWhite, 0.30).Clamped())
 	trunk := colorfulToRGBA(trunkColor)
+
+	// Moonlight rim: after dusk the upper crown catches a cool cast, so a stand of
+	// trees reads as silhouetted under moonlight at night instead of flat. Static
+	// (refreshes on the periodic full repaint, like the ambient tint).
+	_, _, night := sunState()
+	moon := colorful.Color{R: 0.72, G: 0.82, B: 1.0}
+	rimRows := len(art) * 9 / 20 // upper ~45% of the crown
+	lit := func(base colorful.Color, ay int) color.RGBA {
+		if night > 0.03 && ay < rimRows {
+			base = base.BlendLab(moon, night*0.22).Clamped()
+		}
+		return colorfulToRGBA(base)
+	}
 	for ay, row := range art {
 		for ax := 0; ax < len(row); ax++ {
 			var c color.RGBA
 			ok := true
 			switch row[ax] {
 			case 'P':
-				c = body
+				c = lit(bodyC, ay)
 			case 'p':
 				// The shade pixels form the canopy rim; coherently dither them away
 				// so silhouettes feather and neighboring crowns blend into one mass
@@ -556,7 +571,7 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 					ok = false
 				}
 			case 'L':
-				c = dapple
+				c = lit(dappleC, ay)
 			case 'D':
 				c = dark // solid shadow face (no dither) — for rock crags
 			case 'W':

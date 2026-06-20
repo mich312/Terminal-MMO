@@ -144,12 +144,14 @@ var propArt = map[TileProp][]string{
 		"DppD..",
 		".DD...",
 	},
-	// PropHouse is a single-tile cottage: roof (p), walls (P), a dark door (p).
+	// PropHouse is a single-tile cottage: roof (p), walls (P), two windows (L) and
+	// a dark door (p). The windows catch the warm PropHouse glow after dark so the
+	// cottage reads as lit from within at night.
 	PropHouse: {
 		"..PP..",
 		".pppp.",
 		"pppppp",
-		"PPPPPP",
+		"PLPPLP",
 		"PPppPP",
 		"PPppPP",
 	},
