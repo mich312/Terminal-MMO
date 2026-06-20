@@ -152,15 +152,24 @@ in the 12×12 sprite needs a sensible single-token degradation.
 `internal/game/style.go` defines `Style` — the HD art direction (sprite sets,
 portal art, shade-mix factors, vignette, and a `ui.Palette`). The shipped look
 is `DefaultStyle()` (full color, no recolor). `StyleByName` adds two alternates
-that **share the sprite sets** and differ only in a final whole-frame recolor
-pass (`ui.Palette.Map`):
+that **share the sprite sets** and differ only in a final whole-frame recolor:
 
-- **gameboy** — maps every pixel to the nearest of the 4-tone DMG green ramp by
-  luminance.
-- **neon** — pushes saturation and lifts lightness for a synthwave glow.
+- **neon** — a per-pixel `ui.Palette.Map`: pushes saturation and lifts lightness
+  for a synthwave glow.
+- **gameboy** — a coordinate-aware `ui.Palette.Recolor` onto the 4-tone DMG green
+  ramp. The ramp is split by **salience**: terrain and scenery ride the two
+  middle shades, while gameplay elements (collectibles, hats, portals, gates,
+  avatars) are flagged by a per-frame mask and pinned to the reserved dark/light
+  ends, so an item can never dissolve into same-luminance terrain. Luminance is
+  perceptual (linearized, Rec.709, re-gamma'd), terrain is **ordered-dithered**
+  between its two shades at the source-art-pixel grid (authentic chunky DMG
+  dither, and kind to sixel RLE), and a faint dot-matrix lattice gives the LCD
+  feel. Sprites keep integer ramp levels so they never dither and stay crisp.
 
-If you add a style, follow this pattern: reuse the sprites, express the look as a
-`func(colorful.Color) colorful.Color` recolor, not a new tileset.
+If you add a style, follow this pattern: reuse the sprites and express the look
+as a recolor, not a new tileset — a per-pixel `Palette.Map` for a simple tint, or
+`Palette.Recolor` (which gets pixel position + a salience predicate) when you need
+dithering, a grid, or to keep gameplay elements legible under a few-tone palette.
 
 ## Lighting & atmosphere
 
