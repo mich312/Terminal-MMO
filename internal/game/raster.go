@@ -548,10 +548,12 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 	// (refreshes on the periodic full repaint, like the ambient tint).
 	_, _, night := sunState()
 	moon := colorful.Color{R: 0.72, G: 0.82, B: 1.0}
-	rimRows := len(art) * 9 / 20 // upper ~45% of the crown
+	rimRows := len(art) * 11 / 20 // upper ~55% of the crown
 	lit := func(base colorful.Color, ay int) color.RGBA {
 		if night > 0.03 && ay < rimRows {
-			base = base.BlendLab(moon, night*0.22).Clamped()
+			// Stronger on the very top rows, easing down the crown.
+			k := night * 0.5 * (1 - float64(ay)/float64(rimRows))
+			base = base.BlendLab(moon, k).Clamped()
 		}
 		return colorfulToRGBA(base)
 	}
