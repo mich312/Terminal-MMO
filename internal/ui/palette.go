@@ -12,4 +12,13 @@ type Palette struct {
 	PortalA string // hex, portal swirl phase A
 	PortalB string // hex, portal swirl phase B
 	Map     func(colorful.Color) colorful.Color
+
+	// MapSalient, when non-nil, supersedes Map and additionally receives whether
+	// the pixel belongs to a gameplay-salient element — a collectible, hat,
+	// portal, sealed gate or player avatar. A few-tone monochrome style (gameboy)
+	// uses it to route those pixels onto reserved, high-contrast shades so they
+	// stay legible instead of dissolving into same-luminance terrain. The renderer
+	// only builds the per-pixel salience mask when this is set, so the full-color
+	// and neon paths pay nothing.
+	MapSalient func(c colorful.Color, salient bool) colorful.Color
 }

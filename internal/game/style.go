@@ -55,7 +55,7 @@ func StyleByName(name string) *Style {
 	s := DefaultStyle()
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "gameboy", "gb":
-		s.Palette = ui.Palette{Name: "gameboy", PortalA: "#306230", PortalB: "#9BBC0F", Map: gameboyMap}
+		s.Palette = ui.Palette{Name: "gameboy", PortalA: "#306230", PortalB: "#9BBC0F", MapSalient: gameboyMapSalient}
 	case "neon":
 		s.Palette = ui.Palette{Name: "neon", PortalA: "#1B2CFF", PortalB: "#39FFF6", Map: neonMap}
 	}
@@ -67,10 +67,13 @@ var gbShades = []colorful.Color{
 	mustHex("#0F380F"), mustHex("#306230"), mustHex("#8BAC0F"), mustHex("#9BBC0F"),
 }
 
-// gameboyMap maps any color to the nearest DMG green by luminance.
+// gbLuma is the perceptual luminance (Rec.601) of a color, 0..1.
+func gbLuma(c colorful.Color) float64 { return 0.299*c.R + 0.587*c.G + 0.114*c.B }
+
+// gameboyMap maps any color to the nearest DMG green by luminance — the plain
+// 4-tone collapse, kept as the salience-unaware fallback and for tests.
 func gameboyMap(c colorful.Color) colorful.Color {
-	l := 0.299*c.R + 0.587*c.G + 0.114*c.B
-	idx := int(l * float64(len(gbShades)))
+	idx := int(gbLuma(c) * float64(len(gbShades)))
 	if idx >= len(gbShades) {
 		idx = len(gbShades) - 1
 	}
@@ -78,6 +81,26 @@ func gameboyMap(c colorful.Color) colorful.Color {
 		idx = 0
 	}
 	return gbShades[idx]
+}
+
+// gameboyMapSalient collapses to the DMG ramp but splits the ramp by salience so
+// gameplay elements stay readable: terrain and scenery use the two middle shades
+// (a mid-tone backdrop), while collectibles, hats, portals, gates and avatars are
+// rendered as crisp high-contrast 2-tone (the darkest and lightest shades) — the
+// classic Game Boy background/sprite separation. Because the two sets share no
+// shade, an item can never vanish into same-luminance terrain.
+func gameboyMapSalient(c colorful.Color, salient bool) colorful.Color {
+	light := gbLuma(c) >= 0.5
+	if salient {
+		if light {
+			return gbShades[3] // lightest — sprite highlight
+		}
+		return gbShades[0] // darkest — sprite body/outline
+	}
+	if light {
+		return gbShades[2] // mid-light terrain
+	}
+	return gbShades[1] // mid-dark terrain
 }
 
 // neonMap pushes saturation and a slight lift for a synthwave glow.

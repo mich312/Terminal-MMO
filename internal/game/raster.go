@@ -89,6 +89,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	imgW, imgH := cam.W*scale, cam.H*scale
 	img := image.NewRGBA(image.Rect(0, 0, imgW, imgH))
 
+	// Track salient pixels only when the style recolors with salience awareness
+	// (gameboy); other styles leave mask nil and the marking calls are no-ops.
+	var mask *salienceMask
+	if style.Palette.MapSalient != nil {
+		mask = &salienceMask{on: make([]bool, imgW*imgH), w: imgW}
+	}
+
 	if smooth {
 		cxf, cyf := float64(imgW)/2, float64(imgH)/2
 		maxD := math.Hypot(cxf, cyf)
@@ -134,7 +141,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					at(vx, vy+1), at(vx-1, vy+1), at(vx-1, vy), at(vx-1, vy-1),
 				}
 				paintTile(img, vx*scale, vy*scale, scale, cols[vy][vx],
-					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style, nbr)
+					texs[vy][vx], props[vy][vx], propCols[vy][vx], originX+vx, originY+vy, frame, style, nbr, mask)
 			}
 		}
 		// Sun-glint / moon-glitter shimmering across water.
@@ -155,7 +162,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		for vy := 0; vy < cam.H; vy++ {
 			for vx := 0; vx < cam.W; vx++ {
 				if props[vy][vx] == PropPortal {
-					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
+					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette, mask)
 				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				}
@@ -181,11 +188,63 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)
 	}
 
-	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
-	if m := style.Palette.Map; m != nil {
-		applyColorMap(img, m)
+	stampSpritesRGBA(img, players, self, frame, scale, originX, originY, mask)
+	switch {
+	case style.Palette.MapSalient != nil:
+		applySalientColorMap(img, mask, style.Palette.MapSalient)
+	case style.Palette.Map != nil:
+		applyColorMap(img, style.Palette.Map)
 	}
 	return img
+}
+
+// salienceMask flags the pixels of gameplay-salient elements — collectibles,
+// hats, portals, sealed gates and player avatars — within a single RenderRGBA
+// frame, so a few-tone monochrome style can route them onto reserved
+// high-contrast shades instead of letting them dissolve into same-luminance
+// terrain. It is only allocated when the style asks for it
+// (style.Palette.MapSalient != nil); a nil *salienceMask marks nothing, so the
+// full-color and neon paths are unchanged and pay nothing.
+type salienceMask struct {
+	on []bool
+	w  int
+}
+
+// mark flags the pixel at (x,y); a nil mask and out-of-bounds coordinates are
+// no-ops, so callers can mark unconditionally.
+func (m *salienceMask) mark(x, y int) {
+	if m == nil || x < 0 || x >= m.w {
+		return
+	}
+	if i := y*m.w + x; i >= 0 && i < len(m.on) {
+		m.on[i] = true
+	}
+}
+
+// markRect flags every pixel of a w×h block (an upscaled art pixel).
+func (m *salienceMask) markRect(x0, y0, w, h int) {
+	if m == nil {
+		return
+	}
+	for y := y0; y < y0+h; y++ {
+		for x := x0; x < x0+w; x++ {
+			m.mark(x, y)
+		}
+	}
+}
+
+// at reports whether pixel index i (in img.Pix/4 units) is salient.
+func (m *salienceMask) at(i int) bool { return m != nil && i < len(m.on) && m.on[i] }
+
+// propSalient reports whether a prop is a gameplay element that must stay legible
+// under a monochrome recolor (collectibles, wearable hats, portals, sealed
+// gates) rather than ambient scenery (trees, flowers, rocks…).
+func propSalient(p TileProp) bool {
+	switch p {
+	case PropPortal, PropHat, PropGem, PropSealed:
+		return true
+	}
+	return false
 }
 
 // applyColorMap remaps every opaque pixel through m — one pass over the finished
@@ -200,9 +259,21 @@ func applyColorMap(img *image.RGBA, m func(colorful.Color) colorful.Color) {
 	}
 }
 
+// applySalientColorMap is applyColorMap with per-pixel salience: each pixel is
+// remapped through m together with whether the mask flagged it as a gameplay
+// element, so a monochrome style can keep those on a separate, legible shade.
+func applySalientColorMap(img *image.RGBA, mask *salienceMask, m func(colorful.Color, bool) colorful.Color) {
+	p := img.Pix
+	for i := 0; i+3 < len(p); i += 4 {
+		c := colorful.Color{R: float64(p[i]) / 255, G: float64(p[i+1]) / 255, B: float64(p[i+2]) / 255}
+		c = m(c, mask.at(i/4)).Clamped()
+		p[i], p[i+1], p[i+2] = f2b(c.R), f2b(c.G), f2b(c.B)
+	}
+}
+
 // stampSpritesRGBA draws every player's avatar, oldest movers first and self
 // last, mirroring the glyph renderer's ordering.
-func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, frame, scale, originX, originY int) {
+func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, frame, scale, originX, originY int, mask *salienceMask) {
 	sorted := make([]world.Player, len(players))
 	copy(sorted, players)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -215,7 +286,7 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, fram
 		return sorted[i].LastMoved.Before(sorted[j].LastMoved)
 	})
 	for _, p := range sorted {
-		blitAvatar(img, p, p.Name == self, frame, scale, p.X-originX, p.Y-originY)
+		blitAvatar(img, p, p.Name == self, frame, scale, p.X-originX, p.Y-originY, mask)
 	}
 }
 
@@ -223,7 +294,7 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, fram
 // the sprite scaled by an integer factor (sharp, nearest-neighbor — no blur)
 // and a small chevron above your own head. (fc,fr) is the footprint top-left in
 // camera cells; the sprite is centered horizontally and bottom-aligned.
-func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, fr int) {
+func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, fr int, mask *salienceMask) {
 	wf := AvatarWalkFrame(p.LastMoved, frame)
 	body := playerColor(p.Color)
 	accMain, accShade := accessoryColors(p.Accessory)
@@ -262,6 +333,7 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 				continue
 			}
 			fillRect(img, left+sx*k, top+sy*k, k, k, colorfulToRGBA(col))
+			mask.markRect(left+sx*k, top+sy*k, k, k)
 		}
 	}
 
@@ -367,7 +439,7 @@ const tileArtN = 6
 // paintTile draws one tile: the ground surface sprite (a shade pattern colored
 // by base) nearest-upscaled to the on-screen tile size, then an optional prop
 // sprite over it. Sharp pixels throughout.
-func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style, nbr [8]colorful.Color) {
+func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex TileTex, prop TileProp, propCol colorful.Color, wx, wy, frame int, style *Style, nbr [8]colorful.Color, mask *salienceMask) {
 	var art []string
 	if variants := style.Ground[tex]; len(variants) > 0 {
 		idx := int(hashNoise(wx, wy) * float64(len(variants)))
@@ -419,14 +491,21 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 				return color.RGBA{}, false // '.' transparent
 			}
 		}
-		blitTileArt(img, ox, oy, scale, art, paint)
+		// Mark only genuinely salient props (collectibles, hats, gates) — not the
+		// trees/rocks that share this prop-art path — so the monochrome recolor
+		// lifts items off the terrain without flattening scenery.
+		var pm *salienceMask
+		if propSalient(prop) {
+			pm = mask
+		}
+		blitTileArt(img, ox, oy, scale, art, paint, pm)
 	}
 }
 
 // drawStructure renders a multi-tile sprite (house or portal) centered on tile
 // (vx,vy), bottom-aligned so its base sits on the tile and it overhangs upward.
 // 'R'/'P' take the structure color; '@' is the animated portal swirl.
-func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int, art []string, pal ui.Palette) {
+func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame int, art []string, pal ui.Palette, mask *salienceMask) {
 	apx := scale / tileArtN // art-pixel size, matching the avatar's
 	if apx < 1 {
 		apx = 1
@@ -462,6 +541,7 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 			}
 			if ok {
 				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+				mask.markRect(left+ax*apx, top+ay*apx, apx, apx)
 			}
 		}
 	}
@@ -608,13 +688,14 @@ func portalPixel(ax, ay, frame int, pal ui.Palette) color.RGBA {
 // blitTileArt nearest-upscales a tileArtN×tileArtN art grid into the scale×scale
 // tile at (ox,oy), coloring each art rune via paint; paint's second return is
 // false for transparent runes.
-func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(byte) (color.RGBA, bool)) {
+func blitTileArt(img *image.RGBA, ox, oy, scale int, art []string, paint func(byte) (color.RGBA, bool), mask *salienceMask) {
 	for iy := 0; iy < scale; iy++ {
 		row := art[iy*tileArtN/scale]
 		for ix := 0; ix < scale; ix++ {
 			c, ok := paint(row[ix*tileArtN/scale])
 			if ok {
 				img.SetRGBA(ox+ix, oy+iy, c)
+				mask.mark(ox+ix, oy+iy)
 			}
 		}
 	}
