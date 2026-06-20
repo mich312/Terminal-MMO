@@ -22,10 +22,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
 
+	"github.com/durst-group/durstworld/internal/areas/wilds"
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
+	"github.com/durst-group/durstworld/internal/worldgen"
 )
+
+// gen resolves cave systems (which overworld mouths belong to which cave) from
+// the same fixed overworld seed as the Wilds.
+var gen = worldgen.New(wilds.Seed)
 
 const (
 	caveW, caveH = 96, 60 // cavern grid — a sprawling system, not one room
@@ -42,38 +48,50 @@ func init() {
 
 type area struct {
 	game.Walker
-	caveKey    string            // this cave's id (its overworld mouth), for persistence
-	nodes      map[[2]int]string // gatherable position → item id
-	mined      map[[2]int]bool   // worked out this visit
-	discovered map[[2]int]uint64 // uncovered fog chunks (chunk coord → 64-cell mask)
-	dirty      map[[2]int]bool   // chunks changed since the last flush
-	showMap    bool              // the fill-in cave map is open (m)
-	toast      string
-	toastUntil time.Time
+	caveKey        string            // this cave's id (its origin mouth), for persistence
+	overworldDoors [][2]int          // each surface mouth's overworld cell
+	interiorDoors  [][2]int          // …and the matching mouth inside the cave (parallel)
+	nodes          map[[2]int]string // gatherable position → item id
+	mined          map[[2]int]bool   // worked out this visit
+	discovered     map[[2]int]uint64 // uncovered fog chunks (chunk coord → 64-cell mask)
+	dirty          map[[2]int]bool   // chunks changed since the last flush
+	showMap        bool              // the fill-in cave map is open (m)
+	toast          string
+	toastUntil     time.Time
 }
 
 func (a *area) Name() string { return "a cave" }
 
-// Init carves the cavern, seeded by the overworld coordinates of the cave mouth
-// the player stepped through (carried on the player at transition time), so a
-// given mouth always opens onto the same cave.
+// Init carves the cavern. The cave mouth the player stepped through (carried on
+// the player at transition time) resolves to a cave system — its origin and its
+// 1–3 surface mouths. The cave is seeded and named by the origin, so every mouth
+// of a system opens the same cavern and shares one remembered map; the player is
+// dropped at the inner mouth matching the one they entered by.
 func (a *area) Init(p *world.Player) tea.Cmd {
 	if a.Ctx.Inventory == nil {
 		a.Ctx.Inventory = map[string]int{}
 	}
-	// The mouth's overworld coordinates both seed the layout and name the cave, so
-	// the same mouth always opens the same cavern and remembers its own fog.
-	a.caveKey = fmt.Sprintf("%d,%d", p.X, p.Y)
-	seed := int64(uint64(uint32(p.X))*0x9E3779B1 ^ uint64(uint32(p.Y))*0x85EBCA77 ^ 0x0CA7E)
-	var sx, sy int
-	a.Map, sx, sy, a.nodes = genCave(rand.New(rand.NewSource(seed)))
+	sys, doorIdx, ok := gen.CaveSystemAt(p.X, p.Y)
+	if !ok { // entered somewhere that isn't a known mouth — treat it as a lone cave
+		sys = worldgen.CaveSystem{Origin: [2]int{p.X, p.Y}, Doors: [][2]int{{p.X, p.Y}}}
+		doorIdx = 0
+	}
+	a.overworldDoors = sys.Doors
+	a.caveKey = fmt.Sprintf("%d,%d", sys.Origin[0], sys.Origin[1])
+	ox, oy := sys.Origin[0], sys.Origin[1]
+	seed := int64(uint64(uint32(ox))*0x9E3779B1 ^ uint64(uint32(oy))*0x85EBCA77 ^ 0x0CA7E)
+	a.Map, a.interiorDoors, a.nodes = genCave(rand.New(rand.NewSource(seed)), len(sys.Doors))
 	a.mined = map[[2]int]bool{}
 	a.discovered = a.Ctx.Store.LoadCaveDiscovery(a.Ctx.Name, a.caveKey)
 	if a.discovered == nil {
 		a.discovered = map[[2]int]uint64{}
 	}
 	a.dirty = map[[2]int]bool{}
-	a.Enter(sx, sy, 0)
+	if doorIdx >= len(a.interiorDoors) {
+		doorIdx = 0
+	}
+	sp := a.interiorDoors[doorIdx]
+	a.Enter(sp[0], sp[1], 0)
 	a.reveal()
 	a.persist()
 	return nil
@@ -101,9 +119,26 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		a.persist()
 	}
 	if handled && portal != "" {
+		a.surfaceAt() // leave by whichever mouth we reached
 		return game.Transition{To: portal}, nil
 	}
 	return a, nil
+}
+
+// surfaceAt records, on the way out, the overworld mouth matching the inner one
+// the player is leaving through, so the Wilds drops them there — climb in one
+// mouth, tunnel under the hills, and step out of another.
+func (a *area) surfaceAt() {
+	best, bestD := 0, 1<<30
+	for i, d := range a.interiorDoors {
+		if dd := abs(d[0]-a.X) + abs(d[1]-a.Y); dd < bestD {
+			best, bestD = i, dd
+		}
+	}
+	if best < len(a.overworldDoors) {
+		o := a.overworldDoors[best]
+		a.Ctx.Store.SavePosition(a.Ctx.Name, "wilds", o[0], o[1])
+	}
 }
 
 // chunkOf splits a cell into its 8×8 chunk coordinate and bit index within it.
@@ -362,11 +397,15 @@ var seams = []seam{
 	{"crystal", game.Tile{Kind: game.TileObject, Ch: '◆', Walkable: true, Color: "#7DF0FF", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGemGlow, PropHex: "#7DF0FF"}},
 }
 
-func genCave(rng *rand.Rand) (*game.TileMap, int, int, map[[2]int]string) {
+// genCave carves the cavern and places nDoors interior mouths back to the
+// surface (one per overworld mouth of the system), spread across the chambers.
+// It returns the tilemap, the door positions (door 0 nearest the centre), and the
+// gatherable seams and mushrooms.
+func genCave(rng *rand.Rand, nDoors int) (*game.TileMap, [][2]int, map[[2]int]string) {
 	wall := carveConnected(rng)
 	region, sx, sy, ok := largestOpen(wall)
 	if !ok || len(region) < caveW*caveH/8 {
-		return fallbackCave()
+		return fallbackCave(nDoors)
 	}
 	inMain := make(map[[2]int]bool, len(region))
 	for _, c := range region {
@@ -383,11 +422,40 @@ func genCave(rng *rand.Rand) (*game.TileMap, int, int, map[[2]int]string) {
 			}
 		}
 	}
-	tiles[sy][sx] = caveMouth
+	doors := placeDoors(region, sx, sy, nDoors)
+	for _, d := range doors {
+		tiles[d[1]][d[0]] = caveMouth
+	}
 	texture(tiles)
 	nodes := scatterLife(rng, tiles, region, sx, sy)
 	clutter(rng, tiles, region, sx, sy)
-	return &game.TileMap{W: caveW, H: caveH, Tiles: tiles}, sx, sy, nodes
+	return &game.TileMap{W: caveW, H: caveH, Tiles: tiles}, doors, nodes
+}
+
+// placeDoors chooses nDoors well-separated chamber cells for the surface mouths:
+// door 0 at the chamber centre (sx,sy), then each next door at the floor cell
+// farthest from all doors so far, so a cave's mouths sit far apart inside.
+func placeDoors(region [][2]int, sx, sy, nDoors int) [][2]int {
+	doors := [][2]int{{sx, sy}}
+	for len(doors) < nDoors {
+		best, bestD := [2]int{sx, sy}, -1
+		for _, c := range region {
+			md := 1 << 30
+			for _, d := range doors {
+				if dd := (c[0]-d[0])*(c[0]-d[0]) + (c[1]-d[1])*(c[1]-d[1]); dd < md {
+					md = dd
+				}
+			}
+			if md > bestD {
+				best, bestD = c, md
+			}
+		}
+		if bestD <= 0 {
+			break
+		}
+		doors = append(doors, best)
+	}
+	return doors
 }
 
 // --- surface texture: what stops a cave looking like a flat grid ----------------
@@ -832,7 +900,7 @@ func neighboursOf(c [2]int, rng *rand.Rand) [][2]int {
 	return out
 }
 
-func fallbackCave() (*game.TileMap, int, int, map[[2]int]string) {
+func fallbackCave(nDoors int) (*game.TileMap, [][2]int, map[[2]int]string) {
 	tiles := make([][]game.Tile, caveH)
 	for y := 0; y < caveH; y++ {
 		tiles[y] = make([]game.Tile, caveW)
@@ -844,8 +912,17 @@ func fallbackCave() (*game.TileMap, int, int, map[[2]int]string) {
 			}
 		}
 	}
-	tiles[caveH/2][caveW/2] = caveMouth
-	return &game.TileMap{W: caveW, H: caveH, Tiles: tiles}, caveW / 2, caveH / 2, map[[2]int]string{}
+	var region [][2]int
+	for y := 1; y < caveH-1; y++ {
+		for x := 1; x < caveW-1; x++ {
+			region = append(region, [2]int{x, y})
+		}
+	}
+	doors := placeDoors(region, caveW/2, caveH/2, nDoors)
+	for _, d := range doors {
+		tiles[d[1]][d[0]] = caveMouth
+	}
+	return &game.TileMap{W: caveW, H: caveH, Tiles: tiles}, doors, map[[2]int]string{}
 }
 
 func nearestIn(region [][2]int, p [2]int) [2]int {

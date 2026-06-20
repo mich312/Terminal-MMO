@@ -53,6 +53,7 @@ type Generator struct {
 	layoutCache   sync.Map // macro-cell key → *layout
 	partnerCache  sync.Map // macro-cell key → partnerResult
 	partnersCache sync.Map // macro-cell key → []settlement (road network)
+	caveCache     sync.Map // macro-cell key → caveSystem
 }
 
 // New returns a generator for the given seed.
@@ -138,6 +139,12 @@ func (g *Generator) At(x, y int) Cell {
 		return c
 	}
 
+	// Cave mouths: 1–3 linked openings per cave system, set in the high hills.
+	// Placed after settlements so a town always wins the cell.
+	if c, ok := g.caveMouthCell(x, y); ok {
+		return c
+	}
+
 	elev, moist, temp, region := g.climate(x, y)
 
 	switch {
@@ -170,10 +177,6 @@ func (g *Generator) At(x, y int) Cell {
 		if temp < 0.40 && region < 0.42 {
 			return snowCell(g, x, y)
 		}
-		if g.caveMouth(x, y) { // a cave opening where the hillside meets the peaks
-			return Cell{Biome: Hill, Glyph: 'Ω', Color: "#2A2630",
-				Walkable: true, Object: true, Portal: "cave"}
-		}
 		return hillCell(g, x, y)
 	default: // peaks — snow-capped except in warm regions, where they're bare rock
 		if temp < 0.52 && region < 0.55 {
@@ -181,36 +184,6 @@ func (g *Generator) At(x, y int) Cell {
 		}
 		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
 	}
-}
-
-// caveSalt separates the cave-mouth scatter from the other noise fields.
-const caveSalt uint64 = 0xCA7E0F71_1075DEAD
-
-// caveRate is the fraction of hillside cells that roll a cave opening (before the
-// peak-adjacency requirement thins them further), so caves are an occasional find
-// along the mountains, not on every slope.
-const caveRate = 0.06
-
-// caveMouth reports whether a cell is a cave opening: a hillside cell that both
-// rolls the sparse cave scatter and abuts a genuine peak, so a mouth reads as a
-// dark arch cut into the foot of the mountains rather than a hole in open grass.
-// The neighbour probe runs only on the rare cells that pass the roll, so it costs
-// little.
-func (g *Generator) caveMouth(x, y int) bool {
-	if unit(hashCoord(g.seed^caveSalt, x, y)) >= caveRate {
-		return false
-	}
-	for dy := -1; dy <= 1; dy++ {
-		for dx := -1; dx <= 1; dx++ {
-			if dx == 0 && dy == 0 {
-				continue
-			}
-			if e, _, _, _ := g.climate(x+dx, y+dy); e >= 0.84 {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // Walkable is a convenience over At for collision checks.

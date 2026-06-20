@@ -111,6 +111,15 @@ func (a *area) resume() (int, int) {
 		if _, isPortal := a.portalUnder(x, y); !isPortal {
 			return x, y
 		}
+		// The saved spot is a portal — e.g. a cave mouth we just stepped out of.
+		// Surface on a walkable cell right beside it rather than back at the hub.
+		for _, o := range [][2]int{{0, 1}, {1, 0}, {-1, 0}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}} {
+			if nx, ny := x+o[0], y+o[1]; a.fits(nx, ny) {
+				if _, p := a.portalUnder(nx, ny); !p {
+					return nx, ny
+				}
+			}
+		}
 	}
 	return a.spawn()
 }
