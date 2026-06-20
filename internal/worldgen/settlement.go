@@ -1711,14 +1711,31 @@ func (g *Generator) connectingRoad(x, y int) (Cell, bool) {
 				continue
 			}
 			for _, p := range g.partnersOf(s) { // every road this town sends out
-				d := distPointSeg(float64(x), float64(y), float64(s.cx), float64(s.cy), float64(p.cx), float64(p.cy))
-				if d > 0.7 {
+				// Canonicalise the edge so the winding curve is identical whichever of
+				// the two towns we happen to be rendering from (partnerships are mutual).
+				ax, ay, bx, by := float64(s.cx), float64(s.cy), float64(p.cx), float64(p.cy)
+				if p.cx < s.cx || (p.cx == s.cx && p.cy < s.cy) {
+					ax, ay, bx, by = bx, by, ax, ay
+				}
+				abx, aby := bx-ax, by-ay
+				L := math.Hypot(abx, aby)
+				if L < 1 {
 					continue
 				}
-				// How far along from this village's centre — used to fade the road out.
-				along := math.Hypot(float64(x-s.cx), float64(y-s.cy))
-				if along > linkFade {
-					// Dithered trail: thin to scattered packed-earth patches.
+				dxn, dyn := abx/L, aby/L // unit along, and its perpendicular
+				pxn, pyn := -dyn, dxn
+				qx, qy := float64(x)-ax, float64(y)-ay
+				t := qx*dxn + qy*dyn  // distance along the baseline
+				sd := qx*pxn + qy*pyn // signed perpendicular distance
+				if t < 0 || t > L {
+					continue
+				}
+				if math.Abs(sd-g.roadCurveOffset(ax, ay, dxn, dyn, t, L)) > 0.9 {
+					continue
+				}
+				// Fade out toward the middle of a very long road (rare: network edges
+				// are short enough to stay solid). along is the nearer town's distance.
+				if along := math.Min(t, L-t); along > linkFade {
 					if unit(hashCoord(g.seed^0xC0FFEE11, x, y)) > 0.35 {
 						continue
 					}
@@ -1732,6 +1749,26 @@ func (g *Generator) connectingRoad(x, y int) (Cell, bool) {
 		}
 	}
 	return Cell{}, false
+}
+
+// roadSalt separates the road-meander noise field from the terrain noise.
+const roadSalt uint64 = 0x20AD5EEDC0FFEE01
+
+// roadCurveOffset is the winding road's perpendicular offset (in tiles) at
+// distance t along a canonical A→B baseline of length L. The meander is driven
+// by the world's own low-frequency noise field — sampled at the baseline point —
+// so a road bends with the lie of the land rather than running ruler-straight,
+// and it's windowed to zero at both ends so the road approaches each town head-on
+// (meeting the gate its main street already points at) and only wanders in the
+// open country between.
+func (g *Generator) roadCurveOffset(ax, ay, dxn, dyn, t, L float64) float64 {
+	bx, by := ax+dxn*t, ay+dyn*t                   // the baseline point at t
+	n := g.fbmAt(bx, by, roadSalt, 0.022, 2)*2 - 1 // [-1,1], coherent with the map
+	amp := 0.16 * L                                // longer roads wander more…
+	if amp > 13 {
+		amp = 13 // …but only so far
+	}
+	return amp * math.Sin(math.Pi*t/L) * n // window → 0 at both towns
 }
 
 // cellFor converts a generated layout cell into a worldgen Cell.
