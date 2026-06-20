@@ -28,6 +28,13 @@ func sunState() (elev, azX, night float64) {
 	return
 }
 
+// moonlight returns how strong moonlight should read right now: the Moon's
+// current illuminated fraction (1 at full moon, 0 at new moon), pegged to the
+// real date at Brixen via ui.MoonIllumination. Moonlight effects multiply their
+// strength by it, on top of the usual night gate, so the canopy rim and the
+// water's moon-glitter wax and wane with the real lunar phase.
+func moonlight() float64 { return ui.MoonIllumination(ui.Now()) }
+
 // Glow lights a pool by multiplying the underlying night-dark pixels back up
 // (revealing the terrain's own colors near the source — that reads as light,
 // not a white halo) plus a small colored add for the light's hue.
@@ -116,11 +123,16 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 
 // waterGlint lays a drifting specular sparkle over water tiles: warm gold when
 // the sun is high, cool moon-glitter at night, the crest band sweeping along the
-// sun's azimuth. Additive and banded, so it shimmers without going smooth.
+// sun's azimuth. Additive and banded, so it shimmers without going smooth. The
+// night moon-glitter scales with the real lunar phase — bright under a full
+// moon, gone on a new-moon night — while the daytime sun-glint is unaffected.
 func waterGlint(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, originX, originY int) {
 	elev, azX, night := sunState()
 	gl := colorful.Color{R: 1, G: 0.93, B: 0.6}.BlendLab(colorful.Color{R: 0.72, G: 0.84, B: 1}, night).Clamped()
 	bright := math.Max(0.3, math.Min(1, elev+0.3)) // night still glitters faintly
+	// Day: full sun-glint. Night: fade the glitter to the moon's illuminated
+	// fraction, so it tracks the phase rather than glittering under a dark sky.
+	bright *= (1 - night) + night*moonlight()
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1

@@ -24,6 +24,23 @@ func TestAmbientCycle(t *testing.T) {
 	}
 }
 
+// MoonIllumination must stay in [0,1], read ~0 at the reference new moon and ~1
+// a half-synodic-month later (full moon), so it can drive moonlight strength.
+func TestMoonIllumination(t *testing.T) {
+	full := newMoonEpoch.Add(time.Duration(synodicMonth / 2 * 24 * float64(time.Hour)))
+	if il := MoonIllumination(newMoonEpoch); il > 0.02 {
+		t.Errorf("new moon illumination = %v, want ~0", il)
+	}
+	if il := MoonIllumination(full); il < 0.98 {
+		t.Errorf("full moon illumination = %v, want ~1", il)
+	}
+	for d := 0; d < 30; d++ { // sweep a month: always within [0,1]
+		if il := MoonIllumination(newMoonEpoch.AddDate(0, 0, d)); il < 0 || il > 1 {
+			t.Fatalf("day %d: illumination %v out of [0,1]", d, il)
+		}
+	}
+}
+
 // Night should be tinted noticeably more than midday. With the one-hour cycle,
 // minute 0 is midnight and minute 30 is noon.
 func TestAmbientNightDarkerThanNoon(t *testing.T) {

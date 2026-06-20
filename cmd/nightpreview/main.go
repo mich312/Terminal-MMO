@@ -176,18 +176,40 @@ func main() {
 		fmt.Printf("wrote %s  (ambient tint %s @ %.0f%%)\n", path, hex, str*100)
 	}
 
-	// A dedicated organic-forest frame at deep night, to judge the woodland look.
+	// Organic forest at deep night under two lunar phases, to show the moonlight
+	// pegging: scan the synodic month around today for its darkest (new) and
+	// brightest (full) nights and render the forest under each.
 	fst := forestScene()
 	fplayers := []world.Player{{Name: "you", X: 11, Y: 7, Color: "#FFC861", Facing: world.DirS, LastMoved: time.Now()}}
-	ui.Now = func() time.Time { return time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC) }
-	fimg := game.RenderRGBA(nil, fst, fplayers, "you", frame, game.Camera{W: fst.W, H: fst.H}, game.Light{}, 0, 0, scale, false, style)
-	ff, err := os.Create("nightshots/5-forest-night.png")
-	if err != nil {
-		panic(err)
+	base := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	newMoon, fullMoon := base, base
+	lo, hi := 2.0, -1.0
+	for d := 0; d < 30; d++ {
+		day := base.AddDate(0, 0, d)
+		if il := ui.MoonIllumination(day); il < lo {
+			lo, newMoon = il, day
+		} else if il > hi {
+			hi, fullMoon = il, day
+		}
 	}
-	if err := png.Encode(ff, fimg); err != nil {
-		panic(err)
+	for _, m := range []struct {
+		name string
+		when time.Time
+	}{
+		{"5-forest-newmoon", newMoon},
+		{"6-forest-fullmoon", fullMoon},
+	} {
+		ui.Now = func() time.Time { return m.when } // date sets the phase; 00:00 = deep night
+		img := game.RenderRGBA(nil, fst, fplayers, "you", frame, game.Camera{W: fst.W, H: fst.H}, game.Light{}, 0, 0, scale, false, style)
+		path := fmt.Sprintf("nightshots/%s.png", m.name)
+		f, err := os.Create(path)
+		if err != nil {
+			panic(err)
+		}
+		if err := png.Encode(f, img); err != nil {
+			panic(err)
+		}
+		f.Close()
+		fmt.Printf("wrote %s  (%s, moon %.0f%% lit)\n", path, m.when.Format("2006-01-02"), ui.MoonIllumination(m.when)*100)
 	}
-	ff.Close()
-	fmt.Println("wrote nightshots/5-forest-night.png")
 }

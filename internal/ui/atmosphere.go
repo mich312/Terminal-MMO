@@ -67,6 +67,25 @@ func SolarHour(t time.Time) float64 {
 	}
 }
 
+// newMoonEpoch is a reference new moon (2000-01-06 18:14 UTC). Moon phase is
+// counted forward from it in synodic months.
+var newMoonEpoch = time.Date(2000, 1, 6, 18, 14, 0, 0, time.UTC)
+
+// synodicMonth is the mean interval between successive new moons, in days.
+const synodicMonth = 29.530588853
+
+// MoonIllumination returns the Moon's illuminated fraction at t — 0 at new moon,
+// rising to 1 at full moon and back — as a mean-phase approximation (good to
+// about a day, ample to drive how silver a night looks). It is the strength knob
+// for the moonlight effects: a Brixen night under a full moon glows, a new-moon
+// night stays dark. The phase is global, so the location doesn't enter the
+// fraction; t is real wall-clock time, not the compressed day/night cycle.
+func MoonIllumination(t time.Time) float64 {
+	cycles := t.Sub(newMoonEpoch).Hours() / 24 / synodicMonth
+	frac := cycles - math.Floor(cycles) // 0 = new, 0.5 = full, →1 = new again
+	return (1 - math.Cos(2*math.Pi*frac)) / 2
+}
+
 // dayKey is one anchor in the 24-hour ambient cycle: at hour H the world is
 // tinted toward Hex by Strength (0 = untinted, 1 = fully the tint color).
 // Values between anchors are interpolated, and the ring wraps midnight.
