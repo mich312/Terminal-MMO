@@ -221,6 +221,9 @@ func tileAnimated(t Tile, night float64, style *Style) bool {
 	if _, _, _, ok := emitterGlow(t.Prop, mustHex("#808080"), 0, 0, 0); ok {
 		return true
 	}
+	if t.Prop == PropCaveMouth { // bats wheel over the mouth every frame
+		return true
+	}
 	if propHasGlowArt(style, t.Prop) {
 		return true
 	}

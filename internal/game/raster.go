@@ -194,6 +194,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		}
 		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)
+		// Cave life: bats at the mouths, fish in the pools, glow-worms over the fungi.
+		drawCaveFauna(img, props, cam, scale, frame, originX, originY)
 	}
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)

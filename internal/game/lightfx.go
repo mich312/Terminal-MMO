@@ -222,3 +222,64 @@ func drawFireflies(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, 
 		}
 	}
 }
+
+// drawCaveFauna animates the cave's living things — bats wheeling at the mouths,
+// fish darting in the glow-pools, glow-worms drifting over the mushroom groves.
+// Like the fireflies it's procedural (position from frame + cell hash, no state),
+// keyed off the cave props so it only fires underground, and it runs day or night
+// since the cave is always dark.
+func drawCaveFauna(img *image.RGBA, props [][]TileProp, cam Camera, scale, frame, originX, originY int) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	dot := func(cx, cy, n int, col colorful.Color) {
+		fillRect(img, cx, cy, max(1, n), max(1, n), colorfulToRGBA(col))
+	}
+	bat := colorful.Color{R: 0.30, G: 0.26, B: 0.34}
+	fish := colorful.Color{R: 0.55, G: 0.92, B: 1}
+	worm := colorful.Color{R: 0.5, G: 1, B: 0.74}
+	for vy := 0; vy < cam.H; vy++ {
+		for vx := 0; vx < cam.W; vx++ {
+			wx, wy := originX+vx, originY+vy
+			ph := float64(wx*13 + wy*7)
+			cx0, cy0 := vx*scale+scale/2, vy*scale+scale/2
+			switch props[vy][vx] {
+			case PropCaveMouth:
+				// A few bats wheel on erratic orbits over the mouth — dark, flitting
+				// silhouettes that read as a draught of wings.
+				for b := 0; b < 3; b++ {
+					bp := ph + float64(b)*2.1
+					a := float64(frame)*0.16 + bp
+					rad := (0.8 + 0.5*math.Sin(float64(frame)*0.21+bp)) * float64(scale)
+					bx := cx0 + int(math.Cos(a)*rad)
+					by := cy0 + int(math.Sin(a)*rad*0.6) - scale/2
+					dot(bx-apx, by, apx, bat) // two angled wings
+					dot(bx+apx, by, apx, bat)
+					dot(bx, by+max(1, apx/2), max(1, apx/2), bat)
+				}
+			case PropGlowPool:
+				// A fish surfaces and darts across the pool, winking as it turns.
+				if blink := math.Sin(float64(frame)*0.12 + ph); blink > 0.3 {
+					t := math.Sin(float64(frame)*0.18 + ph)
+					fx := cx0 + int(t*float64(scale)*0.3)
+					fy := cy0 + int(math.Cos(float64(frame)*0.1+ph)*float64(scale)*0.18)
+					drawGlow(img, fx, fy, float64(apx)*1.6, fish, 0.5, apx)
+					dot(fx, fy, max(1, apx/2), fish)
+				}
+			case PropCaveShroom:
+				// Glow-worms drift just above the fungi — slow cool motes.
+				for g := 0; g < 2; g++ {
+					gp := ph + float64(g)*3.3
+					if math.Sin(float64(frame)*0.25+gp) < 0 {
+						continue // wink in and out
+					}
+					gx := cx0 + int(math.Sin(float64(frame)*0.09+gp)*float64(scale)*0.4)
+					gy := cy0 + int(math.Cos(float64(frame)*0.07+gp)*float64(scale)*0.3) - scale/3
+					drawGlow(img, gx, gy, float64(apx)*1.4, worm, 0.45, apx)
+					dot(gx, gy, max(1, apx/2), worm)
+				}
+			}
+		}
+	}
+}
