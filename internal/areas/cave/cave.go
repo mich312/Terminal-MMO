@@ -400,7 +400,7 @@ var (
 	relicTile = game.Tile{Kind: game.TileObject, Ch: '◈', Walkable: true, Color: "#C9B0FF",
 		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropRelic, PropHex: "#C9B0FF"}
 	geodeTile = game.Tile{Kind: game.TileObject, Ch: '◈', Walkable: true, Color: "#9CE0FF",
-		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGemGlow, PropHex: "#9CE0FF"}
+		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGeode, PropHex: "#9CE0FF"}
 )
 
 var nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}

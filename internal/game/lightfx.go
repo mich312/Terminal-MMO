@@ -122,6 +122,9 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 	case PropRelic:
 		// A buried relic with a faint, steady inner light — a beacon in the deep.
 		return whiten(propCol, 0.5), 1.6 * gentle, 0.5 * gentle, true
+	case PropGeode:
+		// A cracked geode's crystal core twinkles like the loot it is.
+		return whiten(propCol, 0.55), 1.4 * gentle, 0.5 * gentle, true
 	case PropLightShaft:
 		// Daylight falling through thin rock: the brightest, widest pool in the
 		// cave by day, fading to a cool wash of moonlight at night — it tracks the

@@ -119,6 +119,7 @@ const (
 	PropLightShaft // a shaft of daylight breaking through thin rock (glows, day-bright)
 	PropTimbering  // old mine support timbers under a peak (blocks)
 	PropRelic      // a half-buried relic in deep ruins (a found treasure, glows)
+	PropGeode      // a cracked-open geode, crystal core aglow (the deep cache prize)
 )
 
 // Tile is one cell of a parsed map.
