@@ -165,19 +165,30 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				}
 			}
 		}
-		// Night point lights: emissive props (campfires, portals, lamps, the
-		// reactor core, gem loot…) bloom a warm/cool glow pool on the scene after
-		// dusk, scaled by how dark it is.
-		if _, _, night := sunState(); night > 0.03 {
+		// Point lights: emissive props (campfires, portals, lamps, the reactor
+		// core, gem loot…) bloom a warm/cool glow pool on the scene after dusk,
+		// scaled by how dark it is. Light shafts are the exception — they carry
+		// daylight down through thin rock, so they shine by day and the loop must
+		// run even at noon for them.
+		if _, _, night := sunState(); true {
 			apx := scale / tileArtN
 			if apx < 1 {
 				apx = 1
 			}
 			for vy := 0; vy < cam.H; vy++ {
 				for vx := 0; vx < cam.W; vx++ {
-					if col, rad, mult, ok := emitterGlow(props[vy][vx], propCols[vy][vx], frame, originX+vx, originY+vy); ok {
-						drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, night*mult, apx)
+					p := props[vy][vx]
+					col, rad, mult, ok := emitterGlow(p, propCols[vy][vx], frame, originX+vx, originY+vy)
+					if !ok {
+						continue
 					}
+					amount := night * mult
+					if p == PropLightShaft {
+						amount = mult // already day/night-weighted inside emitterGlow
+					} else if night <= 0.03 {
+						continue // ordinary emitters only bloom after dusk
+					}
+					drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, amount, apx)
 				}
 			}
 		}

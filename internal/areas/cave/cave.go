@@ -382,6 +382,25 @@ var (
 		Tex: game.TexDirt, Ground: "#6A6270", Prop: game.PropCaveShroom, PropHex: "#7CF2C4"}
 	glowPool = game.Tile{Kind: game.TileFloor, Ch: '≈', Walkable: true, Color: "#5BD8E0",
 		Tex: game.TexWater, Ground: "#1E5560", Prop: game.PropGlowPool, PropHex: "#6CE0E6"}
+	// Speleothems: stone shaped by water over ages. Stalagmites and flowstone are
+	// in-tile (you squeeze past); a column runs floor-to-ceiling and blocks.
+	stalagmite = game.Tile{Kind: game.TileFloor, Ch: '▲', Walkable: true, Color: "#B9B0BE",
+		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropStalagmite, PropHex: "#9A92A0"}
+	flowstone = game.Tile{Kind: game.TileFloor, Ch: '╫', Walkable: true, Color: "#C9B894",
+		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropFlowstone, PropHex: "#BBAA86"}
+	column = game.Tile{Kind: game.TileDecor, Ch: '█', Walkable: false, Color: "#A89A82",
+		Tex: game.TexRock, Ground: "#5C5560", Prop: game.PropColumn, PropHex: "#A1937B"}
+	// A shaft of daylight breaking through where the rock above runs thinnest.
+	lightShaft = game.Tile{Kind: game.TileFloor, Ch: '░', Walkable: true, Color: "#FFF3D6",
+		Tex: game.TexDirt, Ground: "#8E8468", Prop: game.PropLightShaft, PropHex: "#FFF1CE"}
+	// Old mine timbers under a peak (you pass under the frame); a glowing relic
+	// half-buried in deep ruins.
+	timbering = game.Tile{Kind: game.TileFloor, Ch: '╬', Walkable: true, Color: "#9C6B3F",
+		Tex: game.TexRock, Ground: "#5C5560", Prop: game.PropTimbering, PropHex: "#8A5E37"}
+	relicTile = game.Tile{Kind: game.TileObject, Ch: '◈', Walkable: true, Color: "#C9B0FF",
+		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropRelic, PropHex: "#C9B0FF"}
+	geodeTile = game.Tile{Kind: game.TileObject, Ch: '◈', Walkable: true, Color: "#9CE0FF",
+		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGemGlow, PropHex: "#9CE0FF"}
 )
 
 var nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
@@ -481,6 +500,7 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 	}
 	texture(tiles, c.w, c.h)
 	nodes := c.scatterLife(rng, tiles, region, doors)
+	c.special(tiles, region, doors, nodes)
 	clutter(rng, tiles, region, c.w, c.h)
 	return &game.TileMap{W: c.w, H: c.h, Tiles: tiles}, doors, nodes, c.w, c.h
 }
@@ -639,6 +659,127 @@ func (c *carver) openInterior() {
 	}
 }
 
+var nb8 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}}
+
+func (c *carver) in(p [2]int) bool { return p[0] >= 0 && p[1] >= 0 && p[0] < c.w && p[1] < c.h }
+
+// special places the cave's set-pieces, every one keyed to the land overhead:
+// shafts of daylight where the rock runs thinnest, a glittering cache in the
+// chamber deepest from any mouth, and — under a notable surface feature — an old
+// mine beneath a peak or ruins beneath a landmark. Gatherable spots go into nodes.
+func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[[2]int]string) {
+	plain := func(p [2]int) bool {
+		t := tiles[p[1]][p[0]]
+		return t.Kind == game.TileFloor && t.Prop == game.PropNone
+	}
+	openAround := func(p [2]int) int {
+		n := 0
+		for _, d := range nb8 {
+			if q := [2]int{p[0] + d[0], p[1] + d[1]}; c.in(q) && tiles[q[1]][q[0]].Kind != game.TileWall {
+				n++
+			}
+		}
+		return n
+	}
+	far := func(p [2]int, d int) bool {
+		for _, m := range doors {
+			if abs(p[0]-m[0])+abs(p[1]-m[1]) <= d {
+				return false
+			}
+		}
+		return true
+	}
+	put := func(p [2]int, t game.Tile, item string) {
+		tiles[p[1]][p[0]] = t
+		if item != "" {
+			nodes[p] = item
+		}
+	}
+
+	// 1) Light shafts where the rock overhead runs thinnest — the lowest carveable
+	// ground, where the cave roof rises nearest the surface.
+	var thin [][2]int
+	for _, p := range region {
+		if plain(p) && openAround(p) >= 7 && far(p, 6) && c.surf[p[1]][p[0]] < caveFloorElev+0.05 {
+			thin = append(thin, p)
+		}
+	}
+	c.rng.Shuffle(len(thin), func(i, j int) { thin[i], thin[j] = thin[j], thin[i] })
+	for i := 0; i < len(thin)/140+1 && i < len(thin); i++ {
+		put(thin[i], lightShaft, "")
+	}
+
+	// 4) A treasure cache in the deepest chamber: a glowing geode ringed in crystal.
+	deep, bestD := [2]int{}, -1
+	for _, p := range region {
+		if !plain(p) {
+			continue
+		}
+		md := 1 << 30
+		for _, m := range doors {
+			if d := abs(p[0]-m[0]) + abs(p[1]-m[1]); d < md {
+				md = d
+			}
+		}
+		if md > bestD {
+			bestD, deep = md, p
+		}
+	}
+	if bestD > 6 {
+		put(deep, geodeTile, "geode")
+		for _, d := range nb8 {
+			if n := [2]int{deep[0] + d[0], deep[1] + d[1]}; c.in(n) && plain(n) && c.rng.Float64() < 0.6 {
+				put(n, crystalSeam.tile, "crystal")
+			}
+		}
+	}
+
+	// 5) A chamber under a notable surface feature. A surface landmark/gate overhead
+	// makes ruins with a relic to recover; failing that, a peak overhead makes an
+	// old mine — support timbers and a rich vein.
+	var landmark [2]int
+	haveLM := false
+	hi, hiP := 0.0, [2]int{}
+	for i, p := range region {
+		if s := c.surf[p[1]][p[0]]; s > hi {
+			hi, hiP = s, p
+		}
+		if !haveLM && i%4 == 0 { // sample the surface for a landmark overhead
+			if cell := c.g.At(c.ox+p[0], c.oy+p[1]); cell.Portal != "" && cell.Portal != "cave" {
+				landmark, haveLM = p, true
+			}
+		}
+	}
+	switch {
+	case haveLM && plain(landmark):
+		put(landmark, relicTile, "relic")
+		for _, d := range nb8 {
+			if n := [2]int{landmark[0] + d[0], landmark[1] + d[1]}; c.in(n) && plain(n) && c.rng.Float64() < 0.4 {
+				put(n, stoneSeam.tile, "stone")
+			}
+		}
+	case hi >= 0.82 && plain(hiP) && far(hiP, 5):
+		put(hiP, goldSeam.tile, "nugget")
+		timbers := 0
+		for _, d := range nb8 {
+			n := [2]int{hiP[0] + d[0], hiP[1] + d[1]}
+			if !c.in(n) || !plain(n) {
+				continue
+			}
+			if timbers < 2 && openAround(n) <= 6 { // timbers stand against the rock
+				put(n, timbering, "")
+				timbers++
+			} else if c.rng.Float64() < 0.5 {
+				s := goldSeam
+				if c.rng.Float64() < 0.5 {
+					s = crystalSeam
+				}
+				put(n, s.tile, s.item)
+			}
+		}
+	}
+}
+
 // --- surface texture: what stops a cave looking like a flat grid ----------------
 //
 // Real rock is never one colour. texture gives every floor and wall cell its own
@@ -761,11 +902,18 @@ func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, w, h int) {
 		wf := wallFrac(tiles, x, y, w, h)
 		r := rng.Float64()
 		switch {
-		case wf >= 0.25 && r < 0.15: // scree banked against the walls
-			t.Prop, t.PropHex = game.PropRock, mustHex("#544E5A").Hex()
-		case wf == 0 && r < 0.012: // a boulder fallen in the open chamber (blocks)
+		case wf >= 0.30 && r < 0.06: // flowstone draping a rock face (in-tile)
+			t.Prop, t.PropHex, t.Ch = game.PropFlowstone, "#BBAA86", '╫'
+		case wf > 0 && wf <= 0.12 && r < 0.05: // a stalagmite by a wall on open floor
+			t.Prop, t.PropHex, t.Ch = game.PropStalagmite, "#9A92A0", '▲'
+		case wf == 0 && r < 0.016: // a column in a wide chamber (floor-to-ceiling, blocks)
+			t.Kind, t.Walkable = game.TileDecor, false
+			t.Prop, t.PropHex, t.Ch = game.PropColumn, "#A1937B", '█'
+		case wf == 0 && r < 0.034: // a boulder fallen in the open chamber (blocks)
 			t.Kind, t.Walkable = game.TileDecor, false
 			t.Prop, t.PropHex = game.PropBoulder, mustHex("#46414E").Hex()
+		case wf >= 0.25 && r < 0.20: // scree banked against the walls
+			t.Prop, t.PropHex = game.PropRock, mustHex("#544E5A").Hex()
 		case r < 0.013: // the odd loose stone underfoot
 			t.Prop, t.PropHex = game.PropRock, mustHex("#4E4854").Hex()
 		}

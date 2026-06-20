@@ -23,6 +23,8 @@ var Items = []Item{
 	{"stone", "Cut Stone", '◊', "#B8BEC6", false},
 	{"wood", "Timber", '‡', "#9C6B3F", false},
 	{"fish", "Fresh Fish", '⊰', "#7FD7E8", false},
+	{"geode", "Glittering Geode", '◈', "#9CE0FF", true},
+	{"relic", "Ancient Relic", '◈', "#C9B0FF", true},
 }
 
 var itemIndex = func() map[string]Item {

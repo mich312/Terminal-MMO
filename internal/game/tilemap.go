@@ -113,6 +113,12 @@ const (
 	PropCaveMouth  // a cave entrance — a dark arch cut into the rock
 	PropCaveShroom // a cluster of glowing cave mushrooms (bioluminescent, glows)
 	PropGlowPool   // a still cave pool lit from within by glowing algae (glows)
+	PropStalagmite // a rock spire rising from the cave floor (in-tile, walkable)
+	PropColumn     // a floor-to-ceiling cave column (blocks)
+	PropFlowstone  // a draped sheet of flowstone against the rock (in-tile, walkable)
+	PropLightShaft // a shaft of daylight breaking through thin rock (glows, day-bright)
+	PropTimbering  // old mine support timbers under a peak (blocks)
+	PropRelic      // a half-buried relic in deep ruins (a found treasure, glows)
 )
 
 // Tile is one cell of a parsed map.

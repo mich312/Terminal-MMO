@@ -10,9 +10,10 @@ import (
 )
 
 // sunState derives lighting from the time-of-day clock (ui.Now):
-//   elev  — sun height: 1 at noon, 0 at the horizon (06:00 / 18:00), <0 at night.
-//   azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
-//   night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
+//
+//	elev  — sun height: 1 at noon, 0 at the horizon (06:00 / 18:00), <0 at night.
+//	azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
+//	night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
 func sunState() (elev, azX, night float64) {
 	t := ui.Now()
 	h := float64(t.Hour()) + float64(t.Minute())/60
@@ -118,6 +119,19 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// A still pool lit from within by glowing algae — a wider, cooler pool of
 		// light than the mushrooms.
 		return whiten(propCol, 0.45), 2.2 * gentle, 0.55 * gentle, true
+	case PropRelic:
+		// A buried relic with a faint, steady inner light — a beacon in the deep.
+		return whiten(propCol, 0.5), 1.6 * gentle, 0.5 * gentle, true
+	case PropLightShaft:
+		// Daylight falling through thin rock: the brightest, widest pool in the
+		// cave by day, fading to a cool wash of moonlight at night — it tracks the
+		// surface sun, so a shaft is a clock as much as a landmark.
+		_, _, night := sunState()
+		day := 1 - night
+		warm := colorful.Color{R: 1, G: 0.95, B: 0.82}
+		cool := colorful.Color{R: 0.7, G: 0.82, B: 1}
+		col := warm.BlendLab(cool, night)
+		return whiten(col, 0.25), 2.4 + 1.4*day, 0.45 + 0.55*day, true
 	}
 	return colorful.Color{}, 0, 0, false
 }
