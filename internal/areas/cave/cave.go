@@ -12,6 +12,7 @@
 package cave
 
 import (
+	"fmt"
 	"math/rand"
 	"sort"
 	"time"
@@ -29,6 +30,7 @@ const (
 	caveW, caveH = 96, 60 // cavern grid — a sprawling system, not one room
 	lanternR     = 9      // the bright circle the lantern throws
 	discoverR    = 11     // how far a step uncovers the cave (a touch past the light)
+	chunkN       = 8      // fog-of-war chunk is 8×8 cells, one uint64 mask
 )
 
 func init() {
@@ -39,9 +41,11 @@ func init() {
 
 type area struct {
 	game.Walker
+	caveKey    string            // this cave's id (its overworld mouth), for persistence
 	nodes      map[[2]int]string // gatherable position → item id
 	mined      map[[2]int]bool   // worked out this visit
-	seen       map[[2]int]bool   // cells uncovered this descent (fog of war)
+	discovered map[[2]int]uint64 // uncovered fog chunks (chunk coord → 64-cell mask)
+	dirty      map[[2]int]bool   // chunks changed since the last flush
 	toast      string
 	toastUntil time.Time
 }
@@ -55,13 +59,21 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	if a.Ctx.Inventory == nil {
 		a.Ctx.Inventory = map[string]int{}
 	}
+	// The mouth's overworld coordinates both seed the layout and name the cave, so
+	// the same mouth always opens the same cavern and remembers its own fog.
+	a.caveKey = fmt.Sprintf("%d,%d", p.X, p.Y)
 	seed := int64(uint64(uint32(p.X))*0x9E3779B1 ^ uint64(uint32(p.Y))*0x85EBCA77 ^ 0x0CA7E)
 	var sx, sy int
 	a.Map, sx, sy, a.nodes = genCave(rand.New(rand.NewSource(seed)))
 	a.mined = map[[2]int]bool{}
-	a.seen = map[[2]int]bool{}
+	a.discovered = a.Ctx.Store.LoadCaveDiscovery(a.Ctx.Name, a.caveKey)
+	if a.discovered == nil {
+		a.discovered = map[[2]int]uint64{}
+	}
+	a.dirty = map[[2]int]bool{}
 	a.Enter(sx, sy, 0)
 	a.reveal()
+	a.persist()
 	return nil
 }
 
@@ -75,6 +87,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	portal, handled := a.HandleCommon(msg)
 	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
 		a.reveal() // a step lifts the dark a little further
+		a.persist()
 	}
 	if handled && portal != "" {
 		return game.Transition{To: portal}, nil
@@ -82,15 +95,46 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	return a, nil
 }
 
+// chunkOf splits a cell into its 8×8 chunk coordinate and bit index within it.
+func chunkOf(x, y int) (cx, cy int, bit uint) {
+	return x >> 3, y >> 3, uint((y&(chunkN-1))*chunkN + (x & (chunkN - 1)))
+}
+
+// seen reports whether a cave cell has been uncovered.
+func (a *area) seen(x, y int) bool {
+	cx, cy, bit := chunkOf(x, y)
+	return a.discovered[[2]int{cx, cy}]&(1<<bit) != 0
+}
+
+// markSeen records a cell as uncovered, flagging its chunk dirty if changed.
+func (a *area) markSeen(x, y int) {
+	cx, cy, bit := chunkOf(x, y)
+	key := [2]int{cx, cy}
+	if nw := a.discovered[key] | (1 << bit); nw != a.discovered[key] {
+		a.discovered[key] = nw
+		a.dirty[key] = true
+	}
+}
+
 // reveal uncovers the disc of cave around the player — what the lantern has shown
 // stays remembered (dim) once you move on, so the cavern is mapped as you walk it.
 func (a *area) reveal() {
 	for dy := -discoverR; dy <= discoverR; dy++ {
 		for dx := -discoverR; dx <= discoverR; dx++ {
-			if dx*dx+dy*dy <= discoverR*discoverR {
-				a.seen[[2]int{a.X + dx, a.Y + dy}] = true
+			if x, y := a.X+dx, a.Y+dy; dx*dx+dy*dy <= discoverR*discoverR &&
+				x >= 0 && y >= 0 && x < caveW && y < caveH {
+				a.markSeen(x, y)
 			}
 		}
+	}
+}
+
+// persist flushes newly-uncovered chunks for this cave so the map survives the
+// climb back out and the next descent.
+func (a *area) persist() {
+	for ch := range a.dirty {
+		a.Ctx.Store.SaveCaveDiscovery(a.Ctx.Name, a.caveKey, ch[0], ch[1], a.discovered[ch])
+		delete(a.dirty, ch)
 	}
 }
 
@@ -167,7 +211,7 @@ func (a *area) window(vw, vh int) (*game.TileMap, int, int) {
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
 		for lx := 0; lx < vw; lx++ {
-			if wx, wy := ox+lx, oy+ly; a.seen[[2]int{wx, wy}] {
+			if wx, wy := ox+lx, oy+ly; a.seen(wx, wy) {
 				row[lx] = a.Map.At(wx, wy)
 			} else {
 				row[lx] = caveFog()

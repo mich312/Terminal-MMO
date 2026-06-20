@@ -4,8 +4,58 @@ import (
 	"math/rand"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
+	"github.com/durst-group/durstworld/internal/world"
 )
+
+// TestCaveDiscoveryPersists checks that fog-of-war is remembered per player and
+// per cave: re-entering the same mouth restores what you'd uncovered, while a
+// different mouth opens a cave that's still dark.
+func TestCaveDiscoveryPersists(t *testing.T) {
+	st := store.Open(t.TempDir() + "/t.db")
+	newArea := func() *area {
+		return &area{Walker: game.Walker{Ctx: &game.Ctx{
+			World: world.New(), Name: "ada", Theme: ui.Default,
+			Inventory: map[string]int{}, Store: st}, AreaID: "cave"}}
+	}
+	countSeen := func(a *area) int {
+		n := 0
+		for y := 0; y < caveH; y++ {
+			for x := 0; x < caveW; x++ {
+				if a.seen(x, y) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	walk := func(a *area, path string) {
+		for _, c := range path {
+			a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{c}})
+		}
+	}
+
+	a1 := newArea()
+	a1.Init(&world.Player{X: 242, Y: -377})
+	walk(a1, "ddddddddddssssssss")
+	explored := countSeen(a1)
+
+	a2 := newArea() // same mouth → discovery restored
+	a2.Init(&world.Player{X: 242, Y: -377})
+	if got := countSeen(a2); got < explored {
+		t.Fatalf("re-entry lost discovery: explored %d, restored %d", explored, got)
+	}
+
+	a3 := newArea() // a different mouth → its own, still-dark cave
+	a3.Init(&world.Player{X: 110, Y: -378})
+	if got := countSeen(a3); got >= explored {
+		t.Fatalf("a different cave inherited discovery: %d cells seen", got)
+	}
+}
 
 // TestGenCaveConnected checks that a carved cave is a single connected system
 // reachable from the spawn (the cave mouth), that the mouth leads back out, and

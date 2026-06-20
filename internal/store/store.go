@@ -65,6 +65,11 @@ type Store interface {
 	SaveDiscovery(name string, cx, cy int, mask uint64)
 	// LoadDiscovery returns a player's discovered chunks keyed by chunk coord.
 	LoadDiscovery(name string) map[[2]int]uint64
+	// SaveCaveDiscovery upserts one fog-of-war chunk for a single cave (namespaced
+	// by the cave's id, its overworld entrance), so caves are remembered apart.
+	SaveCaveDiscovery(name, cave string, cx, cy int, mask uint64)
+	// LoadCaveDiscovery returns a player's discovered chunks of one cave.
+	LoadCaveDiscovery(name, cave string) map[[2]int]uint64
 	// AddItem increments a player's count of one inventory item by one.
 	AddItem(name, item string)
 	// SpendItem decrements a player's count of one item by one (floor 0).
@@ -115,23 +120,25 @@ func (noopStore) SaveAvatar(string, string, int, int)   {}
 func (noopStore) LoadAvatar(string) (string, int, int, bool) {
 	return "", 0, 0, false
 }
-func (noopStore) SaveDeck(string, string, string, string, int64) {}
-func (noopStore) LoadDecks() []DeckRecord                        { return nil }
-func (noopStore) DeleteDeck(string)                              {}
-func (noopStore) SavePosition(string, string, int, int)          {}
-func (noopStore) LoadPosition(string, string) (int, int, bool)   { return 0, 0, false }
-func (noopStore) SaveDiscovery(string, int, int, uint64)         {}
-func (noopStore) LoadDiscovery(string) map[[2]int]uint64         { return nil }
-func (noopStore) AddItem(string, string)                         {}
-func (noopStore) SpendItem(string, string)                       {}
-func (noopStore) LoadInventory(string) map[string]int            { return map[string]int{} }
-func (noopStore) MarkCollected(string, int, int)                 {}
-func (noopStore) LoadCollected(string) map[[2]int]bool           { return nil }
-func (noopStore) UnlockHat(string, int)                          {}
-func (noopStore) LoadHats(string) map[int]bool                   { return nil }
-func (noopStore) FixPersonalGate(string, string)                 {}
-func (noopStore) LoadPersonalGates(string) map[string]bool       { return nil }
-func (noopStore) SaveGateWorld(string, int, bool)                {}
+func (noopStore) SaveDeck(string, string, string, string, int64)     {}
+func (noopStore) LoadDecks() []DeckRecord                            { return nil }
+func (noopStore) DeleteDeck(string)                                  {}
+func (noopStore) SavePosition(string, string, int, int)              {}
+func (noopStore) LoadPosition(string, string) (int, int, bool)       { return 0, 0, false }
+func (noopStore) SaveDiscovery(string, int, int, uint64)             {}
+func (noopStore) LoadDiscovery(string) map[[2]int]uint64             { return nil }
+func (noopStore) SaveCaveDiscovery(string, string, int, int, uint64) {}
+func (noopStore) LoadCaveDiscovery(string, string) map[[2]int]uint64 { return nil }
+func (noopStore) AddItem(string, string)                             {}
+func (noopStore) SpendItem(string, string)                           {}
+func (noopStore) LoadInventory(string) map[string]int                { return map[string]int{} }
+func (noopStore) MarkCollected(string, int, int)                     {}
+func (noopStore) LoadCollected(string) map[[2]int]bool               { return nil }
+func (noopStore) UnlockHat(string, int)                              {}
+func (noopStore) LoadHats(string) map[int]bool                       { return nil }
+func (noopStore) FixPersonalGate(string, string)                     {}
+func (noopStore) LoadPersonalGates(string) map[string]bool           { return nil }
+func (noopStore) SaveGateWorld(string, int, bool)                    {}
 func (noopStore) LoadGateWorld() (map[string]int, map[string]bool) {
 	return map[string]int{}, map[string]bool{}
 }
