@@ -17,15 +17,18 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
 const (
 	caveW, caveH = 96, 60 // cavern grid — a sprawling system, not one room
-	lanternR     = 10     // how far the lantern reaches into the dark
+	lanternR     = 9      // the bright circle the lantern throws
+	discoverR    = 11     // how far a step uncovers the cave (a touch past the light)
 )
 
 func init() {
@@ -38,6 +41,7 @@ type area struct {
 	game.Walker
 	nodes      map[[2]int]string // gatherable position → item id
 	mined      map[[2]int]bool   // worked out this visit
+	seen       map[[2]int]bool   // cells uncovered this descent (fog of war)
 	toast      string
 	toastUntil time.Time
 }
@@ -55,7 +59,9 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	var sx, sy int
 	a.Map, sx, sy, a.nodes = genCave(rand.New(rand.NewSource(seed)))
 	a.mined = map[[2]int]bool{}
+	a.seen = map[[2]int]bool{}
 	a.Enter(sx, sy, 0)
+	a.reveal()
 	return nil
 }
 
@@ -66,10 +72,26 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		}
 		return a, nil
 	}
-	if portal, handled := a.HandleCommon(msg); handled && portal != "" {
+	portal, handled := a.HandleCommon(msg)
+	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
+		a.reveal() // a step lifts the dark a little further
+	}
+	if handled && portal != "" {
 		return game.Transition{To: portal}, nil
 	}
 	return a, nil
+}
+
+// reveal uncovers the disc of cave around the player — what the lantern has shown
+// stays remembered (dim) once you move on, so the cavern is mapped as you walk it.
+func (a *area) reveal() {
+	for dy := -discoverR; dy <= discoverR; dy++ {
+		for dx := -discoverR; dx <= discoverR; dx++ {
+			if dx*dx+dy*dy <= discoverR*discoverR {
+				a.seen[[2]int{a.X + dx, a.Y + dy}] = true
+			}
+		}
+	}
 }
 
 // nodeNear returns the first ungathered seam or mushroom on or one tile around
@@ -132,11 +154,52 @@ func (a *area) Hint() string {
 // HDLight gives the HD renderer a lantern around the player so the cavern falls
 // away into darkness past its reach.
 func (a *area) HDLight() game.Light {
-	return game.Light{X: a.X, Y: a.Y, Radius: lanternR}
+	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: lanternR}
 }
 
+// window builds a vw×vh view centered on the player in which every cell the
+// player hasn't uncovered yet is pure black — the cave is explored out of total
+// darkness, like the Wilds. Collision still reads the real map, so the fog only
+// hides the cave, it never blocks the way.
+func (a *area) window(vw, vh int) (*game.TileMap, int, int) {
+	ox, oy := a.X-(vw-game.PlayerW)/2, a.Y-(vh-game.PlayerH)/2
+	tiles := make([][]game.Tile, vh)
+	for ly := 0; ly < vh; ly++ {
+		row := make([]game.Tile, vw)
+		for lx := 0; lx < vw; lx++ {
+			if wx, wy := ox+lx, oy+ly; a.seen[[2]int{wx, wy}] {
+				row[lx] = a.Map.At(wx, wy)
+			} else {
+				row[lx] = caveFog()
+			}
+		}
+		tiles[ly] = row
+	}
+	return &game.TileMap{W: vw, H: vh, Tiles: tiles}, ox, oy
+}
+
+// HDView feeds the fogged window to the HD pixel renderer (overriding Walker's,
+// which would draw the whole map).
+func (a *area) HDView(vw, vh int) (*game.TileMap, int, int) { return a.window(vw, vh) }
+
 func (a *area) View(width, height int) string {
-	return a.RenderLit(width, height, lanternR)
+	tm, ox, oy := a.window(width, height)
+	players := a.Ctx.World.PlayersInArea(a.AreaID)
+	view := game.RenderWindow(a.Ctx.Theme, tm, players, a.Ctx.Name, a.Frame, ox, oy, a.HDLight())
+	if msg, show := a.Toast(); show {
+		th := a.Ctx.Theme
+		if th == nil {
+			th = ui.Default
+		}
+		line := th.Toast.Render(msg)
+		view = ui.Overlay(view, line, (width-lipgloss.Width(line))/2, 1)
+	}
+	return view
+}
+
+// caveFog is the unbroken black of cave the lantern hasn't found yet.
+func caveFog() game.Tile {
+	return game.Tile{Kind: game.TileWall, Ch: ' ', Color: "#05070A", Tex: game.TexFlat, Ground: "#05070A"}
 }
 
 // --- cavern generation ---------------------------------------------------------
