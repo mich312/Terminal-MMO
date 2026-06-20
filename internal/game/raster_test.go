@@ -70,67 +70,49 @@ func TestGameboyMapStaysOnRamp(t *testing.T) {
 	}
 }
 
-// A rendered gameboy frame must actually use both shade sets — terrain on the
-// middle shades and the portal/avatar sprites on the reserved dark/light shades —
-// proving the salience mask is threaded end-to-end through the draw paths, not
-// just present in the map function.
-func TestGameboyRenderSeparatesSpritesFromTerrain(t *testing.T) {
+// A rendered gameboy frame must show the reserved sprite-outline shade (proving
+// the salience mask is threaded end-to-end through the draw paths and the portal
+// gets its legible dark outline) alongside the terrain shades.
+func TestGameboyRenderOutlinesSprites(t *testing.T) {
 	tm := smokeMap() // has a portal (salient) and textured ground (terrain)
 	players := []world.Player{{Name: "you", X: 1, Y: 0, Color: "#FFC861", LastMoved: time.Now()}}
 	cam := Camera{X: 0, Y: 0, W: tm.W, H: tm.H}
 	img := RenderRGBA(nil, tm, players, "you", 0, cam, Light{}, 0, 0, 16, false, StyleByName("gameboy"))
 
-	sprite := []colorful.Color{gbShades[0], gbShades[3]} // reserved for salient
-	terrain := []colorful.Color{gbShades[1], gbShades[2]}
-	hasSprite, hasTerrain := false, false
+	hasOutline, hasTerrain := false, false
 	for i := 0; i+3 < len(img.Pix); i += 4 {
 		c := colorful.Color{R: float64(img.Pix[i]) / 255, G: float64(img.Pix[i+1]) / 255, B: float64(img.Pix[i+2]) / 255}
-		for _, s := range sprite {
-			if near(c, s) {
-				hasSprite = true
-			}
+		if near(c, gbShades[0]) {
+			hasOutline = true
 		}
-		for _, s := range terrain {
-			if near(c, s) {
-				hasTerrain = true
-			}
+		if near(c, gbShades[1]) || near(c, gbShades[2]) || near(c, gbShades[3]) {
+			hasTerrain = true
 		}
 	}
-	if !hasSprite {
-		t.Error("no reserved sprite shade in the gameboy frame — salient elements not separated")
+	if !hasOutline {
+		t.Error("no reserved outline shade in the gameboy frame — salient sprites not outlined")
 	}
 	if !hasTerrain {
 		t.Error("no terrain shade in the gameboy frame — recolor not applied")
 	}
 }
 
-// gameboyMapSalient must keep terrain and gameplay sprites on disjoint shades, so
-// an item can never share a shade with same-luminance terrain and disappear.
-func TestGameboyMapSalientSeparatesSprites(t *testing.T) {
-	bg := map[colorful.Color]bool{} // shades terrain may use
-	fg := map[colorful.Color]bool{} // shades sprites may use
-	for _, hex := range []string{"#FF0000", "#00FF00", "#1234AB", "#FFFFFF", "#000000", "#7DF0FF", "#FFC861"} {
-		c := mustHex(hex)
-		bg[gameboyMapSalient(c, false)] = true
-		fg[gameboyMapSalient(c, true)] = true
-	}
-	for _, set := range []map[colorful.Color]bool{bg, fg} {
-		for shade := range set {
-			onRamp := false
-			for _, s := range gbShades {
-				if near(shade, s) {
-					onRamp = true
-					break
-				}
-			}
-			if !onRamp {
-				t.Errorf("gameboyMapSalient produced %v off the DMG ramp", shade)
+// Terrain must never take the darkest shade: it is reserved for the sprite
+// outline, the tone no background may match, which is what keeps items legible.
+func TestGameboyTerrainNeverUsesOutlineShade(t *testing.T) {
+	for _, hex := range []string{"#FF0000", "#00FF00", "#1234AB", "#FFFFFF", "#000000", "#7DF0FF", "#FFC861", "#2E6BFF"} {
+		out := gameboyMapSalient(mustHex(hex), false)
+		if near(out, gbShades[0]) {
+			t.Errorf("terrain color %s mapped to the reserved outline shade", hex)
+		}
+		onRamp := false
+		for _, s := range gbShades {
+			if near(out, s) {
+				onRamp = true
 			}
 		}
-	}
-	for s := range bg {
-		if fg[s] {
-			t.Errorf("shade %v used for both terrain and sprites — items can vanish", s)
+		if !onRamp {
+			t.Errorf("gameboyMapSalient(%s, false) = %v is off the DMG ramp", hex, out)
 		}
 	}
 }

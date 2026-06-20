@@ -144,29 +144,30 @@ func gameboyMap(c colorful.Color) colorful.Color {
 	return gbShades[idx]
 }
 
-// gameboyShadeLevel places a color on the DMG ramp as a continuous level, split
-// by salience so gameplay elements stay readable: terrain and scenery ride the
-// two middle shades (level 1..2, the fractional part driving dithering), while
-// collectibles, hats, portals, gates and avatars snap to the reserved dark/light
-// ends (level 0 or 3) as crisp high-contrast sprites — the classic Game Boy
-// background/sprite separation. The two sets share no shade, so an item can never
-// vanish into same-luminance terrain.
+// gameboyShadeLevel places a color on the DMG ramp as a continuous level. Terrain
+// spans the upper three shades (level 1..3, the fractional part driving dither);
+// salient sprites take a bright 2-tone interior (level 2..3). The darkest shade
+// (level 0) is never returned here — it is reserved by the recolor for the sprite
+// outline, the tone that makes gameplay elements read against any background.
 func gameboyShadeLevel(c colorful.Color, salient bool) float64 {
 	l := gbLuma(c)
 	if salient {
-		// Lean bright: a lower split sends more of a sprite to the light shade so
-		// items read as bright shapes, with only their shadows/outline going dark.
 		if l >= gbSpriteSplit {
 			return 3 // lightest — sprite highlight
 		}
-		return 0 // darkest — sprite body/outline
+		return 2 // mid-light — sprite body
 	}
-	return 1 + clamp01(l) // mid-tone terrain band, shade 1 → 2
+	lvl := 1 + 2*clamp01(l)
+	if lvl > 3 {
+		lvl = 3
+	}
+	return lvl // terrain: shade 1 (water) → 2 (grass) → 3 (sand)
 }
 
-// gameboyMapSalient is the un-dithered shade for a color — gameboyShadeLevel
-// rounded to the nearest DMG shade. Retained as the simple, position-independent
-// mapping (and the unit of the readability/separation tests).
+// gameboyMapSalient is the un-dithered, outline-free shade for a color —
+// gameboyShadeLevel rounded to the nearest DMG shade. Retained as the simple,
+// position-independent mapping (and the unit of the readability tests); the
+// rendered look adds dithering and sprite outlines on top in gameboyRecolor.
 func gameboyMapSalient(c colorful.Color, salient bool) colorful.Color {
 	idx := int(gameboyShadeLevel(c, salient) + 0.5)
 	if idx < 0 {
@@ -204,7 +205,8 @@ const gbLCDGrid = 0.16
 // handheld-LCD feel. apx is the on-screen size of one source art pixel; salient
 // flags gameplay pixels, which stay crisp (their integer level never dithers).
 func gameboyRecolor(img *image.RGBA, apx int, salient func(px int) bool) {
-	W := img.Bounds().Dx()
+	b := img.Bounds()
+	W, H := b.Dx(), b.Dy()
 	p := img.Pix
 	for i := 0; i+3 < len(p); i += 4 {
 		pi := i / 4
@@ -213,19 +215,33 @@ func gameboyRecolor(img *image.RGBA, apx int, salient func(px int) bool) {
 
 		var idx int
 		if salient(pi) {
-			// Sprite: snap to the reserved dark/light ends — never dithered, so
-			// collectibles, hats, portals and avatars stay crisp and legible.
-			if l >= gbSpriteSplit {
+			// Sprites get a dark outline (the reserved darkest shade) wherever they
+			// meet terrain, with a bright 2-tone interior. The outline is what makes
+			// items read: terrain never uses shade 0, so a collectible, hat, portal or
+			// avatar is always ringed by a tone no background can match — legible over
+			// light terrain (where reserving a light shade failed, DMG shades 2 and 3
+			// being nearly identical) and dark terrain alike.
+			switch {
+			case gbSpriteEdge(salient, x, y, W, H, apx):
+				idx = 0
+			case l >= gbSpriteSplit:
 				idx = 3
+			default:
+				idx = 2
 			}
 		} else {
-			// Terrain rides the two middle shades (level 1..2), ordered-dithered at
-			// the source-art-pixel grid (the Game Boy's native pixel): each art pixel
-			// is one uniform shade and adjacent ones checker — authentic chunky DMG
-			// dither, and kind to sixel RLE (runs stay ~apx long, not every-pixel).
-			idx = 1
-			if l > gbBayer[(y/apx)&3][(x/apx)&3] {
-				idx = 2
+			// Terrain spans the upper three shades (level 1..3): water reads dark,
+			// grass mid, sand bright. Ordered-dither at the source-art-pixel grid (the
+			// Game Boy's native pixel) blends between *adjacent* shades, so the texture
+			// is a calm DMG stipple rather than a high-contrast checker — and the
+			// chunky art-pixel cells keep sixel RLE runs long.
+			lvl := 1 + 2*l
+			if lvl > 3 {
+				lvl = 3
+			}
+			idx = int(lvl)
+			if idx < 3 && lvl-float64(idx) > gbBayer[(y/apx)&3][(x/apx)&3] {
+				idx++
 			}
 		}
 
@@ -238,6 +254,16 @@ func gameboyRecolor(img *image.RGBA, apx int, salient func(px int) bool) {
 		}
 		p[i], p[i+1], p[i+2] = rgb[0], rgb[1], rgb[2]
 	}
+}
+
+// gbSpriteEdge reports whether a salient pixel sits on the sprite's border — a
+// cardinal neighbour d away is outside the sprite (or the image) — so it can be
+// drawn as the dark outline that keeps gameplay elements legible on any terrain.
+func gbSpriteEdge(salient func(px int) bool, x, y, W, H, d int) bool {
+	return x-d < 0 || !salient(y*W+x-d) ||
+		x+d >= W || !salient(y*W+x+d) ||
+		y-d < 0 || !salient((y-d)*W+x) ||
+		y+d >= H || !salient((y+d)*W+x)
 }
 
 // neonMap pushes saturation and a slight lift for a synthwave glow.
