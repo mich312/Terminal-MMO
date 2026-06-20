@@ -81,7 +81,17 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				if ph == "" {
 					ph = t.Color
 				}
-				propCols[y][x] = tint(style.tint(ph), amb, ambStr)
+				pc := tint(style.tint(ph), amb, ambStr)
+				// Under a lantern, props that don't shine on their own fade into the
+				// dark with distance like the ground, so a stalagmite or a gold seam
+				// is something the light finds — not a sprite floating on black. The
+				// emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
+				if light.Warm {
+					if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
+						pc = applyLight(pc, originX+x, originY+y, light)
+					}
+				}
+				propCols[y][x] = pc
 			}
 		}
 	}

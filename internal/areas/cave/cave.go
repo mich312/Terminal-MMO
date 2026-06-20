@@ -33,8 +33,8 @@ import (
 var gen = worldgen.New(wilds.Seed)
 
 const (
-	lanternR  = 9  // the bright circle the lantern throws
-	discoverR = 11 // how far a step uncovers the cave (a touch past the light)
+	lanternR  = 11 // the warm circle the lantern throws
+	discoverR = 13 // how far a step uncovers the cave (a touch past the light)
 	chunkN    = 8  // fog-of-war chunk is 8×8 cells, one uint64 mask
 )
 
@@ -243,7 +243,7 @@ func (a *area) Hint() string {
 // HDLight gives the HD renderer a lantern around the player so the cavern falls
 // away into darkness past its reach.
 func (a *area) HDLight() game.Light {
-	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: lanternR}
+	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: lanternR, Warm: true}
 }
 
 // window builds a vw×vh view centered on the player in which every cell the
