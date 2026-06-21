@@ -13,6 +13,7 @@ package cave
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"time"
@@ -33,9 +34,14 @@ import (
 var gen = worldgen.New(wilds.Seed)
 
 const (
-	lanternR  = 11 // the warm circle the lantern throws
-	discoverR = 13 // how far a step uncovers the cave (a touch past the light)
+	lanternR  = 11 // the warm circle a full lantern throws
+	lanternLo = 3  // …and what a guttering, near-dry lantern manages
 	chunkN    = 8  // fog-of-war chunk is 8×8 cells, one uint64 mask
+
+	fuelMax    = 90 // steps of light a full lantern holds
+	fuelBurn   = 1  // fuel a step in the dark spends
+	fuelRefill = 7  // fuel a step beside the cave's own glow restores
+	fuelLow    = 22 // at/under this the lantern visibly gutters (and warns)
 )
 
 func init() {
@@ -55,6 +61,8 @@ type area struct {
 	discovered     map[[2]int]uint64 // uncovered fog chunks (chunk coord → 64-cell mask)
 	dirty          map[[2]int]bool   // chunks changed since the last flush
 	showMap        bool              // the fill-in cave map is open (m)
+	fuel           int               // lantern oil left this visit; light shrinks as it runs low
+	warnedLow      bool              // already told the player the lantern's guttering
 	toast          string
 	toastUntil     time.Time
 }
@@ -81,6 +89,7 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	seed := int64(uint64(uint32(ox))*0x9E3779B1 ^ uint64(uint32(oy))*0x85EBCA77 ^ 0x0CA7E)
 	a.Map, a.interiorDoors, a.nodes, a.w, a.h = genCaveFromWilds(gen, sys.Doors, rand.New(rand.NewSource(seed)))
 	a.mined = map[[2]int]bool{}
+	a.fuel = fuelMax // a freshly-trimmed lantern each descent
 	a.discovered = a.Ctx.Store.LoadCaveDiscovery(a.Ctx.Name, a.caveKey)
 	if a.discovered == nil {
 		a.discovered = map[[2]int]uint64{}
@@ -114,7 +123,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	}
 	portal, handled := a.HandleCommon(msg)
 	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
-		a.reveal() // a step lifts the dark a little further
+		a.burnLantern() // a step spends oil, or the glow tops it up
+		a.reveal()      // a step lifts the dark as far as the light now throws
 		a.persist()
 	}
 	if handled && portal != "" {
@@ -164,9 +174,10 @@ func (a *area) markSeen(x, y int) {
 // reveal uncovers the disc of cave around the player — what the lantern has shown
 // stays remembered (dim) once you move on, so the cavern is mapped as you walk it.
 func (a *area) reveal() {
-	for dy := -discoverR; dy <= discoverR; dy++ {
-		for dx := -discoverR; dx <= discoverR; dx++ {
-			if x, y := a.X+dx, a.Y+dy; dx*dx+dy*dy <= discoverR*discoverR &&
+	r := a.lanternRadius() + 2 // uncover a touch past the light — less, as it dims
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			if x, y := a.X+dx, a.Y+dy; dx*dx+dy*dy <= r*r &&
 				x >= 0 && y >= 0 && x < a.w && y < a.h {
 				a.markSeen(x, y)
 			}
@@ -234,16 +245,73 @@ func (a *area) Hint() string {
 		}
 		return "e — " + verb + " the " + name
 	}
+	if a.fuel <= fuelLow {
+		return "🕯 your lantern is guttering — rest beside the glow (mushrooms, pools, daylight) to rekindle it"
+	}
 	if h := a.PortalHint(); h != "" {
 		return h
 	}
 	return "🕯 a cave — follow the glow into the dark · ∩ return to the mouth to leave"
 }
 
+// lanternRadius is how far the light currently throws — full at a brimming
+// lantern, shrinking toward a groping glow as the oil burns down.
+func (a *area) lanternRadius() int {
+	f := float64(a.fuel) / fuelMax
+	return lanternLo + int(math.Round(f*float64(lanternR-lanternLo)))
+}
+
 // HDLight gives the HD renderer a lantern around the player so the cavern falls
-// away into darkness past its reach.
+// away into darkness past its reach — and closes in as the lantern runs dry.
 func (a *area) HDLight() game.Light {
-	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: lanternR, Warm: true}
+	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: a.lanternRadius(), Warm: true}
+}
+
+// isGlow reports whether a prop sheds its own light — daylight shafts and the
+// cave's bioluminescence — the things a lantern can be rekindled beside.
+func isGlow(p game.TileProp) bool {
+	switch p {
+	case game.PropLightShaft, game.PropGlowPool, game.PropCaveShroom,
+		game.PropGemGlow, game.PropGeode, game.PropRelic:
+		return true
+	}
+	return false
+}
+
+// nearGlow reports whether the player stands within a step of any natural light.
+func (a *area) nearGlow() bool {
+	for dy := -2; dy <= game.PlayerH+1; dy++ {
+		for dx := -2; dx <= game.PlayerW+1; dx++ {
+			x, y := a.X+dx, a.Y+dy
+			if x >= 0 && y >= 0 && x < a.w && y < a.h && isGlow(a.Map.At(x, y).Prop) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// burnLantern spends a step of oil, or tops the lantern up where the cave glows,
+// and surfaces the turn when the light starts to gutter or is rekindled.
+func (a *area) burnLantern() {
+	if a.nearGlow() {
+		was := a.fuel
+		if a.fuel += fuelRefill; a.fuel > fuelMax {
+			a.fuel = fuelMax
+		}
+		if a.warnedLow && was <= fuelLow && a.fuel > fuelLow {
+			a.warnedLow = false
+			a.setToast("🕯 the glow rekindles your lantern")
+		}
+		return
+	}
+	if a.fuel -= fuelBurn; a.fuel < 0 {
+		a.fuel = 0
+	}
+	if !a.warnedLow && a.fuel <= fuelLow {
+		a.warnedLow = true
+		a.setToast("🕯 your lantern gutters — make for the glow")
+	}
 }
 
 // window builds a vw×vh view centered on the player in which every cell the

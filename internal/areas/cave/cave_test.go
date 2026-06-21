@@ -58,6 +58,52 @@ func TestGenCaveConnected(t *testing.T) {
 // A real 3-mouth cave system under the fixed overworld seed (origin first).
 var multiCave = [][2]int{{-484, 28}, {-517, 40}, {-505, 45}}
 
+// TestLanternFuel checks the lantern burns down as you walk the dark and its
+// light shrinks with it, that it never falls below the guttering floor, and that
+// resting beside the cave's glow tops it back up.
+func TestLanternFuel(t *testing.T) {
+	st := store.Open(t.TempDir() + "/t.db")
+	a := newArea(st)
+	a.Init(&world.Player{X: multiCave[0][0], Y: multiCave[0][1]})
+	if a.fuel != fuelMax || a.lanternRadius() != lanternR {
+		t.Fatalf("fresh lantern should be full: fuel=%d radius=%d", a.fuel, a.lanternRadius())
+	}
+	step := func(c rune) { a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{c}}) }
+
+	// Drain it hard, far from any glow, and check it shrinks but holds the floor.
+	a.fuel = fuelBurn // pretend we're almost dry
+	for i := 0; i < 30; i++ {
+		step('d')
+		step('a') // pace in place-ish; some steps hit walls, all try to move
+	}
+	if a.lanternRadius() < lanternLo {
+		t.Fatalf("lantern shrank past its floor: radius=%d < %d", a.lanternRadius(), lanternLo)
+	}
+	if !a.warnedLow {
+		t.Fatalf("a near-dry lantern should have warned the player")
+	}
+
+	// Park on a glow source and confirm the oil climbs back.
+	var glow [2]int
+	found := false
+	for y := 0; y < a.h && !found; y++ {
+		for x := 0; x < a.w && !found; x++ {
+			if isGlow(a.Map.At(x, y).Prop) {
+				glow, found = [2]int{x, y}, true
+			}
+		}
+	}
+	if !found {
+		t.Skip("no glow source in this cave to test refuelling")
+	}
+	a.X, a.Y, a.fuel = glow[0]-1, glow[1]-1, fuelBurn
+	before := a.fuel
+	a.burnLantern()
+	if a.fuel <= before {
+		t.Fatalf("resting by the glow should refuel: %d -> %d", before, a.fuel)
+	}
+}
+
 func newArea(st store.Store) *area {
 	return &area{Walker: game.Walker{Ctx: &game.Ctx{
 		World: world.New(), Name: "ada", Theme: ui.Default,
