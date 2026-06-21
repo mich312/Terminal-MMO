@@ -83,9 +83,12 @@ type Model struct {
 	showInfo    bool // generic info panel (/help, /who, /compendium)
 	infoTitle   string
 	infoLines   []string
-	infoScroll  int  // first visible body line, for panels taller than the screen
-	showChar    bool // interactive character panel (/character)
-	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
+	infoScroll  int    // first visible body line, for panels taller than the screen
+	showChar    bool   // interactive character panel (/character)
+	charField   int    // selected field in the character panel: 0 style, 1 color, 2 hat
+	showTrade   bool   // live trade table (modal: keys drive the offer)
+	tradeSel    int    // selected pack slot in the trade panel
+	tradeReq    string // latest player who asked to trade with us (for /accept)
 	quitArmed   bool
 }
 
@@ -223,6 +226,8 @@ func (m *Model) handleWorldEvent(ev world.Event) tea.Cmd {
 				m.addToast(fmt.Sprintf("· %s left ·", ev.Player))
 			}
 		}
+	case world.EventTrade:
+		m.handleTradeEvent(ev)
 	}
 	if m.area != nil {
 		return m.updateArea(WorldEventMsg(ev))
@@ -382,6 +387,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// areas with an open panel (guestbook) grab everything
 	if cap, ok := m.area.(InputCapturer); ok && cap.CapturesInput() {
 		return m, m.updateArea(msg)
+	}
+
+	if m.showTrade {
+		return m, m.handleTradeKey(msg)
 	}
 
 	if m.showInfo {
@@ -569,7 +578,12 @@ func (m *Model) playView() string {
 
 	view := titleBar + "\n" + areaBlock + "\n" + chat + "\n" + status
 
-	if m.showInfo {
+	if m.showTrade {
+		panel := m.tradePanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showInfo {
 		panel := m.infoPanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)

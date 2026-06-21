@@ -87,6 +87,21 @@ func init() {
 			run:     cmdCharacter,
 		},
 		{
+			name: "trade", aliases: []string{"tr"}, usage: "/trade <player>",
+			summary: "ask a nearby player to swap items",
+			run:     cmdTrade,
+		},
+		{
+			name: "accept", usage: "/accept",
+			summary: "accept a pending trade request",
+			run:     cmdAccept,
+		},
+		{
+			name: "decline", usage: "/decline",
+			summary: "decline a pending trade request",
+			run:     cmdDecline,
+		},
+		{
 			name: "clear", usage: "/clear",
 			summary: "clear your chat log",
 			run:     cmdClear,
