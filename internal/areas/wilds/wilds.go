@@ -785,6 +785,41 @@ func (a *area) minimap() string {
 	return th.Panel.Render(b.String())
 }
 
+// HDMinimap supplies the same coarse overview to the HD pixel client, which
+// rasterizes the cells as colored blocks rather than glyphs. It mirrors minimap:
+// one block per few tiles, centered on the player, filling in as you explore.
+func (a *area) HDMinimap() (string, [][]game.MiniCell, bool) {
+	if !a.showMap {
+		return "", nil, false
+	}
+	const (
+		stride = 4
+		halfW  = 19
+		halfH  = 9
+	)
+	rows := make([][]game.MiniCell, 0, 2*halfH+1)
+	for ry := -halfH; ry <= halfH; ry++ {
+		row := make([]game.MiniCell, 0, 2*halfW+1)
+		for rx := -halfW; rx <= halfW; rx++ {
+			switch {
+			case rx == 0 && ry == 0:
+				row = append(row, game.MiniCell{Self: true})
+			case !a.seen(a.wx+rx*stride, a.wy+ry*stride):
+				row = append(row, game.MiniCell{}) // unexplored
+			default:
+				c := a.gen.At(a.wx+rx*stride, a.wy+ry*stride)
+				hex := c.Color
+				if hex == "" {
+					hex = ui.HexDim
+				}
+				row = append(row, game.MiniCell{Hex: hex})
+			}
+		}
+		rows = append(rows, row)
+	}
+	return "Map — The Wilds", rows, true
+}
+
 func footprintWalkable(g *worldgen.Generator, x, y int) bool {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {

@@ -195,6 +195,44 @@ func TestItemPickupAndPersist(t *testing.T) {
 	}
 }
 
+// Hats of the same type never bunch up: the jittered-grid placement keeps any
+// two same-hat finds at least 2*hatMargin tiles apart, so you never stumble on
+// the same hat a few blocks away. Scan a wide swath and check every pair.
+func TestHatsDoNotCluster(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	st := store.Open(t.TempDir() + "/w.db")
+	ctx := &game.Ctx{World: w, Store: st, Name: name, Theme: ui.Default, Hats: map[int]bool{}}
+	a := game.NewArea("wilds", ctx).(*area)
+
+	// Collect every hat in a large window, keyed by type.
+	byType := map[int][][2]int{}
+	const span = 400
+	for x := -span; x <= span; x++ {
+		for y := -span; y <= span; y++ {
+			if h, ok := hatAt(a.gen.At(x, y), x, y); ok {
+				byType[h.idx] = append(byType[h.idx], [2]int{x, y})
+			}
+		}
+	}
+	if len(byType) == 0 {
+		t.Fatal("no hats found in a 800×800 window — placement is too sparse")
+	}
+	const minSpacing = 2 * hatMargin
+	for idx, pts := range byType {
+		for i := 0; i < len(pts); i++ {
+			for j := i + 1; j < len(pts); j++ {
+				dx, dy := pts[i][0]-pts[j][0], pts[i][1]-pts[j][1]
+				if dx*dx+dy*dy < minSpacing*minSpacing {
+					t.Errorf("hat %d at %v and %v are %d² apart, want ≥ %d² (clustered)",
+						idx, pts[i], pts[j], dx*dx+dy*dy, minSpacing*minSpacing)
+				}
+			}
+		}
+	}
+}
+
 // Finding a hat unlocks it, equips it, and persists ownership across a
 // reconnect — the gated find-to-wear mechanic.
 func TestHatPickupUnlocksAndEquips(t *testing.T) {

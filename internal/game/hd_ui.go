@@ -266,6 +266,48 @@ func DrawToast(img *image.RGBA, text string) {
 	pixel.DrawText(img, x, y, s, text, hudToast)
 }
 
+// DrawMinimapPanel draws an area's coarse overview as a grid of colored blocks —
+// the HD twin of the glyph client's 'm' map. Explored cells show their terrain
+// color, the player's block is bright, and unexplored ground is left dark so the
+// chart fills in as you roam.
+func DrawMinimapPanel(img *image.RGBA, title string, rows [][]MiniCell) {
+	if len(rows) == 0 || len(rows[0]) == 0 {
+		return
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 8 * s
+	block := s + 1 // pixels per mini-cell — small, so a wide chart still fits
+	cols := len(rows[0])
+	gridW, gridH := cols*block, len(rows)*block
+
+	footer := "M or move to close"
+	contentW := gridW
+	for _, t := range []string{title, footer} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+	ph := pad*2 + lh + lh/2 + gridH + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+
+	pixel.DrawText(img, ox+pad, oy+pad, s, asciiOnly(title), hudAccent)
+	gx, gy := ox+(pw-gridW)/2, oy+pad+lh+lh/2
+	for r, row := range rows {
+		for c, cell := range row {
+			switch {
+			case cell.Self:
+				fillRect(img, gx+c*block, gy+r*block, block, block, hudBright)
+			case cell.Hex != "":
+				fillRect(img, gx+c*block, gy+r*block, block, block, colorfulToRGBA(mustHex(cell.Hex)))
+			}
+		}
+	}
+	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
 // DrawCharPanel draws the interactive character editor onto an HD frame: a live
 // avatar preview over the cycleable Style / Color / Hat fields, the selected
 // one marked. field is the highlighted row (0..CharFields-1).
