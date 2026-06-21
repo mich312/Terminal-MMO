@@ -645,14 +645,14 @@ func (m *Model) infoPanel() string {
 			end = len(m.infoLines)
 		}
 		rows = append(rows, m.infoLines[start:end]...)
-		up, down := "  ", "  "
+		arrows := ""
 		if start > 0 {
-			up = "↑ "
+			arrows += "↑"
 		}
 		if end < len(m.infoLines) {
-			down = "↓ "
+			arrows += "↓"
 		}
-		footer = fmt.Sprintf("%s%s↑↓ scroll · any other key to close", up, down)
+		footer = fmt.Sprintf("%s scroll · any other key to close", arrows)
 	}
 	rows = append(rows, "", m.theme.Dim.Render(footer))
 	return m.theme.Panel.Render(strings.Join(rows, "\n"))
