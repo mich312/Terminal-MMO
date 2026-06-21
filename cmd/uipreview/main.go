@@ -393,12 +393,12 @@ func homestead() *image.RGBA {
 		}
 	}
 	prop(5, 5, game.PropHouse, "#B07A4A")
-	prop(8, 5, game.PropCrate, "#A8854C")
-	prop(10, 5, game.PropMachine, "#8FB7FF")
-	prop(12, 5, game.PropMachine, "#8FB7FF")
-	prop(14, 5, game.PropCampfire, "#FF7A2C")
-	prop(8, 10, game.PropCrate, "#9C7A45")
-	prop(10, 10, game.PropCrate, "#9C7A45")
+	prop(8, 5, game.PropWorkbench, "#B8924E")
+	prop(10, 5, game.PropSawmill, "#8FB7FF")
+	prop(12, 5, game.PropMill, "#C2A06A")
+	prop(14, 5, game.PropFurnace, "#C46A3A")
+	prop(8, 10, game.PropChest, "#9C7A45")
+	prop(10, 10, game.PropChest, "#9C7A45")
 	prop(17, 10, game.PropStall, "#C98A4A")
 	prop(13, 8, game.PropWell, "#B8BEC6")
 	prop(7, 8, game.PropLamp, "#FFD27A")

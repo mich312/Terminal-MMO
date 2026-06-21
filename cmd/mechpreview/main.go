@@ -84,14 +84,14 @@ func main() {
 	prop(5, 5, game.PropHouse, "#B07A4A")
 
 	// The production line, left to right: workbench, two machines, the forge.
-	prop(8, 5, game.PropCrate, "#A8854C")    // Crafting (Self-Service) workbench
-	prop(10, 5, game.PropMachine, "#8FB7FF") // Sawmill: timber -> planks
-	prop(12, 5, game.PropMachine, "#8FB7FF") // Mill: grain -> flour
-	prop(14, 5, game.PropCampfire, "#FF7A2C") // Ingot Synergy Furnace (glows warm)
+	prop(8, 5, game.PropWorkbench, "#B8924E") // Crafting (Self-Service) workbench
+	prop(10, 5, game.PropSawmill, "#8FB7FF")  // Sawmill: timber -> planks
+	prop(12, 5, game.PropMill, "#C2A06A")     // Mill: grain -> flour
+	prop(14, 5, game.PropFurnace, "#C46A3A")  // Ingot Synergy Furnace (glows warm)
 
 	// Storage and the trade post.
-	prop(8, 10, game.PropCrate, "#9C7A45")  // Cold Storage chest
-	prop(10, 10, game.PropCrate, "#9C7A45") // Cold Storage chest
+	prop(8, 10, game.PropChest, "#9C7A45")  // Cold Storage chest
+	prop(10, 10, game.PropChest, "#9C7A45") // Cold Storage chest
 	prop(17, 10, game.PropStall, "#C98A4A") // Durst Group Concession (trade stall)
 
 	// A well as the yard's centrepiece, with lamps and a brazier for night light.
