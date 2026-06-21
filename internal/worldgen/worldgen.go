@@ -127,13 +127,15 @@ func (g *Generator) At(x, y int) Cell {
 		}
 	}
 	// Forced grassy clearings around each landmark and gate keep them walkable.
+	// Round glades (not hard squares) so a door sits in a natural clearing rather
+	// than an obvious green rectangle in the surrounding biome.
 	for _, lm := range Landmarks {
-		if abs(x-lm.X) <= lm.Clear && abs(y-lm.Y) <= lm.Clear {
+		if g.inClearing(x, y, lm.X, lm.Y, lm.Clear) {
 			return grassCell(g, x, y)
 		}
 	}
 	for _, gt := range Gates {
-		if abs(x-gt.X) <= gt.Clear && abs(y-gt.Y) <= gt.Clear {
+		if g.inClearing(x, y, gt.X, gt.Y, gt.Clear) {
 			return grassCell(g, x, y)
 		}
 	}
@@ -334,6 +336,18 @@ func swampCell(g *Generator, x, y int) Cell {
 		c.Glyph, c.Color = '~', "#3E5E55" // a stagnant pool
 	}
 	return c
+}
+
+// inClearing reports whether (x,y) falls inside the round glade of radius r
+// around (cx,cy). A little low-frequency noise jitters the rim so the clearing
+// meanders like a natural glade instead of forming a clean disc (or the old
+// hard square). The jitter is under a tile, so the door and the cells right
+// around it always stay inside — and connectivity is guaranteed by the forced
+// trails regardless — so reachability is never at risk.
+func (g *Generator) inClearing(x, y, cx, cy, r int) bool {
+	dx, dy := float64(x-cx), float64(y-cy)
+	edge := float64(r) + 0.9*(g.fbmAt(float64(x), float64(y), 0x6A7E, 0.35, 2)-0.5)
+	return math.Hypot(dx, dy) <= edge
 }
 
 // onPath reports whether (x,y) lies on a forced trail: a 3-wide walkable band
