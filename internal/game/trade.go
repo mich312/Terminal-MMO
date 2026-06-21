@@ -95,6 +95,19 @@ func AdjustOffer(ctx *Ctx, item string, delta int) error {
 	return ctx.World.SetOffer(ctx.Name, offer)
 }
 
+// TradePackSize is how many distinct item stacks the player could offer.
+func TradePackSize(ctx *Ctx) int { return len(packRows(ctx.Inventory)) }
+
+// OfferSlot stages `delta` of the pack's slot-th stack onto the table. Out-of-
+// range slots are ignored, so the caller can clamp lazily.
+func OfferSlot(ctx *Ctx, slot, delta int) error {
+	pack := packRows(ctx.Inventory)
+	if slot < 0 || slot >= len(pack) {
+		return nil
+	}
+	return AdjustOffer(ctx, pack[slot].Item.ID, delta)
+}
+
 // ApplyCompletedTrade drains a just-finished swap and applies it to the player's
 // inventory (and the store), returning a human summary. ok is false if there's
 // nothing to apply.

@@ -98,6 +98,13 @@ portals.
     repairs their own.
   - *Sunken Gate → The Vault* — **co-op**: everyone presses `e` to pool
     offerings; when the pool fills, the gate opens for the whole community.
+- **Trading.** Stand next to another player and `/trade <name>`; they `/accept`,
+  and a table opens for both. Each lays items from their pack (←→ pick, `+`/`-`
+  stage), and once **both** press `r` (ready) the swap commits atomically — items
+  move in both inventories and persist. Changing an offer clears both ready
+  flags, and walking off or disconnecting cancels the table. Negotiation lives in
+  the shared world; each session applies its own half, so it works even with
+  persistence off.
 
 ### Hand-built areas (reached from Wilds landmarks)
 

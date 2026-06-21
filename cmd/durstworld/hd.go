@@ -58,6 +58,7 @@ const (
 	hdPanelHelp
 	hdPanelWho
 	hdPanelMenu
+	hdPanelTrade
 )
 
 // compScrollPage is how many lines a page-up/down jumps in the compendium.
@@ -235,6 +236,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		uiField    int           // selected field in the character panel
 		menuSel    int           // selected row in the Tab menu
 		compScroll int           // first visible line in the compendium panel
+		tradeSel   int           // selected pack slot in the trade panel
+		tradeReq   string        // latest player who asked us to trade (for /accept)
 		enteredAt  = time.Now()  // when the current area was entered (for the title flare)
 		chatLog    []game.HDLine // recent chat lines
 		chatInput  string        // text being typed
@@ -320,6 +323,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawWhoPanel(img, ctx)
 		case hdPanelMenu:
 			game.DrawMenuPanel(img, menuSel)
+		case hdPanelTrade:
+			if v, ok := game.TradeViewFor(ctx, tradeSel); ok {
+				game.DrawTradePanel(img, v)
+			}
 		}
 
 		var buf bytes.Buffer
@@ -403,6 +410,29 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				openMenuSel()
 			case "q":
 				uiPanel = hdPanelNone
+			}
+			return true
+		}
+		// The trade table is driven by keys: pick from your pack, stage an offer,
+		// toggle ready, or cancel. It reads live world state, so no local copy.
+		if uiPanel == hdPanelTrade {
+			n := game.TradePackSize(ctx)
+			switch key {
+			case "left":
+				if n > 0 {
+					tradeSel = (tradeSel + n - 1) % n
+				}
+			case "right":
+				if n > 0 {
+					tradeSel = (tradeSel + 1) % n
+				}
+			case "+", "=":
+				game.OfferSlot(ctx, tradeSel, +1)
+			case "-", "_":
+				game.OfferSlot(ctx, tradeSel, -1)
+			case "r", "\r", "\n":
+				snap, _ := w.TradeSnapshot(name)
+				w.SetReady(name, !snap.YouReady)
 			}
 			return true
 		}
@@ -498,8 +528,43 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
 				}
 			}
+		case "trade", "tr":
+			if len(f) < 2 {
+				appendChat(game.HDLine{Text: "usage: /trade <player> - stand next to them", Col: hudDim})
+				break
+			}
+			target, ok := "", false
+			la := strings.ToLower(f[1])
+			for _, p := range w.PlayersInArea(areaID) {
+				if p.Name != name && strings.ToLower(p.Name) == la {
+					target, ok = p.Name, true
+				}
+			}
+			if !ok {
+				appendChat(game.HDLine{Text: "no other player here named " + f[1], Col: hudDim})
+			} else if err := w.RequestTrade(name, target); err != nil {
+				appendChat(game.HDLine{Text: err.Error(), Col: hudDim})
+			} else {
+				appendChat(game.HDLine{Text: "asked " + target + " to trade", Col: hudAccent})
+			}
+		case "accept":
+			if tradeReq == "" {
+				appendChat(game.HDLine{Text: "no trade request to accept", Col: hudDim})
+				break
+			}
+			from := tradeReq
+			tradeReq = ""
+			if err := w.AcceptTrade(name, from); err != nil {
+				appendChat(game.HDLine{Text: err.Error(), Col: hudDim})
+			}
+		case "decline":
+			if tradeReq != "" {
+				w.DeclineTrade(name, tradeReq)
+				tradeReq = ""
+				appendChat(game.HDLine{Text: "declined the trade", Col: hudDim})
+			}
 		default:
-			appendChat(game.HDLine{Text: "press ? for help - commands: /me /w /who /goto", Col: hudDim})
+			appendChat(game.HDLine{Text: "press ? for help - commands: /me /w /who /goto /trade", Col: hudDim})
 		}
 	}
 
@@ -597,7 +662,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			hud()
 			return true
 		case b == 'q' || b == 'Q': // q closes an open panel, else quits
-			if uiPanel != hdPanelNone {
+			if uiPanel == hdPanelTrade {
+				w.CancelTrade(name) // the cancel event closes the table for both
+				draw()
+			} else if uiPanel != hdPanelNone {
 				uiPanel = hdPanelNone
 				draw()
 			} else {
@@ -680,6 +748,28 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			// world each frame, so they don't need the rest.
 			if ev.Type == world.EventSlide || ev.Type == world.EventDeck || ev.Type == world.EventChat {
 				area, _ = area.Update(game.WorldEventMsg(ev))
+				draw()
+			}
+			if ev.Type == world.EventTrade {
+				switch ev.Detail {
+				case world.TradeRequest:
+					tradeReq = ev.Player
+					appendChat(game.HDLine{Text: ev.Player + " wants to trade - /accept or /decline", Col: hudAccent})
+				case world.TradeOpen:
+					uiPanel, tradeSel, tradeReq = hdPanelTrade, 0, ""
+				case world.TradeDone:
+					if s, ok := game.ApplyCompletedTrade(ctx); ok {
+						appendChat(game.HDLine{Text: s, Col: hudAccent})
+					}
+					uiPanel = hdPanelNone
+				case world.TradeCancel:
+					if uiPanel == hdPanelTrade {
+						uiPanel = hdPanelNone
+					}
+					appendChat(game.HDLine{Text: "trade cancelled", Col: hudDim})
+				case world.TradeDeclined:
+					appendChat(game.HDLine{Text: ev.Player + " declined to trade", Col: hudDim})
+				}
 				draw()
 			}
 		case win = <-winCh:
