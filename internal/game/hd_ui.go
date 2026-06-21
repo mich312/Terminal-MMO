@@ -55,7 +55,7 @@ func DrawHUD(img *image.RGBA, areaName, hint string) {
 		pixel.DrawText(img, 4*s+pixel.TextWidth(areaName+"  ", s), y, s, asciiOnly(hint), hudWhite)
 	}
 	pixel.DrawText(img, 4*s, y+lh, s,
-		"move  e use  enter chat  c char  i bag  q quit", hudDim)
+		"move  e use  enter chat  c char  i bag  ? help  q quit", hudDim)
 }
 
 // panelBox centers a pw×ph panel in the play area above the HUD bar, clamping it
@@ -343,6 +343,169 @@ func DrawInventoryPanel(img *image.RGBA, ctx *Ctx) {
 
 	footer := "i or q: close"
 	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+// helpRow is a line in a help column: a heading (head=true) or a key→desc pair.
+type helpRow struct {
+	key, desc string
+	head      bool
+}
+
+// width returns the row's rendered width at scale s (key column padded so the
+// monospace descriptions line up).
+func (r helpRow) width(s int) int {
+	if r.head {
+		return pixel.TextWidth(r.desc, s)
+	}
+	return pixel.TextWidth(r.key+"   "+asciiOnly(r.desc), s)
+}
+
+// draw paints the row at (x,y): headings in accent, pairs as a bright key and a
+// dim description.
+func (r helpRow) draw(img *image.RGBA, x, y, s int) {
+	switch {
+	case r.head:
+		pixel.DrawText(img, x, y, s, r.desc, hudAccent)
+	case r.key != "" || r.desc != "":
+		pixel.DrawText(img, x, y, s, r.key, hudBright)
+		pixel.DrawText(img, x+pixel.TextWidth(r.key+"   ", s), y, s, asciiOnly(r.desc), hudDim)
+	}
+}
+
+// DrawHelpPanel draws the "?" reference onto an HD frame in two columns —
+// controls on the left, chat commands on the right — both from the shared
+// Controls() / CommandReference() source, so the default client is as self-
+// documenting as the glyph client. Two columns keep it short enough to fit a
+// wide HD frame. Any key closes it (handled in the input loop).
+func DrawHelpPanel(img *image.RGBA, ctx *Ctx) {
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 8 * s
+	colGap := 6 * s
+
+	// Left: controls, grouped. Key column padded to the widest control key.
+	keyW := 0
+	for _, g := range Controls() {
+		for _, c := range g.Items {
+			if len(c.Keys) > keyW {
+				keyW = len(c.Keys)
+			}
+		}
+	}
+	var left []helpRow
+	for _, g := range Controls() {
+		left = append(left, helpRow{desc: g.Title, head: true})
+		for _, c := range g.Items {
+			left = append(left, helpRow{key: padRight(c.Keys, keyW), desc: c.Desc})
+		}
+	}
+
+	// Right: chat commands. The left column explains the controls; here we only
+	// need to reveal that the commands exist, so the usage strings (self-
+	// descriptive, e.g. "/me <action>") stand alone — keeping the column narrow
+	// enough for a wide HD frame.
+	right := []helpRow{{desc: "Chat commands", head: true}}
+	for _, c := range CommandReference() {
+		right = append(right, helpRow{key: c[0]})
+	}
+
+	leftW, rightW := 0, 0
+	for _, r := range left {
+		if w := r.width(s); w > leftW {
+			leftW = w
+		}
+	}
+	for _, r := range right {
+		if w := r.width(s); w > rightW {
+			rightW = w
+		}
+	}
+	bodyLines := len(left)
+	if len(right) > bodyLines {
+		bodyLines = len(right)
+	}
+
+	footer := "any key to close"
+	ph := pad*2 + lh + lh/2 + bodyLines*lh + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, leftW+colGap+rightW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+
+	pixel.DrawText(img, ox+pad, oy+pad, s, "CONTROLS", hudAccent)
+	bodyY := oy + pad + lh + lh/2
+	leftX, rightX := ox+pad, ox+pad+leftW+colGap
+	for i, r := range left {
+		r.draw(img, leftX, bodyY+i*lh, s)
+	}
+	for i, r := range right {
+		r.draw(img, rightX, bodyY+i*lh, s)
+	}
+	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+// DrawWhoPanel lists everyone online and where they are — the HD answer to Tab
+// and /who, which the default client otherwise had no way to show.
+func DrawWhoPanel(img *image.RGBA, ctx *Ctx) {
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 8 * s
+	gap := "  "
+
+	players := ctx.World.AllPlayers()
+	type prow struct {
+		name, where string
+		self        bool
+	}
+	rows := make([]prow, 0, len(players))
+	for _, p := range players {
+		where := DisplayName(p.Area)
+		if p.Area == "" {
+			where = "connecting"
+		}
+		rows = append(rows, prow{asciiOnly(p.Name), asciiOnly("- " + where), p.Name == ctx.Name})
+	}
+
+	title := fmt.Sprintf("ONLINE  -  %d", len(players))
+	footer := "any key to close"
+	contentW := pixel.TextWidth(title, s)
+	if w := pixel.TextWidth(footer, s); w > contentW {
+		contentW = w
+	}
+	for _, r := range rows {
+		w := pixel.TextWidth(r.name+"  (you)"+gap+r.where, s)
+		if w > contentW {
+			contentW = w
+		}
+	}
+	bodyRows := len(rows)
+	if bodyRows == 0 {
+		bodyRows = 1
+	}
+	ph := pad*2 + lh + lh/2 + bodyRows*lh + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+
+	y := oy + pad
+	pixel.DrawText(img, ox+pad, y, s, title, hudAccent)
+	y += lh + lh/2
+	if len(rows) == 0 {
+		pixel.DrawText(img, ox+pad, y, s, "nobody here yet", hudDim)
+		y += lh
+	}
+	for _, r := range rows {
+		name := r.name
+		col := hudWhite
+		if r.self {
+			name += "  (you)"
+			col = hudBright
+		}
+		pixel.DrawText(img, ox+pad, y, s, name, col)
+		pixel.DrawText(img, ox+pad+pixel.TextWidth(name+gap, s), y, s, r.where, hudDim)
+		y += lh
+	}
+	y += lh / 2
+	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
 }
 
 // drawGem paints a small diamond loot icon (matching the in-world gem), with a

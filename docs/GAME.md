@@ -129,6 +129,7 @@ live slide index resets).
 | n / p | next/previous slide while presenting |
 | Tab | who's online |
 | c | character editor (HD); `i` inventory (HD) |
+| ? | help — every key and chat command, in one panel |
 | q / Ctrl+C | quit (press twice) |
 
 ### Chat commands

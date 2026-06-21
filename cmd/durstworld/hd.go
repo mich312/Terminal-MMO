@@ -55,6 +55,8 @@ const (
 	hdPanelNone = iota
 	hdPanelChar
 	hdPanelInv
+	hdPanelHelp
+	hdPanelWho
 )
 
 // setupAvatar restores a player's persisted color/style/accessory, or — on a
@@ -295,6 +297,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawCharPanel(img, ctx, uiField)
 		case hdPanelInv:
 			game.DrawInventoryPanel(img, ctx)
+		case hdPanelHelp:
+			game.DrawHelpPanel(img, ctx)
+		case hdPanelWho:
+			game.DrawWhoPanel(img, ctx)
 		}
 
 		var buf bytes.Buffer
@@ -323,28 +329,36 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			framesSent, float64(sent)/1024, float64(sent)/1024/dur, dur))
 	}
 
-	// uiKey handles HD interface keys: 'c'/'i' toggle the character/inventory
-	// panels, and while a panel is open the arrows navigate/edit it and every
-	// other key is swallowed. Returns whether the key was consumed by the UI.
+	// uiKey handles HD interface keys: 'c'/'i'/'?'/Tab toggle the character,
+	// inventory, help and who panels. The character panel is interactive (arrows
+	// edit it); help/who/inventory are passive and any key dismisses them.
+	// Returns whether the key was consumed by the UI.
+	toggle := func(p int) bool {
+		if uiPanel == p {
+			uiPanel = hdPanelNone
+		} else {
+			uiPanel, uiField = p, 0
+		}
+		return true
+	}
 	uiKey := func(key string) bool {
 		switch key {
 		case "c":
-			if uiPanel == hdPanelChar {
-				uiPanel = hdPanelNone
-			} else {
-				uiPanel, uiField = hdPanelChar, 0
-			}
-			return true
+			return toggle(hdPanelChar)
 		case "i":
-			if uiPanel == hdPanelInv {
-				uiPanel = hdPanelNone
-			} else {
-				uiPanel = hdPanelInv
-			}
-			return true
+			return toggle(hdPanelInv)
+		case "?":
+			return toggle(hdPanelHelp)
+		case "tab":
+			return toggle(hdPanelWho)
 		}
 		if uiPanel == hdPanelNone {
 			return false
+		}
+		// Passive panels: any key closes them (and is otherwise swallowed).
+		if uiPanel == hdPanelHelp || uiPanel == hdPanelWho || uiPanel == hdPanelInv {
+			uiPanel = hdPanelNone
+			return true
 		}
 		switch key {
 		case "up":
@@ -377,6 +391,16 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			return
 		}
 		switch strings.ToLower(f[0]) {
+		case "help", "h":
+			uiPanel = hdPanelHelp
+		case "who":
+			uiPanel = hdPanelWho
+		case "where":
+			if self, ok := w.Self(name); ok {
+				appendChat(game.HDLine{
+					Text: fmt.Sprintf("%s - (%d, %d)", game.DisplayName(areaID), self.X, self.Y),
+					Col:  hudDim})
+			}
 		case "me":
 			if len(f) > 1 {
 				w.Emote(name, strings.Join(f[1:], " "))
@@ -402,7 +426,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				}
 			}
 		default:
-			appendChat(game.HDLine{Text: "try chat, /me, /w <name> msg, /goto <area>", Col: hudDim})
+			appendChat(game.HDLine{Text: "press ? for help - commands: /me /w /who /goto", Col: hudDim})
 		}
 	}
 
@@ -506,6 +530,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				hud()
 				return true
 			}
+		case b == '\t': // Tab toggles the who's-online panel
+			key = "tab"
 		default:
 			key = string(b)
 		}

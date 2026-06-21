@@ -56,10 +56,12 @@ WASD or arrow keys to move, `Y U B N` for diagonals, Shift/uppercase to run,
 `e` to pick things up, `q` to quit. It shares the live world, so you and
 glyph-client players see each other. Because HD is the default client, the
 **UI is drawn into the pixel frame**: a status/hint bar, pickup toasts,
-**chat** (`Enter` to type — plain text, or `/me`, `/w`, `/goto`; the log shows
-recent lines and fades when idle), and single-key panels — `c` opens the
-interactive **character** editor (arrows to cycle body / color / hat) and `i`
-opens your **inventory**. It bypasses bubbletea and streams sixel with delta
+**chat** (`Enter` to type — plain text, or `/me`, `/w`, `/who`, `/goto`; the log
+shows recent lines and fades when idle), and single-key panels — `c` opens the
+interactive **character** editor (arrows to cycle body / color / hat), `i`
+opens your **inventory**, `Tab` shows who's online, and `?` opens a **help**
+panel that lists every key and chat command (so nothing is hidden behind a key
+you have to guess). It bypasses bubbletea and streams sixel with delta
 updates (only the changed region each frame). Background and rationale:
 [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 
@@ -75,6 +77,7 @@ updates (only the changed region each frame). Background and rationale:
 | e | pick up a `◆` item in the Wilds · sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
 | n / p | next/previous slide while presenting from your lectern |
 | Tab | who's online |
+| ? | help — every key and chat command, in one panel |
 | q / Ctrl+C | quit (press twice) |
 
 You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near
