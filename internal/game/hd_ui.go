@@ -118,6 +118,14 @@ func DrawPortalLabels(img *image.RGBA, tm *TileMap, scale int) {
 			}
 			tw := pixel.TextWidth(name, s)
 			lx := vx*scale + scale/2 - tw/2
+			// Keep the whole label (plus its shaded backing) on-screen, so a portal
+			// near a left/right edge doesn't get its name clipped.
+			if hi := W - tw - 2*s; lx > hi {
+				lx = hi
+			}
+			if lx < 2*s {
+				lx = 2 * s
+			}
 			// The portal art is bottom-aligned on the tile and overhangs ~2 tiles
 			// upward; sit the label just above that so it never covers the gate.
 			portalTop := (vy+1)*scale - 12*apx
