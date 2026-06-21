@@ -58,6 +58,7 @@ const (
 	hdPanelHelp
 	hdPanelWho
 	hdPanelMenu
+	hdPanelCraft
 )
 
 // areaFlare is how long an area's name stays emphasized after you enter it,
@@ -231,6 +232,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		uiPanel    = hdPanelNone // which on-frame UI panel is open
 		uiField    int           // selected field in the character panel
 		menuSel    int           // selected row in the Tab menu
+		craftSel   int           // selected recipe in the crafting panel
 		enteredAt  = time.Now()  // when the current area was entered (for the title flare)
 		chatLog    []game.HDLine // recent chat lines
 		chatInput  string        // text being typed
@@ -316,6 +318,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawWhoPanel(img, ctx)
 		case hdPanelMenu:
 			game.DrawMenuPanel(img, menuSel)
+		case hdPanelCraft:
+			game.DrawCraftPanel(img, ctx, craftSel)
 		}
 
 		var buf bytes.Buffer
@@ -362,10 +366,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case 0:
 			uiPanel = hdPanelInv
 		case 1:
-			uiPanel, uiField = hdPanelChar, 0
+			uiPanel, craftSel = hdPanelCraft, 0
 		case 2:
-			uiPanel = hdPanelWho
+			uiPanel, uiField = hdPanelChar, 0
 		case 3:
+			uiPanel = hdPanelWho
+		case 4:
 			uiPanel = hdPanelHelp
 		}
 	}
@@ -375,6 +381,13 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			return toggle(hdPanelChar)
 		case "i":
 			return toggle(hdPanelInv)
+		case "k":
+			if uiPanel == hdPanelCraft {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel, craftSel = hdPanelCraft, 0
+			}
+			return true
 		case "?":
 			return toggle(hdPanelHelp)
 		case "tab":
@@ -396,6 +409,23 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				menuSel = (menuSel + 1) % len(game.MenuEntries())
 			case "\r", "\n":
 				openMenuSel()
+			case "q":
+				uiPanel = hdPanelNone
+			}
+			return true
+		}
+		// Crafting is interactive: arrows pick a recipe, e crafts the selection.
+		if uiPanel == hdPanelCraft {
+			n := len(game.Recipes)
+			switch key {
+			case "up":
+				craftSel = (craftSel + n - 1) % n
+			case "down":
+				craftSel = (craftSel + 1) % n
+			case "e", "\r", "\n":
+				if craftSel >= 0 && craftSel < n {
+					game.Craft(ctx, game.Recipes[craftSel])
+				}
 			case "q":
 				uiPanel = hdPanelNone
 			}

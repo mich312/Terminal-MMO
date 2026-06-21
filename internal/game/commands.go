@@ -87,6 +87,11 @@ func init() {
 			run:     cmdCharacter,
 		},
 		{
+			name: "craft", aliases: []string{"k"}, usage: "/craft",
+			summary: "open the workbench and craft from your pack",
+			run:     cmdCraft,
+		},
+		{
 			name: "clear", usage: "/clear",
 			summary: "clear your chat log",
 			run:     cmdClear,
@@ -370,9 +375,16 @@ func cmdInventory(m *Model, args []string) tea.Cmd {
 }
 
 func cmdCharacter(m *Model, args []string) tea.Cmd {
-	m.showInfo, m.showPlayers = false, false
+	m.showInfo, m.showPlayers, m.showCraft = false, false, false
 	m.showChar = true
 	m.charField = 0
+	return nil
+}
+
+func cmdCraft(m *Model, args []string) tea.Cmd {
+	m.showInfo, m.showPlayers, m.showChar = false, false, false
+	m.showCraft = true
+	m.craftSel = 0
 	return nil
 }
 

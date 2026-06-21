@@ -80,6 +80,8 @@ type Model struct {
 	infoLines   []string
 	showChar    bool // interactive character panel (/character)
 	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
+	showCraft   bool // interactive crafting panel (/craft)
+	craftSel    int  // selected recipe in the crafting panel
 	quitArmed   bool
 }
 
@@ -289,6 +291,81 @@ func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// handleCraftKey drives the interactive crafting panel: ↑↓ pick a recipe, e (or
+// enter) crafts the selection, esc/q close.
+func (m *Model) handleCraftKey(msg tea.KeyMsg) tea.Cmd {
+	n := len(Recipes)
+	switch msg.String() {
+	case "esc", "q":
+		m.showCraft = false
+	case "up", "k":
+		if n > 0 {
+			m.craftSel = (m.craftSel + n - 1) % n
+		}
+	case "down", "j", "tab":
+		if n > 0 {
+			m.craftSel = (m.craftSel + 1) % n
+		}
+	case "e", "enter":
+		if m.craftSel >= 0 && m.craftSel < n {
+			r := Recipes[m.craftSel]
+			if Craft(m.ctx, r) {
+				m.addSystemLine("crafted " + r.Name)
+			} else {
+				m.addSystemLine("not enough materials for " + r.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// craftPanel renders the interactive Crafting (Self-Service) station: a recipe
+// list with a live craftable count, the selected recipe's inputs (green when the
+// pack can afford each, amber when short) and its yield.
+func (m *Model) craftPanel() string {
+	inv := m.ctx.Inventory
+	rows := []string{m.theme.PanelTitle.Render("Crafting") + m.theme.Dim.Render("  (Self-Service)"), ""}
+	for i, r := range Recipes {
+		can := Craftable(r, inv)
+		count := m.theme.Accent.Render(fmt.Sprintf("×%d", can))
+		if can == 0 {
+			count = m.theme.Dim.Render("×0")
+		}
+		name := padRight(r.Name, 14)
+		if i == m.craftSel {
+			rows = append(rows, fmt.Sprintf("%s %s %s %s",
+				m.theme.Accent.Render("►"), m.theme.Bright.Render(name),
+				m.theme.Dim.Render(padRight(RecipeNeeds(r), 26)), count))
+		} else {
+			rows = append(rows, fmt.Sprintf("  %s %s %s",
+				m.theme.ChatText.Render(name),
+				m.theme.Dim.Render(padRight(RecipeNeeds(r), 26)), count))
+		}
+	}
+
+	// Detail for the selection: blurb, inputs with affordability, yield.
+	if m.craftSel >= 0 && m.craftSel < len(Recipes) {
+		cur := Recipes[m.craftSel]
+		rows = append(rows, "", "  "+m.theme.Dim.Render("\""+cur.Blurb+"\""))
+		var needs []string
+		for _, in := range cur.In {
+			it, _ := ItemByID(in.Item)
+			seg := fmt.Sprintf("%d %s", in.N, it.Name)
+			if inv[in.Item] < in.N {
+				needs = append(needs, m.theme.Warn.Render(seg))
+			} else {
+				needs = append(needs, m.theme.Fg(lipgloss.Color("#7BD88F")).Render(seg))
+			}
+		}
+		out, _ := ItemByID(cur.Out)
+		rows = append(rows, "  "+m.theme.Dim.Render("needs ")+strings.Join(needs, m.theme.Dim.Render(" + ")))
+		rows = append(rows, "  "+m.theme.Dim.Render("yields ")+
+			m.theme.ChatText.Render(fmt.Sprintf("%s ×%d", out.Name, cur.OutN)))
+	}
+	rows = append(rows, "", m.theme.Dim.Render("↑↓ choose · e craft · esc close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
 // updateArea runs the area's Update and handles a possible transition.
 func (m *Model) updateArea(msg tea.Msg) tea.Cmd {
 	next, cmd := m.area.Update(msg)
@@ -366,6 +443,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.showChar {
 		return m, m.handleCharKey(msg)
+	}
+
+	if m.showCraft {
+		return m, m.handleCraftKey(msg)
 	}
 
 	if m.showPlayers {
@@ -527,6 +608,11 @@ func (m *Model) playView() string {
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	} else if m.showChar {
 		panel := m.charPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showCraft {
+		panel := m.craftPanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)

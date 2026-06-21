@@ -17,6 +17,7 @@ import (
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
+	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -44,6 +45,7 @@ func main() {
 	ui.Now = func() time.Time { return at }
 
 	write("uishots/1-crafting.png", panelOver(craftPanel))
+	write("uishots/5-crafting-real.png", panelOver(realCraftPanel))
 	write("uishots/2-machine.png", panelOver(machinePanel))
 	write("uishots/3-build.png", buildFrame())
 	write("uishots/4-trade.png", panelOver(tradePanel))
@@ -68,6 +70,19 @@ func panelOver(draw func(*image.RGBA)) *image.RGBA {
 	pixel.Shade(img, 0, 0, W, H, 0.5)
 	draw(img)
 	return img
+}
+
+// realCraftPanel renders the actual shipped game.DrawCraftPanel with a seeded
+// pack, so the preview shows the real interface (not the hand-laid mock above).
+func realCraftPanel(img *image.RGBA) {
+	ctx := &game.Ctx{
+		Name:  "steurer",
+		Store: store.Open(""),
+		Inventory: map[string]int{
+			"wood": 7, "grain": 5, "nugget": 1, "herb": 3, "mushroom": 2, "amber": 0,
+		},
+	}
+	game.DrawCraftPanel(img, ctx, 0)
 }
 
 // ── small drawing helpers ──────────────────────────────────────────────────

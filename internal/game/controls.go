@@ -36,6 +36,7 @@ func Controls() []ControlGroup {
 		{"Panels", []Control{
 			{"c", "character editor"},
 			{"i", "inventory & hats"},
+			{"k", "crafting bench"},
 			{"Tab", "who's online"},
 			{"?", "this help"},
 			{"q", "quit (press twice)"},
@@ -67,6 +68,7 @@ type MenuEntry struct {
 func MenuEntries() []MenuEntry {
 	return []MenuEntry{
 		{"Inventory", "i"},
+		{"Crafting", "k"},
 		{"Character", "c"},
 		{"Who's online", ""},
 		{"Controls & Help", "?"},

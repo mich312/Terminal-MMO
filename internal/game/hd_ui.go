@@ -328,6 +328,145 @@ func DrawCharPanel(img *image.RGBA, ctx *Ctx, field int) {
 	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
 }
 
+var (
+	hudGood = color.RGBA{0x7B, 0xD8, 0x8F, 0xFF}
+	hudWarn = color.RGBA{0xFF, 0xB4, 0x54, 0xFF}
+)
+
+// itemSwatch draws an item's gem icon (by hex color) at (x,y), box wide.
+func itemSwatch(img *image.RGBA, x, y, box int, hex string) {
+	c := mustHex(hex)
+	drawGem(img, x, y, box,
+		colorfulToRGBA(c),
+		colorfulToRGBA(c.BlendLab(spriteWhite, 0.55).Clamped()))
+}
+
+// invOf returns the ctx's live inventory, nil-safe.
+func invOf(ctx *Ctx) map[string]int {
+	if ctx.Inventory == nil {
+		return map[string]int{}
+	}
+	return ctx.Inventory
+}
+
+// DrawCraftPanel draws the Crafting (Self-Service) station onto an HD frame: the
+// recipe list with a live craftable count per row, and a detail block for the
+// selected recipe — its blurb, its inputs (green when the pack can afford each,
+// amber when short) and its yield. sel is the highlighted row.
+func DrawCraftPanel(img *image.RGBA, ctx *Ctx, sel int) {
+	rs := Recipes
+	if len(rs) == 0 {
+		return
+	}
+	if sel < 0 {
+		sel = 0
+	}
+	if sel >= len(rs) {
+		sel = len(rs) - 1
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 9 * s
+	box := 9 * s
+	inv := invOf(ctx)
+	cur := rs[sel]
+
+	footer := "up/down choose   e craft   q close"
+
+	// Column geometry: a name column wide enough for the longest recipe, then a
+	// needs column, then a right-aligned [xN] craftable count.
+	nameCol, needsCol := 0, 0
+	for _, r := range rs {
+		if w := pixel.TextWidth(r.Name, s); w > nameCol {
+			nameCol = w
+		}
+		if w := pixel.TextWidth(RecipeNeeds(r), s); w > needsCol {
+			needsCol = w
+		}
+	}
+	rowW := 10*s + nameCol + 8*s + needsCol + 8*s + pixel.TextWidth("[x000]", s)
+
+	blurb := "\"" + cur.Blurb + "\""
+	contentW := rowW
+	for _, t := range []string{"CRAFTING  (Self-Service)", footer, blurb} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+
+	// list + divider + blurb + needs + yields + count/hint + footer
+	ph := pad*2 + (lh + lh/2) + len(rs)*lh + (lh/2 + lh) + lh + lh + lh + (lh/2 + lh)
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	x := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, x, oy+pad, s, "CRAFTING", hudAccent)
+	pixel.DrawText(img, x+pixel.TextWidth("CRAFTING  ", s), oy+pad, s, "(Self-Service)", hudDim)
+
+	y := oy + pad + lh + lh/2
+	needsX := x + 10*s + nameCol + 8*s
+	for i, r := range rs {
+		can := Craftable(r, inv)
+		col, cc := hudWhite, hudGood
+		if can == 0 {
+			cc = hudDim
+		}
+		if i == sel {
+			pixel.Shade(img, x-2*s, y-2*s, pw-2*pad+4*s, lh, 0.3)
+			pixel.DrawText(img, x-s, y, s, ">", hudAccent)
+			col = hudBright
+		}
+		pixel.DrawText(img, x+10*s, y, s, r.Name, col)
+		pixel.DrawText(img, needsX, y, s, RecipeNeeds(r), hudDim)
+		count := "[x" + itoa(can) + "]"
+		pixel.DrawText(img, right-pixel.TextWidth(count, s), y, s, count, cc)
+		y += lh
+	}
+
+	// divider
+	y += lh / 4
+	pixel.Shade(img, x, y, pw-2*pad, s, 0.5)
+	y += lh/2 + lh/4
+
+	// selected detail: blurb, the inputs with affordability, the yield.
+	pixel.DrawText(img, x, y, s, blurb, hudDim)
+	y += lh + lh/4
+	pixel.DrawText(img, x, y, s, "needs:", hudDim)
+	ix := x + pixel.TextWidth("needs:  ", s)
+	for _, in := range cur.In {
+		it, _ := ItemByID(in.Item)
+		itemSwatch(img, ix, y, box, it.Hex)
+		ix += box + 3*s
+		label := itoa(in.N) + " " + it.Name
+		lc := hudGood
+		if inv[in.Item] < in.N {
+			lc = hudWarn
+		}
+		pixel.DrawText(img, ix, y, s, label, lc)
+		ix += pixel.TextWidth(label+"   ", s)
+	}
+	y += lh
+	out, _ := ItemByID(cur.Out)
+	pixel.DrawText(img, x, y, s, "yields:", hudDim)
+	yx := x + pixel.TextWidth("yields:  ", s)
+	itemSwatch(img, yx, y, box, out.Hex)
+	pixel.DrawText(img, yx+box+3*s, y, s, out.Name+" x"+itoa(cur.OutN), hudWhite)
+
+	// footer + craft button
+	fy := oy + ph - pad - lh + lh/4
+	pixel.DrawText(img, x, fy, s, footer, hudDim)
+	if n := Craftable(cur, inv); n > 0 {
+		btn := "[ e CRAFT ]"
+		bw := pixel.TextWidth(btn, s) + 8*s
+		bx := right - bw
+		pixel.Shade(img, bx, fy-3*s, bw, lh, 0.4)
+		pixel.Frame(img, bx, fy-3*s, bw, lh)
+		pixel.DrawText(img, bx+4*s, fy, s, btn, hudGood)
+	}
+}
+
 // DrawInventoryPanel draws the player's pack: their hero (a large avatar that
 // grows with the screen) with name and worn hat on the left, and a gem-iconed
 // item list with owned hats on the right.

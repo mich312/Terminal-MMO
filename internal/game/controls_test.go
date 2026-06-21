@@ -50,10 +50,10 @@ func TestControlsCoverCoreKeys(t *testing.T) {
 // index to a panel, so the entry list's length and order are load-bearing.
 func TestMenuEntriesShape(t *testing.T) {
 	e := MenuEntries()
-	if len(e) != 4 {
-		t.Fatalf("MenuEntries has %d rows; the HD menu switch expects 4", len(e))
+	if len(e) != 5 {
+		t.Fatalf("MenuEntries has %d rows; the HD menu switch expects 5", len(e))
 	}
-	want := []string{"Inventory", "Character", "Who's online", "Controls & Help"}
+	want := []string{"Inventory", "Crafting", "Character", "Who's online", "Controls & Help"}
 	for i, w := range want {
 		if e[i].Label != w {
 			t.Errorf("row %d = %q, want %q (order is load-bearing)", i, e[i].Label, w)
@@ -93,6 +93,12 @@ func TestHDHelpAndWhoPanelsRender(t *testing.T) {
 	}{
 		{"help", func(img *image.RGBA) { DrawHelpPanel(img, ctx) }},
 		{"who", func(img *image.RGBA) { DrawWhoPanel(img, ctx) }},
+		{"craft-empty", func(img *image.RGBA) { DrawCraftPanel(img, ctx, 0) }},
+		{"craft-stocked", func(img *image.RGBA) {
+			ctx.Inventory = map[string]int{"wood": 7, "herb": 1, "mushroom": 1}
+			DrawCraftPanel(img, ctx, len(Recipes)-1)
+			ctx.Inventory = map[string]int{}
+		}},
 	} {
 		img := image.NewRGBA(image.Rect(0, 0, 900, 560))
 		c.draw(img)

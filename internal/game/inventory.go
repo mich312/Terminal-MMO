@@ -28,6 +28,12 @@ var Items = []Item{
 	{"relic", "Ancient Relic", '◈', "#C9B0FF", true, "diadem"},
 	{"spore", "Glowspore", '◆', "#8BF29C", true, "glowcap"},
 	{"amber", "Cave Amber", '◆', "#FFB347", true, "ambergem"},
+	// Crafted goods (made at the workbench, not foraged) — see recipes.go.
+	{"plank", "Planks", '‡', "#C9A86A", false, ""},
+	{"flour", "Sack of Flour", '∴', "#E8DEC0", false, ""},
+	{"ingot", "Gold Ingot", '▰', "#FFD24A", false, ""},
+	{"salve", "Field Salve", '✚', "#7BD88F", false, ""},
+	{"lamp", "Wrought Lamp", '☼', "#FFC861", true, ""},
 }
 
 var itemIndex = func() map[string]Item {
