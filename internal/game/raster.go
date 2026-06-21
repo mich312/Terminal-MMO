@@ -82,14 +82,14 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					ph = t.Color
 				}
 				pc := tint(style.tint(ph), amb, ambStr)
-				// Under a lantern, props that don't shine on their own fade into the
-				// dark with distance like the ground, so a stalagmite or a gold seam
-				// is something the light finds — not a sprite floating on black. The
-				// emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
-				if light.Warm {
-					if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
-						pc = applyLight(pc, originX+x, originY+y, light)
-					}
+				// Props that don't shine on their own fade into the dark with distance
+				// like the ground, so a stalagmite, a gold seam or a dropped gem is
+				// something the light finds — not a sprite floating bright on dark
+				// ground. This applies under any radial light (the cave lantern and the
+				// Wilds' day-faded torch alike), so loot stops glowing through the night.
+				// The emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
+				if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
+					pc = applyLight(pc, originX+x, originY+y, light)
 				}
 				propCols[y][x] = pc
 			}

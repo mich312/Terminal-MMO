@@ -605,8 +605,8 @@ func caveFog() game.Tile {
 // --- cavern generation ---------------------------------------------------------
 
 var (
-	rockWall  = game.Tile{Kind: game.TileWall, Ch: '▓', Walkable: false, Color: "#564E5E", Tex: game.TexRock, Ground: "#3A3442"}
-	caveFloor = game.Tile{Kind: game.TileFloor, Ch: '·', Walkable: true, Color: "#9A91A0", Tex: game.TexDirt, Ground: "#6A6270"}
+	rockWall  = game.Tile{Kind: game.TileWall, Ch: '▓', Walkable: false, Color: "#4E4656", Tex: game.TexRock, Ground: "#2E2935"}
+	caveFloor = game.Tile{Kind: game.TileFloor, Ch: '·', Walkable: true, Color: "#A39AA9", Tex: game.TexDirt, Ground: "#746C7C"}
 	// The mouth is a cave-mouth sprite (not a glowing gate); the warm hex is the
 	// daylight beyond it. Its prop is kept by Walker.HDView instead of the portal.
 	caveMouth = game.Tile{Kind: game.TilePortal, Ch: '∩', Walkable: true, Color: "#C8BFA0",

@@ -3,6 +3,7 @@
 /data/
 /.ssh/
 /nightshots/
+/lootshots/
 
 mechshots/
 uishots/
@@ -10,3 +11,4 @@ buildshots/
 /uipreview
 /mechpreview
 /nightpreview
+/lootpreview
