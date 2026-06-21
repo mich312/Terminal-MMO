@@ -438,6 +438,14 @@ var propArt = map[TileProp][]string{
 		"DPGGPD",
 		".DppD.",
 	},
+	PropChasm: { // a drop in the floor: a lit stone lip around a black void (center transparent)
+		".LPPL.",
+		"LP..PL",
+		"P....P",
+		"P....P",
+		"Lp..pL",
+		".LppL.",
+	},
 	PropCrate: {
 		"oPPPPo",
 		"PLppLP",

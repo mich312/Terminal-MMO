@@ -120,6 +120,7 @@ const (
 	PropTimbering  // old mine support timbers under a peak (blocks)
 	PropRelic      // a half-buried relic in deep ruins (a found treasure, glows)
 	PropGeode      // a cracked-open geode, crystal core aglow (the deep cache prize)
+	PropChasm      // a hole in the cave floor — a lit stone rim around a black drop
 )
 
 // Tile is one cell of a parsed map.

@@ -124,7 +124,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	portal, handled := a.HandleCommon(msg)
 	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
 		a.burnLantern() // a step spends oil, or the glow tops it up
-		a.reveal()      // a step lifts the dark as far as the light now throws
+		if a.onChasm() {
+			a.fall() // a misstep into the dark drops you back at the mouth
+		}
+		a.reveal() // a step lifts the dark as far as the light now throws
 		a.persist()
 	}
 	if handled && portal != "" {
@@ -323,6 +326,37 @@ func (a *area) nearGlow() bool {
 	return false
 }
 
+// onChasm reports whether the player's body is over an open chasm.
+func (a *area) onChasm() bool {
+	for dy := 0; dy < game.PlayerH; dy++ {
+		for dx := 0; dx < game.PlayerW; dx++ {
+			x, y := a.X+dx, a.Y+dy
+			if x >= 0 && y >= 0 && x < a.w && y < a.h && a.Map.At(x, y).Prop == game.PropChasm {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// fall handles a misstep into a chasm: you scramble out at the nearest mouth,
+// keeping your map but losing your trek — and the drop jostles the lantern
+// half-dark. A real cost the light helps you avoid, and the dark invites.
+func (a *area) fall() {
+	best, bestD := a.interiorDoors[0], 1<<30
+	for _, d := range a.interiorDoors {
+		if dd := abs(d[0]-a.X) + abs(d[1]-a.Y); dd < bestD {
+			best, bestD = d, dd
+		}
+	}
+	a.Enter(best[0], best[1], 0)
+	if a.fuel > fuelLow+8 {
+		a.fuel = fuelLow + 8
+	}
+	a.warnedLow = a.fuel <= fuelLow
+	a.setToast("🕳 you stumble into a chasm — and scramble out at the mouth")
+}
+
 // burnLantern spends a step of oil, or tops the lantern up where the cave glows,
 // and surfaces the turn when the light starts to gutter or is rekindled.
 func (a *area) burnLantern() {
@@ -434,6 +468,8 @@ func (a *area) miniBlock(mx, my, sx, sy int) (glyph, color string, ok bool) {
 		switch t.Prop {
 		case game.PropCaveMouth:
 			return "∩", "#9BE0FF", 5
+		case game.PropChasm:
+			return "▽", "#6A6470", 5 // a hazard worth charting
 		case game.PropGemGlow:
 			return "◆", "#7DF0FF", 4
 		case game.PropGlowPool:
@@ -501,6 +537,10 @@ var (
 		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropRelic, PropHex: "#C9B0FF"}
 	geodeTile = game.Tile{Kind: game.TileObject, Ch: '◈', Walkable: true, Color: "#9CE0FF",
 		Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGeode, PropHex: "#9CE0FF"}
+	// A chasm in the floor. Walkable so it never walls off a passage (and so you
+	// *can* misstep into it) — the black ground is the drop, the prop a lit lip.
+	chasm = game.Tile{Kind: game.TileFloor, Ch: '▽', Walkable: true, Color: "#1A1620",
+		Tex: game.TexRock, Ground: "#08060C", Prop: game.PropChasm, PropHex: "#8C8494"}
 )
 
 var nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
@@ -887,6 +927,20 @@ func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[
 	c.rng.Shuffle(len(thin), func(i, j int) { thin[i], thin[j] = thin[j], thin[i] })
 	for i := 0; i < len(thin)/140+1 && i < len(thin); i++ {
 		put(thin[i], lightShaft, "")
+	}
+
+	// 2) Chasms split the open chambers — only in wide-open ground (so you can
+	// always round them) and clear of the mouths, never in a passage (they stay
+	// walkable, so they can't wall a route off; you just don't want to walk in).
+	var brink [][2]int
+	for _, p := range region {
+		if plain(p) && openAround(p) == 8 && far(p, 8) {
+			brink = append(brink, p)
+		}
+	}
+	c.rng.Shuffle(len(brink), func(i, j int) { brink[i], brink[j] = brink[j], brink[i] })
+	for i := 0; i < len(brink)/90+1 && i < len(brink); i++ {
+		put(brink[i], chasm, "")
 	}
 
 	// 4) A treasure cache in the deepest chamber: a glowing geode ringed in crystal.
