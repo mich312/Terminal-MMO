@@ -265,9 +265,12 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
 - ✅ **Build mode** (`b` in the Wilds): a placeable catalog (Fence, Workbench,
   Cold Storage, Lamppost) with material costs; a green/red ghost follows the
   cursor, `r` cycles, `e` spends and places. Works in both clients.
-- ⬜ **Offline machines** (step 3): a machine is a placement whose state carries
-  input/output buffers + a wall-clock; a pure `Settle` fast-forwards elapsed
-  time (no per-tick RNG) so it produces while you're logged off.
+- ✅ **Offline machines** (`internal/game/machine.go`): a machine is a placement
+  whose JSON state carries input/output buffers + a wall-clock; a pure `Settle`
+  fast-forwards elapsed time (no per-tick RNG), so a Sawmill/Mill/Furnace
+  produces while you're logged off. Stand beside one and press `e` to open its
+  panel — input/output meters, a "while you were away" delta, and Collect /
+  Refuel. Built like any structure; the furnace glows as it works. Both clients.
 - ⬜ **Trade** and settlement claims layer on after.
 
 ## Parked polish

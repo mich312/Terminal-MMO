@@ -34,6 +34,16 @@ var Placeables = []Placeable{
 	{ID: "lamppost", Name: "Lamppost", Glyph: '☼', Prop: PropLamp, Hex: "#FFD27A",
 		Cost: []Ingredient{{"lamp", 1}}, Walkable: false,
 		Blurb: "Casts a warm, compliant glow over the night shift."},
+	// Machines (see machine.go): inert until fueled, then they produce offline.
+	{ID: "sawmill", Name: "Sawmill", Glyph: '⊞', Prop: PropSawmill, Hex: "#8FB7FF",
+		Cost: []Ingredient{{"plank", 6}, {"lamp", 1}}, Walkable: false,
+		Blurb: "Timber in, planks out. Runs the night shift unattended."},
+	{ID: "mill", Name: "Mill", Glyph: '❋', Prop: PropMill, Hex: "#C2A06A",
+		Cost: []Ingredient{{"plank", 6}, {"lamp", 1}}, Walkable: false,
+		Blurb: "Grain to flour. Q3 throughput, zero supervision."},
+	{ID: "furnace", Name: "Ingot Synergy Furnace", Glyph: '♨', Prop: PropFurnace, Hex: "#C46A3A",
+		Cost: []Ingredient{{"stone", 8}, {"plank", 4}}, Walkable: false,
+		Blurb: "Synergizes raw nuggets into ingots. Glows while it works."},
 }
 
 var placeableIndex = func() map[string]Placeable {

@@ -7,8 +7,11 @@
 > (`PropWorkbench/Sawmill/Mill/Furnace/Chest`) already exist — see
 > `internal/game/tileset.go`, previewed by `cmd/mechpreview`.
 
-> **Status:** ✅ Step 1 (crafting) and ✅ Step 2 (placements layer + build mode)
-> are shipped. ⬜ Step 3 (offline machines) is next — its spec below stands.
+> **Status:** ✅ Step 1 (crafting), ✅ Step 2 (placements + build mode) and
+> ✅ Step 3 (offline machines) are all shipped — the full vertical slice runs:
+> forage → craft → build a machine → it produces offline → collect. What's next
+> is breadth (trade, settlement claims, the parked wildlife layer), not new
+> architecture.
 
 ## What already exists to build on
 

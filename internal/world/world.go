@@ -99,6 +99,7 @@ type Placement struct {
 	X, Y  int
 	Kind  string // a game.Placeable id
 	Owner string
+	State string // opaque JSON: machine buffers + wall-clock; "" for static props
 }
 
 func New() *World {
@@ -174,6 +175,27 @@ func (w *World) Unplace(area string, x, y int) (Placement, bool) {
 	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area, X: x, Y: y})
 	w.mu.Unlock()
 	return p, true
+}
+
+// UpdatePlacementState rewrites the opaque State of the placement at (x,y)
+// (a machine ticking, refueling or being collected), persists it and nudges a
+// redraw. No-op (false) if nothing is placed there.
+func (w *World) UpdatePlacementState(area string, x, y int, state string) bool {
+	w.mu.Lock()
+	p, ok := w.placements[[2]int{x, y}]
+	if !ok {
+		w.mu.Unlock()
+		return false
+	}
+	p.State = state
+	w.placements[[2]int{x, y}] = p
+	if w.placementAdd != nil {
+		w.placementAdd(p)
+	}
+	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area,
+		X: x, Y: y, Detail: p.Kind})
+	w.mu.Unlock()
+	return true
 }
 
 // LoadGates seeds the shared co-op gate state from persistence (called once at

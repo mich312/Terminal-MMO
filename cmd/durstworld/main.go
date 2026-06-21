@@ -71,11 +71,12 @@ func main() {
 	// Restore the shared placements layer (player-built structures) and keep it
 	// saved as people build and demolish.
 	for _, p := range st.LoadPlacements() {
-		w.LoadPlacements([]world.Placement{{X: p.X, Y: p.Y, Kind: p.Kind, Owner: p.Owner}})
+		w.LoadPlacements([]world.Placement{{X: p.X, Y: p.Y, Kind: p.Kind, Owner: p.Owner, State: p.State}})
 	}
 	w.SetPlacementPersist(
 		func(p world.Placement) {
-			st.AddPlacement(store.Placement{X: p.X, Y: p.Y, Kind: p.Kind, Owner: p.Owner, Created: time.Now().Unix()})
+			st.AddPlacement(store.Placement{X: p.X, Y: p.Y, Kind: p.Kind, Owner: p.Owner,
+				State: p.State, Created: time.Now().Unix()})
 		},
 		st.RemovePlacement,
 	)

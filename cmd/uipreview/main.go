@@ -46,6 +46,7 @@ func main() {
 
 	write("uishots/1-crafting.png", panelOver(craftPanel))
 	write("uishots/5-crafting-real.png", panelOver(realCraftPanel))
+	write("uishots/6-machine-real.png", panelOver(realMachinePanel))
 	write("uishots/2-machine.png", panelOver(machinePanel))
 	write("uishots/3-build.png", buildFrame())
 	write("uishots/4-trade.png", panelOver(tradePanel))
@@ -83,6 +84,21 @@ func realCraftPanel(img *image.RGBA) {
 		},
 	}
 	game.DrawCraftPanel(img, ctx, 0)
+}
+
+// realMachinePanel renders the shipped game.DrawMachinePanel: a furnace fueled
+// with nuggets and settled after some "away" time, so the meters and the
+// while-you-were-away banner show real numbers.
+func realMachinePanel(img *image.RGBA) {
+	w := world.New()
+	defer w.Close()
+	name, _ := w.Join("steurer")
+	w.EnterArea(name, "wilds", 0, 0, "")
+	ctx := &game.Ctx{World: w, Store: store.Open(""), Name: name,
+		Inventory: map[string]int{"nugget": 14}}
+	w.Place("wilds", world.Placement{X: 5, Y: 5, Kind: "furnace", Owner: name})
+	game.RefuelMachine(ctx, 5, 5)
+	game.DrawMachinePanel(img, ctx, 5, 5, 5, 10) // pretend it made 5 ingots while away
 }
 
 // ── small drawing helpers ──────────────────────────────────────────────────

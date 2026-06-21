@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS placements (
 	y       INTEGER NOT NULL,
 	kind    TEXT NOT NULL,
 	owner   TEXT NOT NULL,
+	state   TEXT NOT NULL DEFAULT '',
 	created INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (x, y)
 );
@@ -416,10 +417,10 @@ func (s *sqliteStore) AddPlacement(p Placement) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := s.db.Exec(
-		`INSERT INTO placements (x, y, kind, owner, created) VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO placements (x, y, kind, owner, state, created) VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(x, y) DO UPDATE SET kind = excluded.kind, owner = excluded.owner,
-		 created = excluded.created`,
-		p.X, p.Y, p.Kind, p.Owner, p.Created); err != nil {
+		 state = excluded.state, created = excluded.created`,
+		p.X, p.Y, p.Kind, p.Owner, p.State, p.Created); err != nil {
 		log.Printf("store: add placement: %v", err)
 	}
 }
@@ -437,7 +438,7 @@ func (s *sqliteStore) RemovePlacement(x, y int) {
 func (s *sqliteStore) LoadPlacements() []Placement {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT x, y, kind, owner, created FROM placements`)
+	rows, err := s.db.Query(`SELECT x, y, kind, owner, state, created FROM placements`)
 	if err != nil {
 		return nil
 	}
@@ -445,7 +446,7 @@ func (s *sqliteStore) LoadPlacements() []Placement {
 	var out []Placement
 	for rows.Next() {
 		var p Placement
-		if err := rows.Scan(&p.X, &p.Y, &p.Kind, &p.Owner, &p.Created); err == nil {
+		if err := rows.Scan(&p.X, &p.Y, &p.Kind, &p.Owner, &p.State, &p.Created); err == nil {
 			out = append(out, p)
 		}
 	}

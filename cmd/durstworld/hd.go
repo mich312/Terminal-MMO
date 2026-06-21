@@ -59,6 +59,7 @@ const (
 	hdPanelWho
 	hdPanelMenu
 	hdPanelCraft
+	hdPanelMachine
 )
 
 // areaFlare is how long an area's name stays emphasized after you enter it,
@@ -233,6 +234,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		uiField    int           // selected field in the character panel
 		menuSel    int           // selected row in the Tab menu
 		craftSel   int           // selected recipe in the crafting panel
+		machineXY  [2]int        // the machine whose panel is open
+		awayOut    int           // output a machine made while away (panel banner)
+		awayIn     int           // input it consumed while away
 		enteredAt  = time.Now()  // when the current area was entered (for the title flare)
 		chatLog    []game.HDLine // recent chat lines
 		chatInput  string        // text being typed
@@ -320,6 +324,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawMenuPanel(img, menuSel)
 		case hdPanelCraft:
 			game.DrawCraftPanel(img, ctx, craftSel)
+		case hdPanelMachine:
+			game.DrawMachinePanel(img, ctx, machineXY[0], machineXY[1], awayOut, awayIn)
 		}
 
 		var buf bytes.Buffer
@@ -426,6 +432,19 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				if craftSel >= 0 && craftSel < n {
 					game.Craft(ctx, game.Recipes[craftSel])
 				}
+			case "q":
+				uiPanel = hdPanelNone
+			}
+			return true
+		}
+		// Machine panel: e collects, f refuels, q closes.
+		if uiPanel == hdPanelMachine {
+			switch key {
+			case "e", "\r", "\n":
+				game.CollectMachine(ctx, machineXY[0], machineXY[1])
+				awayOut, awayIn = 0, 0
+			case "f":
+				game.RefuelMachine(ctx, machineXY[0], machineXY[1])
 			case "q":
 				uiPanel = hdPanelNone
 			}
@@ -626,8 +645,14 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			} else {
 				havePending = true
 			}
-		} else if key == "e" { // pick up an item under the player
+		} else if key == "e" { // pick up an item, or open a machine beside you
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			if ctx.UseMachine != nil { // the area asked to open a machine panel
+				machineXY = *ctx.UseMachine
+				ctx.UseMachine = nil
+				_, awayOut, awayIn, _ = game.OpenMachine(ctx, machineXY[0], machineXY[1])
+				uiPanel = hdPanelMachine
+			}
 			draw()
 		} else if key == "b" || key == "r" || key == "[" || key == "]" {
 			// build mode: 'b' toggles, then 'r'/brackets cycle the placeable (the

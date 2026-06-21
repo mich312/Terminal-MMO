@@ -247,6 +247,23 @@ func iabs(n int) int {
 	return n
 }
 
+// machineAdjacent finds a machine placement on the ring of cells bordering the
+// 2×2 body, so you can "use" a machine you're standing next to (machines are
+// solid, so you never stand on one).
+func (a *area) machineAdjacent() (int, int, bool) {
+	for y := a.wy - 1; y <= a.wy+game.PlayerH; y++ {
+		for x := a.wx - 1; x <= a.wx+game.PlayerW; x++ {
+			if x >= a.wx && x < a.wx+game.PlayerW && y >= a.wy && y < a.wy+game.PlayerH {
+				continue // inside the body, not a border cell
+			}
+			if pl, ok := a.ctx.World.PlacementAt(x, y); ok && game.IsMachine(pl.Kind) {
+				return x, y, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
@@ -389,6 +406,12 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		if ks == "e" {
 			if g, ok := a.sealedGateUnderBody(); ok {
 				a.offerToGate(g)
+			} else if _, _, _, ok := a.hatUnderBody(); ok {
+				a.pickUp()
+			} else if _, _, _, ok := a.itemUnderBody(); ok {
+				a.pickUp()
+			} else if mx, my, ok := a.machineAdjacent(); ok {
+				a.ctx.UseMachine = &[2]int{mx, my} // the client opens the machine panel
 			} else {
 				a.pickUp()
 			}
@@ -465,6 +488,13 @@ func (a *area) Prompt() (string, bool) {
 	}
 	if it, _, _, ok := a.itemUnderBody(); ok {
 		return "e — take " + it.Name, true
+	}
+	if mx, my, ok := a.machineAdjacent(); ok {
+		if pl, ok := a.ctx.World.PlacementAt(mx, my); ok {
+			if pb, ok := game.PlaceableByID(pl.Kind); ok {
+				return "e — open the " + pb.Name, true
+			}
+		}
 	}
 	return "", false
 }

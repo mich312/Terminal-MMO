@@ -99,6 +99,14 @@ func TestHDHelpAndWhoPanelsRender(t *testing.T) {
 			DrawCraftPanel(img, ctx, len(Recipes)-1)
 			ctx.Inventory = map[string]int{}
 		}},
+		{"machine", func(img *image.RGBA) {
+			w.EnterArea(name, "wilds", 0, 0, "")
+			w.Place("wilds", world.Placement{X: 4, Y: 4, Kind: "furnace", Owner: name})
+			ctx.Inventory = map[string]int{"nugget": 6}
+			RefuelMachine(ctx, 4, 4)
+			DrawMachinePanel(img, ctx, 4, 4, 3, 6)
+			ctx.Inventory = map[string]int{}
+		}},
 	} {
 		img := image.NewRGBA(image.Rect(0, 0, 900, 560))
 		c.draw(img)

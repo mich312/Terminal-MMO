@@ -93,6 +93,11 @@ type Ctx struct {
 	// FixedGates is the set of personal gate ids this player has repaired.
 	// Loaded at join. Co-op gate state lives in the shared World instead.
 	FixedGates map[string]bool
+	// UseMachine is a one-shot signal from an area to its client: when the
+	// player presses e beside a machine, the area sets the machine's coords here
+	// and the client opens the machine panel, then clears it. (HD and the glyph
+	// client both poll it after dispatching a key to the area.)
+	UseMachine *[2]int
 }
 
 // Accessory is the index of the accessory the player is currently wearing (0 =

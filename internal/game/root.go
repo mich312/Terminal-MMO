@@ -82,6 +82,10 @@ type Model struct {
 	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
 	showCraft   bool // interactive crafting panel (/craft)
 	craftSel    int  // selected recipe in the crafting panel
+	showMachine bool // a machine's offline-production panel
+	machineXY   [2]int
+	awayOut     int // output a machine made while away (panel banner)
+	awayIn      int // input it consumed while away
 	quitArmed   bool
 }
 
@@ -366,6 +370,81 @@ func (m *Model) craftPanel() string {
 	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 
+// handleMachineKey drives the machine panel: e collects the output buffer into
+// your pack, f refuels from your pack, esc/q close.
+func (m *Model) handleMachineKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q":
+		m.showMachine = false
+	case "e", "enter":
+		v, _ := MachineSnapshot(m.ctx, m.machineXY[0], m.machineXY[1])
+		if n := CollectMachine(m.ctx, m.machineXY[0], m.machineXY[1]); n > 0 {
+			name := v.Kind.Out
+			if it, ok := ItemByID(v.Kind.Out); ok {
+				name = it.Name
+			}
+			m.addSystemLine(fmt.Sprintf("collected %d %s", n, name))
+		}
+		m.awayOut, m.awayIn = 0, 0
+	case "f":
+		if n := RefuelMachine(m.ctx, m.machineXY[0], m.machineXY[1]); n > 0 {
+			m.addSystemLine(fmt.Sprintf("loaded %d", n))
+		} else {
+			m.addSystemLine("nothing to load")
+		}
+	}
+	return nil
+}
+
+// machinePanel renders a machine's offline-production readout for the glyph
+// client: buffers, the "while you were away" delta, time-to-next and actions.
+func (m *Model) machinePanel() string {
+	v, ok := MachineSnapshot(m.ctx, m.machineXY[0], m.machineXY[1])
+	if !ok {
+		return ""
+	}
+	k := v.Kind
+	inName, outName := k.In, k.Out
+	if it, ok := ItemByID(k.In); ok {
+		inName = it.Name
+	}
+	if it, ok := ItemByID(k.Out); ok {
+		outName = it.Name
+	}
+	status := m.theme.Dim.Render("idle")
+	switch {
+	case v.Running:
+		status = m.theme.Fg(lipgloss.Color("#7BD88F")).Render("running")
+	case v.State.Out >= k.Cap:
+		status = m.theme.Warn.Render("output full")
+	case v.State.In < k.InPer:
+		status = m.theme.Warn.Render("needs fuel")
+	}
+	rows := []string{
+		m.theme.PanelTitle.Render(k.Name), "",
+		m.theme.Dim.Render("status  ") + status,
+		m.theme.Dim.Render("input   ") + m.theme.ChatText.Render(fmt.Sprintf("%s ×%d", inName, v.State.In)),
+		m.theme.Dim.Render("output  ") + m.theme.ChatText.Render(fmt.Sprintf("%s ×%d / %d", outName, v.State.Out, k.Cap)),
+	}
+	if m.awayOut > 0 || m.awayIn > 0 {
+		rows = append(rows, "", m.theme.Accent.Render(fmt.Sprintf("while away: +%d %s  -%d %s",
+			m.awayOut, outName, m.awayIn, inName)))
+	}
+	if v.Running {
+		rows = append(rows, m.theme.Dim.Render("next in "+fmtSecs(v.NextSec)))
+	}
+	rows = append(rows, "", m.theme.Dim.Render("e collect · f refuel · esc close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
+// fmtSecs renders seconds as "6m05s" or "42s".
+func fmtSecs(sec int) string {
+	if sec < 60 {
+		return fmt.Sprintf("%ds", sec)
+	}
+	return fmt.Sprintf("%dm%02ds", sec/60, sec%60)
+}
+
 // updateArea runs the area's Update and handles a possible transition.
 func (m *Model) updateArea(msg tea.Msg) tea.Cmd {
 	next, cmd := m.area.Update(msg)
@@ -449,6 +528,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleCraftKey(msg)
 	}
 
+	if m.showMachine {
+		return m, m.handleMachineKey(msg)
+	}
+
 	if m.showPlayers {
 		m.showPlayers = false
 		if msg.Type == tea.KeyTab {
@@ -478,7 +561,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m, m.updateArea(msg)
+	cmd := m.updateArea(msg)
+	// The area asks to open a machine panel by setting Ctx.UseMachine on an e press.
+	if m.ctx.UseMachine != nil {
+		m.machineXY = *m.ctx.UseMachine
+		m.ctx.UseMachine = nil
+		_, m.awayOut, m.awayIn, _ = OpenMachine(m.ctx, m.machineXY[0], m.machineXY[1])
+		m.showMachine = true
+	}
+	return m, cmd
 }
 
 // ─── View ────────────────────────────────────────────────────────────────
@@ -613,6 +704,11 @@ func (m *Model) playView() string {
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	} else if m.showCraft {
 		panel := m.craftPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showMachine {
+		panel := m.machinePanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)

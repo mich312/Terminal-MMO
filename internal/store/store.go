@@ -29,6 +29,7 @@ type Placement struct {
 	X, Y    int
 	Kind    string // placeable id (workbench, fence, chest, …)
 	Owner   string // the SSH username that placed it
+	State   string // opaque JSON (machine buffers + wall-clock); "" for static props
 	Created int64  // unix seconds
 }
 

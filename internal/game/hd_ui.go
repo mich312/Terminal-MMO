@@ -333,6 +333,161 @@ var (
 	hudWarn = color.RGBA{0xFF, 0xB4, 0x54, 0xFF}
 )
 
+// fillRectRGBA fills a rectangle with a flat color (clipped to the image).
+func fillRectRGBA(img *image.RGBA, x, y, w, h int, c color.RGBA) {
+	r := image.Rect(x, y, x+w, y+h).Intersect(img.Bounds())
+	for j := r.Min.Y; j < r.Max.Y; j++ {
+		for i := r.Min.X; i < r.Max.X; i++ {
+			img.SetRGBA(i, j, c)
+		}
+	}
+}
+
+// mins formats a seconds count as "6m 05s" or "42s".
+func mins(sec int) string {
+	if sec <= 0 {
+		return "now"
+	}
+	if sec < 60 {
+		return itoa(sec) + "s"
+	}
+	s := sec % 60
+	pad := ""
+	if s < 10 {
+		pad = "0"
+	}
+	return itoa(sec/60) + "m " + pad + itoa(s) + "s"
+}
+
+// DrawMachinePanel draws a machine's offline-production readout: input/output
+// meters, the "while you were away" delta, time-to-next, and Collect/Refuel
+// actions. awayOut/awayIn are the gains recorded when the panel was opened.
+func DrawMachinePanel(img *image.RGBA, ctx *Ctx, x, y, awayOut, awayIn int) {
+	v, ok := MachineSnapshot(ctx, x, y)
+	if !ok {
+		return
+	}
+	k := v.Kind
+	inName, outName := k.In, k.Out
+	if it, ok := ItemByID(k.In); ok {
+		inName = it.Name
+	}
+	if it, ok := ItemByID(k.Out); ok {
+		outName = it.Name
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 10 * s
+
+	footer := "e collect   f refuel   q close"
+	rows := []string{
+		k.Name, "status",
+		"input  " + inName + " x" + itoa(v.State.In),
+		"output  " + outName + " x" + itoa(v.State.Out) + "  (cap " + itoa(k.Cap) + ")",
+		"+ " + itoa(awayOut) + " " + outName + "    - " + itoa(awayIn) + " " + inName,
+		"next " + outName + " " + mins(v.NextSec) + "    rate 1 / " + itoa(int(k.Period.Seconds())) + "s",
+		footer,
+	}
+	contentW := 360 * s / 2
+	for _, t := range rows {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+	ph := pad*2 + lh + lh/2 + lh + lh/4 + lh + lh/4 + lh + lh/2 + lh + lh + lh/4 + lh + lh + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	xx := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, xx, oy+pad, s, asciiOnly(k.Name), hudWarn)
+	pixel.DrawText(img, right-pixel.TextWidth("owner: "+ctx.Name, s), oy+pad, s, "owner: "+ctx.Name, hudDim)
+	yy := oy + pad + lh + lh/2
+
+	pixel.DrawText(img, xx, yy, s, "status:", hudDim)
+	status, sc := "IDLE", hudDim
+	if v.Running {
+		status, sc = "RUNNING", hudGood
+	} else if v.State.Out >= k.Cap {
+		status, sc = "FULL", hudWarn
+	} else if v.State.In < k.InPer {
+		status, sc = "NEEDS FUEL", hudWarn
+	}
+	pixel.DrawText(img, xx+pixel.TextWidth("status:  ", s), yy, s, status, sc)
+	yy += lh + lh/4
+
+	// meters
+	barX := xx + pixel.TextWidth("output  ", s)
+	inLabel := inName + " x" + itoa(v.State.In)
+	outLabel := outName + " x" + itoa(v.State.Out) + "  (cap " + itoa(k.Cap) + ")"
+	rw := pixel.TextWidth(outLabel, s)
+	if w := pixel.TextWidth(inLabel, s); w > rw {
+		rw = w
+	}
+	barW := right - rw - 8*s - barX
+	inFill := v.State.In
+	if inFill > k.Cap {
+		inFill = k.Cap
+	}
+	drawMeter(img, barX, yy, barW, inFill, k.Cap, hudAccent)
+	pixel.DrawText(img, xx, yy+s, s, "input", hudDim)
+	pixel.DrawText(img, right-pixel.TextWidth(inLabel, s), yy+s, s, inLabel, hudWhite)
+	yy += lh + lh/4
+	drawMeter(img, barX, yy, barW, v.State.Out, k.Cap, hudWarn)
+	pixel.DrawText(img, xx, yy+s, s, "output", hudDim)
+	pixel.DrawText(img, right-pixel.TextWidth(outLabel, s), yy+s, s, outLabel, hudWhite)
+	yy += lh + lh/2
+
+	if awayOut > 0 || awayIn > 0 {
+		pixel.DrawText(img, xx, yy, s, "while you were away:", hudAccent)
+		yy += lh
+		pixel.DrawText(img, xx+8*s, yy, s, "+ "+itoa(awayOut)+" "+outName, hudGood)
+		pixel.DrawText(img, xx+8*s+pixel.TextWidth("+ "+itoa(awayOut)+" "+outName+"     ", s), yy, s,
+			"- "+itoa(awayIn)+" "+inName, hudDim)
+		yy += lh + lh/4
+	}
+	nextTxt := "stalled"
+	if v.Running {
+		nextTxt = "next " + outName + " " + mins(v.NextSec)
+	}
+	pixel.DrawText(img, xx, yy, s, nextTxt, hudDim)
+	pixel.DrawText(img, right-pixel.TextWidth("rate 1 / "+itoa(int(k.Period.Seconds()))+"s", s), yy, s,
+		"rate 1 / "+itoa(int(k.Period.Seconds()))+"s", hudDim)
+
+	// actions
+	fy := oy + ph - pad - lh + lh/4
+	collect := "[ e  COLLECT " + itoa(v.State.Out) + " ]"
+	cw := pixel.TextWidth(collect, s) + 8*s
+	pixel.Shade(img, xx, fy-3*s, cw, lh, 0.4)
+	pixel.Frame(img, xx, fy-3*s, cw, lh)
+	cc := hudGood
+	if v.State.Out == 0 {
+		cc = hudDim
+	}
+	pixel.DrawText(img, xx+4*s, fy, s, collect, cc)
+	refuel := "[ f  REFUEL ]"
+	rwid := pixel.TextWidth(refuel, s) + 8*s
+	rx := xx + cw + 10*s
+	pixel.Shade(img, rx, fy-3*s, rwid, lh, 0.4)
+	pixel.Frame(img, rx, fy-3*s, rwid, lh)
+	pixel.DrawText(img, rx+4*s, fy, s, refuel, hudWarn)
+}
+
+func drawMeter(img *image.RGBA, x, y, w, filled, total int, c color.RGBA) {
+	s := hudScale(img.Bounds().Dx())
+	h := 8 * s
+	fillRectRGBA(img, x, y, w, h, color.RGBA{0x2A, 0x30, 0x38, 0xFF})
+	if total > 0 {
+		f := w * filled / total
+		if f > w {
+			f = w
+		}
+		fillRectRGBA(img, x, y, f, h, c)
+	}
+	pixel.Frame(img, x, y, w, h)
+}
+
 // itemSwatch draws an item's gem icon (by hex color) at (x,y), box wide.
 func itemSwatch(img *image.RGBA, x, y, box int, hex string) {
 	c := mustHex(hex)
