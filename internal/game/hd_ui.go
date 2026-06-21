@@ -425,6 +425,426 @@ func DrawCharPanel(img *image.RGBA, ctx *Ctx, field int) {
 	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
 }
 
+var (
+	hudGood = color.RGBA{0x7B, 0xD8, 0x8F, 0xFF}
+	hudWarn = color.RGBA{0xFF, 0xB4, 0x54, 0xFF}
+)
+
+// fillRectRGBA fills a rectangle with a flat color (clipped to the image).
+func fillRectRGBA(img *image.RGBA, x, y, w, h int, c color.RGBA) {
+	r := image.Rect(x, y, x+w, y+h).Intersect(img.Bounds())
+	for j := r.Min.Y; j < r.Max.Y; j++ {
+		for i := r.Min.X; i < r.Max.X; i++ {
+			img.SetRGBA(i, j, c)
+		}
+	}
+}
+
+// mins formats a seconds count as "6m 05s" or "42s".
+func mins(sec int) string {
+	if sec <= 0 {
+		return "now"
+	}
+	if sec < 60 {
+		return itoa(sec) + "s"
+	}
+	s := sec % 60
+	pad := ""
+	if s < 10 {
+		pad = "0"
+	}
+	return itoa(sec/60) + "m " + pad + itoa(s) + "s"
+}
+
+// DrawMachinePanel draws a machine's offline-production readout: input/output
+// meters, the "while you were away" delta, time-to-next, and Collect/Refuel
+// actions. awayOut/awayIn are the gains recorded when the panel was opened.
+func DrawMachinePanel(img *image.RGBA, ctx *Ctx, x, y, awayOut, awayIn int) {
+	v, ok := MachineSnapshot(ctx, x, y)
+	if !ok {
+		return
+	}
+	k := v.Kind
+	inName, outName := k.In, k.Out
+	if it, ok := ItemByID(k.In); ok {
+		inName = it.Name
+	}
+	if it, ok := ItemByID(k.Out); ok {
+		outName = it.Name
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 10 * s
+
+	footer := "e collect   f refuel   q close"
+	rows := []string{
+		k.Name, "status",
+		"input  " + inName + " x" + itoa(v.State.In),
+		"output  " + outName + " x" + itoa(v.State.Out) + "  (cap " + itoa(k.Cap) + ")",
+		"+ " + itoa(awayOut) + " " + outName + "    - " + itoa(awayIn) + " " + inName,
+		"next " + outName + " " + mins(v.NextSec) + "    rate 1 / " + itoa(int(k.Period.Seconds())) + "s",
+		footer,
+	}
+	contentW := 360 * s / 2
+	for _, t := range rows {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+	ph := pad*2 + lh + lh/2 + lh + lh/4 + lh + lh/4 + lh + lh/2 + lh + lh + lh/4 + lh + lh + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	xx := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, xx, oy+pad, s, asciiOnly(k.Name), hudWarn)
+	pixel.DrawText(img, right-pixel.TextWidth("owner: "+ctx.Name, s), oy+pad, s, "owner: "+ctx.Name, hudDim)
+	yy := oy + pad + lh + lh/2
+
+	pixel.DrawText(img, xx, yy, s, "status:", hudDim)
+	status, sc := "IDLE", hudDim
+	if v.Running {
+		status, sc = "RUNNING", hudGood
+	} else if v.State.Out >= k.Cap {
+		status, sc = "FULL", hudWarn
+	} else if v.State.In < k.InPer {
+		status, sc = "NEEDS FUEL", hudWarn
+	}
+	pixel.DrawText(img, xx+pixel.TextWidth("status:  ", s), yy, s, status, sc)
+	yy += lh + lh/4
+
+	// meters
+	barX := xx + pixel.TextWidth("output  ", s)
+	inLabel := inName + " x" + itoa(v.State.In)
+	outLabel := outName + " x" + itoa(v.State.Out) + "  (cap " + itoa(k.Cap) + ")"
+	rw := pixel.TextWidth(outLabel, s)
+	if w := pixel.TextWidth(inLabel, s); w > rw {
+		rw = w
+	}
+	barW := right - rw - 8*s - barX
+	inFill := v.State.In
+	if inFill > k.Cap {
+		inFill = k.Cap
+	}
+	drawMeter(img, barX, yy, barW, inFill, k.Cap, hudAccent)
+	pixel.DrawText(img, xx, yy+s, s, "input", hudDim)
+	pixel.DrawText(img, right-pixel.TextWidth(inLabel, s), yy+s, s, inLabel, hudWhite)
+	yy += lh + lh/4
+	drawMeter(img, barX, yy, barW, v.State.Out, k.Cap, hudWarn)
+	pixel.DrawText(img, xx, yy+s, s, "output", hudDim)
+	pixel.DrawText(img, right-pixel.TextWidth(outLabel, s), yy+s, s, outLabel, hudWhite)
+	yy += lh + lh/2
+
+	if awayOut > 0 || awayIn > 0 {
+		pixel.DrawText(img, xx, yy, s, "while you were away:", hudAccent)
+		yy += lh
+		pixel.DrawText(img, xx+8*s, yy, s, "+ "+itoa(awayOut)+" "+outName, hudGood)
+		pixel.DrawText(img, xx+8*s+pixel.TextWidth("+ "+itoa(awayOut)+" "+outName+"     ", s), yy, s,
+			"- "+itoa(awayIn)+" "+inName, hudDim)
+		yy += lh + lh/4
+	}
+	nextTxt := "stalled"
+	if v.Running {
+		nextTxt = "next " + outName + " " + mins(v.NextSec)
+	}
+	pixel.DrawText(img, xx, yy, s, nextTxt, hudDim)
+	pixel.DrawText(img, right-pixel.TextWidth("rate 1 / "+itoa(int(k.Period.Seconds()))+"s", s), yy, s,
+		"rate 1 / "+itoa(int(k.Period.Seconds()))+"s", hudDim)
+
+	// actions
+	fy := oy + ph - pad - lh + lh/4
+	collect := "[ e  COLLECT " + itoa(v.State.Out) + " ]"
+	cw := pixel.TextWidth(collect, s) + 8*s
+	pixel.Shade(img, xx, fy-3*s, cw, lh, 0.4)
+	pixel.Frame(img, xx, fy-3*s, cw, lh)
+	cc := hudGood
+	if v.State.Out == 0 {
+		cc = hudDim
+	}
+	pixel.DrawText(img, xx+4*s, fy, s, collect, cc)
+	refuel := "[ f  REFUEL ]"
+	rwid := pixel.TextWidth(refuel, s) + 8*s
+	rx := xx + cw + 10*s
+	pixel.Shade(img, rx, fy-3*s, rwid, lh, 0.4)
+	pixel.Frame(img, rx, fy-3*s, rwid, lh)
+	pixel.DrawText(img, rx+4*s, fy, s, refuel, hudWarn)
+}
+
+// DrawStallPanel draws a Durst Group Concession: the offer list (give ⇄ ask)
+// with stock and a green/amber affordability mark, plus the till for the owner.
+// sel is the highlighted offer.
+func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
+	st, ok := StallSnapshot(ctx, x, y)
+	if !ok {
+		return
+	}
+	owner := StallOwner(ctx, x, y)
+	name := func(id string) string {
+		if it, ok := ItemByID(id); ok {
+			return it.Name
+		}
+		return id
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 10 * s
+	box := 9 * s
+
+	title := "DURST GROUP CONCESSION"
+	footer := "up/down offer   e buy   q close"
+	if owner {
+		footer = "up/down offer   f collect   x remove   q close"
+	}
+
+	type row struct {
+		give, ask, stock string
+		can, dim         bool
+	}
+	var rows []row
+	for _, o := range st.Offers {
+		rows = append(rows, row{
+			give:  itoa(o.GiveN) + " " + name(o.GiveItem),
+			ask:   itoa(o.AskN) + " " + name(o.AskItem),
+			stock: "x" + itoa(o.Stock/maxi(o.GiveN, 1)),
+			can:   CanAcceptOffer(o, invOf(ctx)),
+			dim:   o.Stock < o.GiveN,
+		})
+	}
+
+	// width
+	giveCol, askCol := 0, 0
+	for _, r := range rows {
+		if w := pixel.TextWidth(r.give, s); w > giveCol {
+			giveCol = w
+		}
+		if w := pixel.TextWidth(r.ask, s); w > askCol {
+			askCol = w
+		}
+	}
+	rowW := box + 4*s + giveCol + pixel.TextWidth("  <->  ", s) + box + 4*s + askCol + pixel.TextWidth("  x00", s)
+	contentW := rowW
+	for _, t := range []string{title, footer} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+	nrows := len(rows)
+	if nrows == 0 {
+		nrows = 1
+	}
+	ph := pad*2 + lh + lh/2 + nrows*lh + lh + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	xx := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, xx, oy+pad, s, title, hudAccent)
+	if !owner {
+		if pl, ok := ctx.World.PlacementAt(x, y); ok {
+			pixel.DrawText(img, right-pixel.TextWidth(pl.Owner+"'s", s), oy+pad, s, pl.Owner+"'s", hudDim)
+		}
+	}
+	yy := oy + pad + lh + lh/2
+
+	if len(rows) == 0 {
+		pixel.DrawText(img, xx, yy, s, "no offers yet — /sell to post one", hudDim)
+	}
+	askX := xx + box + 4*s + giveCol + pixel.TextWidth("  <->  ", s)
+	for i, r := range rows {
+		if i == sel {
+			pixel.Shade(img, xx-2*s, yy-2*s, pw-2*pad+4*s, lh, 0.3)
+			pixel.DrawText(img, xx-s, yy, s, ">", hudAccent)
+		}
+		o := st.Offers[i]
+		itemSwatch(img, xx+4*s, yy, box, mustItemHex(o.GiveItem))
+		gc := hudWhite
+		if r.dim {
+			gc = hudDim
+		}
+		pixel.DrawText(img, xx+box+8*s, yy, s, r.give, gc)
+		pixel.DrawText(img, xx+box+8*s+giveCol+4*s, yy, s, "<->", hudDim)
+		itemSwatch(img, askX, yy, box, mustItemHex(o.AskItem))
+		ac := hudWhite
+		if i == sel {
+			if r.can {
+				ac = hudGood
+			} else {
+				ac = hudWarn
+			}
+		}
+		pixel.DrawText(img, askX+box+4*s, yy, s, r.ask, ac)
+		pixel.DrawText(img, right-pixel.TextWidth(r.stock, s), yy, s, r.stock, hudDim)
+		yy += lh
+	}
+
+	if owner {
+		till := 0
+		for _, n := range st.Till {
+			till += n
+		}
+		yy += lh / 4
+		pixel.DrawText(img, xx, yy, s, "till: "+itoa(till)+" items waiting", hudGood)
+	}
+	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+func mustItemHex(id string) string {
+	if it, ok := ItemByID(id); ok {
+		return it.Hex
+	}
+	return "#9AA3AD"
+}
+
+func drawMeter(img *image.RGBA, x, y, w, filled, total int, c color.RGBA) {
+	s := hudScale(img.Bounds().Dx())
+	h := 8 * s
+	fillRectRGBA(img, x, y, w, h, color.RGBA{0x2A, 0x30, 0x38, 0xFF})
+	if total > 0 {
+		f := w * filled / total
+		if f > w {
+			f = w
+		}
+		fillRectRGBA(img, x, y, f, h, c)
+	}
+	pixel.Frame(img, x, y, w, h)
+}
+
+// itemSwatch draws an item's gem icon (by hex color) at (x,y), box wide.
+func itemSwatch(img *image.RGBA, x, y, box int, hex string) {
+	c := mustHex(hex)
+	drawGem(img, x, y, box,
+		colorfulToRGBA(c),
+		colorfulToRGBA(c.BlendLab(spriteWhite, 0.55).Clamped()))
+}
+
+// invOf returns the ctx's live inventory, nil-safe.
+func invOf(ctx *Ctx) map[string]int {
+	if ctx.Inventory == nil {
+		return map[string]int{}
+	}
+	return ctx.Inventory
+}
+
+// DrawCraftPanel draws the Crafting (Self-Service) station onto an HD frame: the
+// recipe list with a live craftable count per row, and a detail block for the
+// selected recipe — its blurb, its inputs (green when the pack can afford each,
+// amber when short) and its yield. sel is the highlighted row.
+func DrawCraftPanel(img *image.RGBA, ctx *Ctx, sel int) {
+	rs := Recipes
+	if len(rs) == 0 {
+		return
+	}
+	if sel < 0 {
+		sel = 0
+	}
+	if sel >= len(rs) {
+		sel = len(rs) - 1
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 9 * s
+	box := 9 * s
+	inv := invOf(ctx)
+	cur := rs[sel]
+
+	footer := "up/down choose   e craft   q close"
+
+	// Column geometry: a name column wide enough for the longest recipe, then a
+	// needs column, then a right-aligned [xN] craftable count.
+	nameCol, needsCol := 0, 0
+	for _, r := range rs {
+		if w := pixel.TextWidth(r.Name, s); w > nameCol {
+			nameCol = w
+		}
+		if w := pixel.TextWidth(RecipeNeeds(r), s); w > needsCol {
+			needsCol = w
+		}
+	}
+	rowW := 10*s + nameCol + 8*s + needsCol + 8*s + pixel.TextWidth("[x000]", s)
+
+	blurb := "\"" + cur.Blurb + "\""
+	contentW := rowW
+	for _, t := range []string{"CRAFTING  (Self-Service)", footer, blurb} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+
+	// list + divider + blurb + needs + yields + count/hint + footer
+	ph := pad*2 + (lh + lh/2) + len(rs)*lh + (lh/2 + lh) + lh + lh + lh + (lh/2 + lh)
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	x := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, x, oy+pad, s, "CRAFTING", hudAccent)
+	pixel.DrawText(img, x+pixel.TextWidth("CRAFTING  ", s), oy+pad, s, "(Self-Service)", hudDim)
+
+	y := oy + pad + lh + lh/2
+	needsX := x + 10*s + nameCol + 8*s
+	for i, r := range rs {
+		can := Craftable(r, inv)
+		col, cc := hudWhite, hudGood
+		if can == 0 {
+			cc = hudDim
+		}
+		if i == sel {
+			pixel.Shade(img, x-2*s, y-2*s, pw-2*pad+4*s, lh, 0.3)
+			pixel.DrawText(img, x-s, y, s, ">", hudAccent)
+			col = hudBright
+		}
+		pixel.DrawText(img, x+10*s, y, s, r.Name, col)
+		pixel.DrawText(img, needsX, y, s, RecipeNeeds(r), hudDim)
+		count := "[x" + itoa(can) + "]"
+		pixel.DrawText(img, right-pixel.TextWidth(count, s), y, s, count, cc)
+		y += lh
+	}
+
+	// divider
+	y += lh / 4
+	pixel.Shade(img, x, y, pw-2*pad, s, 0.5)
+	y += lh/2 + lh/4
+
+	// selected detail: blurb, the inputs with affordability, the yield.
+	pixel.DrawText(img, x, y, s, blurb, hudDim)
+	y += lh + lh/4
+	pixel.DrawText(img, x, y, s, "needs:", hudDim)
+	ix := x + pixel.TextWidth("needs:  ", s)
+	for _, in := range cur.In {
+		it, _ := ItemByID(in.Item)
+		itemSwatch(img, ix, y, box, it.Hex)
+		ix += box + 3*s
+		label := itoa(in.N) + " " + it.Name
+		lc := hudGood
+		if inv[in.Item] < in.N {
+			lc = hudWarn
+		}
+		pixel.DrawText(img, ix, y, s, label, lc)
+		ix += pixel.TextWidth(label+"   ", s)
+	}
+	y += lh
+	out, _ := ItemByID(cur.Out)
+	pixel.DrawText(img, x, y, s, "yields:", hudDim)
+	yx := x + pixel.TextWidth("yields:  ", s)
+	itemSwatch(img, yx, y, box, out.Hex)
+	pixel.DrawText(img, yx+box+3*s, y, s, out.Name+" x"+itoa(cur.OutN), hudWhite)
+
+	// footer + craft button
+	fy := oy + ph - pad - lh + lh/4
+	pixel.DrawText(img, x, fy, s, footer, hudDim)
+	if n := Craftable(cur, inv); n > 0 {
+		btn := "[ e CRAFT ]"
+		bw := pixel.TextWidth(btn, s) + 8*s
+		bx := right - bw
+		pixel.Shade(img, bx, fy-3*s, bw, lh, 0.4)
+		pixel.Frame(img, bx, fy-3*s, bw, lh)
+		pixel.DrawText(img, bx+4*s, fy, s, btn, hudGood)
+	}
+}
+
 // compLine is one rendered row of the HD compendium: text in a color, optionally
 // preceded by an item portrait or an accessory icon, at a left indent measured
 // in icon-gutter widths.

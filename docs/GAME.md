@@ -140,6 +140,8 @@ live slide index resets).
 | m | toggle the minimap (Wilds) |
 | Enter | chat — heard within 8 tiles |
 | e | pick up `◆` · sign guestbook · author/edit a deck (`＋` booth / lectern) |
+| k | open the crafting bench (refine forage into goods); `/craft` in glyph |
+| b | build mode in the Wilds — place structures (move ghost, `r` next, `e` place) |
 | n / p | next/previous slide while presenting |
 | Tab | open the menu — compendium, character, who, help (HD) · who's online (glyph) |
 | c | character editor (HD); `i` compendium (HD) |

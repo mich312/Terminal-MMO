@@ -492,6 +492,59 @@ var propArt = map[TileProp][]string{
 		".pGGp.",
 		"oPPPPo",
 	},
+
+	// ── Cozy-frontier production props ──────────────────────────────────────
+	// The Crafting (Self-Service) workbench: a sturdy bench with a thick top, a
+	// shaded apron and four legs, a small workpiece (L) sitting on the surface.
+	PropWorkbench: {
+		"..LL..",
+		"PPPPPP",
+		"oPPPPo",
+		".P..P.",
+		".P..P.",
+		".p..p.",
+	},
+	// The Sawmill: a boxed machine around a bright circular blade, a glowing
+	// motor (G) humming at its base — timber → planks.
+	PropSawmill: {
+		".oPPo.",
+		"oPWWPo",
+		"PWWWWP",
+		"oPWWPo",
+		"PpGGpP",
+		".PppP.",
+	},
+	// The Mill: a windmill — four sails (o) crossing at a hub over a stout
+	// round mill house — grain → flour.
+	PropMill: {
+		"o....o",
+		".o..o.",
+		"..PP..",
+		".pPPp.",
+		"PPPPPP",
+		"PpppP.",
+	},
+	// The Ingot Synergy Furnace: a chimney over a brick body with a glowing,
+	// flickering forge mouth (G) and a bright spark (W) — nuggets → ingots.
+	// Author the body color warm so the mouth reads as hot (G is propCol-tinted).
+	PropFurnace: {
+		".PPPP.",
+		".PppP.",
+		"oPPPPo",
+		"PGGGGP",
+		"PGWGGP",
+		"PppppP",
+	},
+	// Cold Storage chest: a lidded crate with a highlight band across the lid
+	// and a latch glint (W) on the body — the machines' input/output buffer.
+	PropChest: {
+		"......",
+		"oPPPPo",
+		"PLLLLP",
+		"oPPPPo",
+		"PpWppP",
+		"PppppP",
+	},
 }
 
 // portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in

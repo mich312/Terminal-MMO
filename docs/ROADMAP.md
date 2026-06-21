@@ -244,6 +244,50 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
     bank, straight across to walkable ground on the far side (never a stub — a
     test asserts every bridge joins two walkable banks).
 
+## Phase 9 — Cozy frontier: craft, build, automate (in progress)
+
+The turn from a *place* into a *game* — see [`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md)
+and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval voice.
+
+- ✅ **Crafting** (`internal/game/recipes.go`): a static recipe catalog (Planks,
+  Flour, Gold Ingot, Field Salve, Wrought Lamp) and pure `Craftable`/`Craft`
+  that spend forage and yield refined goods through the existing inventory +
+  store plumbing. A `DrawCraftPanel` in HD (open with `k` or the Tab menu) and a
+  matching glyph panel via `/craft`; both list live craftable counts.
+- ✅ **Production sprites**: `PropWorkbench/Sawmill/Mill/Furnace/Chest` as 6×6
+  art in `tileset.go`, the furnace wired into the night light emitters.
+- ✅ **Placements layer** (the one architectural piece): a SQLite `placements`
+  table + a shared `world` set (`Place`/`Unplace`/`PlacementAt`, `EventPlaced`),
+  overlaid on the stateless Wilds at render time — the co-op gate generalized
+  from one pool to many owned, positioned objects. Terrain stays pure-seed;
+  placements are the only stored mutable layer, and they make built walls solid
+  (movement collision now consults placements, not just the generator).
+- ✅ **Build mode** (`b` in the Wilds): a placeable catalog (Fence, Workbench,
+  Cold Storage, Lamppost) with material costs; a green/red ghost follows the
+  cursor, `r` cycles, `e` spends and places. Works in both clients.
+- ✅ **Offline machines** (`internal/game/machine.go`): a machine is a placement
+  whose JSON state carries input/output buffers + a wall-clock; a pure `Settle`
+  fast-forwards elapsed time (no per-tick RNG), so a Sawmill/Mill/Furnace
+  produces while you're logged off. Stand beside one and press `e` to open its
+  panel — input/output meters, a "while you were away" delta, and Collect /
+  Refuel. Built like any structure; the furnace glows as it works. Both clients.
+- ✅ **Trade — the Durst Group Concession** (`internal/game/stall.go`,
+  [`TRADE_PLAN.md`](TRADE_PLAN.md)): asynchronous vending stalls on the placements
+  layer — build one, `/sell 10 plank for 6 stone` to post an offer (stocked from
+  your pack), and anyone can press `e` to buy whenever, online or not; the owner
+  `/collect`s the till later. The one racy op (concurrent buyers) is settled
+  atomically by a new `world.MutatePlacement` primitive (a test fires 60 buyers
+  at 20 stock and asserts exactly 20 sell, never oversold). Buyer panel in both
+  clients.
+- ✅ **Build/trade polish:** `x` in build mode **demolishes** your own structure
+  and **returns whatever it holds** (a stall's stock + till, a machine's buffers)
+  to your pack — owner-gated, so nobody tears down someone else's Workspace; a
+  placed **workbench opens crafting** when you press `e` beside it (the build →
+  craft loop made literal); and a stall owner can `x` **remove a mislisted
+  offer**, refunding its stock. ⬜ In-panel offer *authoring* (beyond `/sell`) is
+  the last bit.
+- ⬜ Settlement claims and the parked wildlife layer come after.
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**

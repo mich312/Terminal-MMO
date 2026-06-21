@@ -12,9 +12,10 @@ import (
 // sunState derives lighting from the time-of-day clock (ui.Now). It reads the
 // shared ui.SolarHour, so the sun rises and sets with Brixen's seasonal daylight
 // (canonical hour 6 = sunrise, 18 = sunset, whatever real time those fall at):
-//   elev  — sun height: 1 at noon, 0 at the horizon (sunrise / sunset), <0 at night.
-//   azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
-//   night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
+//
+//	elev  — sun height: 1 at noon, 0 at the horizon (sunrise / sunset), <0 at night.
+//	azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
+//	night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
 func sunState() (elev, azX, night float64) {
 	h := ui.SolarHour(ui.Now())
 	elev = math.Sin(math.Pi * (h - 6) / 12)
@@ -110,9 +111,10 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// A street brazier: a warm, flickering pool of firelight at the gates and
 		// squares — a touch smaller and steadier than a campfire.
 		return whiten(colorful.Color{R: 1, G: 0.55, B: 0.2}, 0.12), 2.6 * flame, 0.9 * flame, true
-	case PropBldSmithy:
-		// A blacksmith's forge: a strong, warm glow spilling from the forge mouth,
-		// flickering as the fire is worked — the brightest window on a night street.
+	case PropBldSmithy, PropFurnace:
+		// A blacksmith's forge / the Ingot Synergy Furnace: a strong, warm glow
+		// spilling from the forge mouth, flickering as the fire is worked — the
+		// brightest window on a night street, and a homestead's beacon after dark.
 		return whiten(colorful.Color{R: 1, G: 0.45, B: 0.13}, 0.1), 2.4 * flame, 0.85 * flame, true
 	case PropBldTavern:
 		// A tavern: cosy lamplight from its windows, steady and inviting.

@@ -30,12 +30,14 @@ func Controls() []ControlGroup {
 		}},
 		{"Act", []Control{
 			{"e", "use what you're on"},
+			{"b", "build mode (place structures)"},
 			{"Enter", "chat to players nearby"},
 			{"/", "run a command"},
 		}},
 		{"Panels", []Control{
 			{"c", "character editor"},
 			{"i", "compendium (items & wearables)"},
+			{"k", "crafting bench"},
 			{"Tab", "who's online"},
 			{"?", "this help"},
 			{"q", "quit (press twice)"},
@@ -67,6 +69,7 @@ type MenuEntry struct {
 func MenuEntries() []MenuEntry {
 	return []MenuEntry{
 		{"Compendium", "i"},
+		{"Crafting", "k"},
 		{"Character", "c"},
 		{"Who's online", ""},
 		{"Controls & Help", "?"},
