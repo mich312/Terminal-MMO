@@ -86,6 +86,31 @@ type Ctx struct {
 	FixedGates map[string]bool
 }
 
+// Accessory is the index of the accessory the player is currently wearing (0 =
+// none), read from live world state — so an area can give a worn thing a power
+// (a light, surer footing, a keener eye) the same way the renderer reads it.
+func (c *Ctx) Accessory() int {
+	if c.World == nil {
+		return 0
+	}
+	if p, ok := c.World.Self(c.Name); ok {
+		return p.Accessory
+	}
+	return 0
+}
+
+// Wearing reports whether the player currently wears the named accessory.
+func (c *Ctx) Wearing(name string) bool {
+	idx, ok := AccessoryIndex(name)
+	return ok && c.Accessory() == idx
+}
+
+// ForagerBoon reports whether the player wears a gatherer's wearable — the
+// meadow flower or the lantern-cap — which yields a richer haul from each node.
+func (c *Ctx) ForagerBoon() bool {
+	return c.Wearing("flower") || c.Wearing("glowcap")
+}
+
 // Transition is a sentinel Area: returning it from Update tells the root
 // model to construct the destination area from the registry and swap to it.
 type Transition struct{ To string }

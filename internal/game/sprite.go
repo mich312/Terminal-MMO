@@ -83,9 +83,11 @@ var accessoryLights = map[string]struct {
 	hex    string
 	radius float64 // in tiles; keep ≤ overhangTiles so the incremental render stays exact
 }{
-	"glowcap": {"#9BF7AE", 3.4}, // the lantern-plant: the brightest, a warm green
-	"shroom":  {"#D7A0FF", 3.0}, // a glowing mushroom cap
-	"circlet": {"#A8E8FF", 2.7}, // a geode's crystal: cooler and fainter
+	"glowcap":  {"#9BF7AE", 3.6}, // the lantern-plant: the brightest, a warm green
+	"shroom":   {"#D7A0FF", 3.2}, // a glowing mushroom cap, soft violet
+	"circlet":  {"#A8E8FF", 3.0}, // a geode's crystal: a cool blue light
+	"ambergem": {"#FFC061", 3.2}, // cave amber: a warm honey glow
+	"diadem":   {"#D9B8FF", 2.8}, // an ancient relic, faintly aglow
 }
 
 // AccessoryLight returns the night glow a worn accessory casts — its color and

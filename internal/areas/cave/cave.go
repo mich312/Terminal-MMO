@@ -63,6 +63,8 @@ type area struct {
 	showMap        bool              // the fill-in cave map is open (m)
 	fuel           int               // lantern oil left this visit; light shrinks as it runs low
 	warnedLow      bool              // already told the player the lantern's guttering
+	crossing       bool              // currently striding a chasm on the diadem's power
+	stepN          int               // steps taken this visit (paces the lantern-cap's oil saving)
 	toast          string
 	toastUntil     time.Time
 }
@@ -102,7 +104,24 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	a.Enter(sp[0], sp[1], 0)
 	a.reveal()
 	a.persist()
+	if msg := a.wornPowerHint(); msg != "" {
+		a.setToast(msg) // so you know what the thing on your head is doing down here
+	}
 	return nil
+}
+
+// wornPowerHint names the power of a cave-relevant wearable on descent, so its
+// effect isn't a mystery the player never connects to their hat.
+func (a *area) wornPowerHint() string {
+	switch {
+	case a.Ctx.Wearing("crown"):
+		return "👑 the crown senses treasure through the rock"
+	case a.Ctx.Wearing("diadem"):
+		return "✦ the relic diadem will steady you over chasms"
+	case a.Ctx.Wearing("glowcap"):
+		return "🍄 the lantern-cap lights your way and spares your oil"
+	}
+	return ""
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
@@ -124,7 +143,15 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	portal, handled := a.HandleCommon(msg)
 	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
 		a.burnLantern() // a step spends oil, or the glow tops it up
-		if a.onChasm() {
+		switch {
+		case !a.onChasm():
+			a.crossing = false
+		case a.Ctx.Wearing("diadem"): // the relic steadies your step over the void
+			if !a.crossing {
+				a.crossing = true
+				a.setToast("✦ the relic diadem carries you over the chasm")
+			}
+		default:
 			a.fall() // a misstep into the dark drops you back at the mouth
 		}
 		a.reveal() // a step lifts the dark as far as the light now throws
@@ -186,6 +213,31 @@ func (a *area) reveal() {
 			}
 		}
 	}
+	a.senseTreasure()
+}
+
+// senseTreasure is the crown's power: it picks out valuables through the rock,
+// uncovering each gatherable node and mouth within a wide radius so they glimmer
+// in the dark ahead (the luminous ones — crystals, geodes — even shine through).
+func (a *area) senseTreasure() {
+	if !a.Ctx.Wearing("crown") {
+		return
+	}
+	const senseR = 26 // far past the lantern — the crown's whole point
+	within := func(x, y int) bool {
+		dx, dy := x-a.X, y-a.Y
+		return dx*dx+dy*dy <= senseR*senseR
+	}
+	for p := range a.nodes {
+		if within(p[0], p[1]) {
+			a.markSeen(p[0], p[1])
+		}
+	}
+	for _, d := range a.interiorDoors {
+		if within(d[0], d[1]) {
+			a.markSeen(d[0], d[1])
+		}
+	}
 }
 
 // persist flushes newly-uncovered chunks for this cave so the map survives the
@@ -226,8 +278,14 @@ func isForage(item string) bool {
 func (a *area) gather(pos [2]int, item string) {
 	a.mined[pos] = true
 	a.Map.Tiles[pos[1]][pos[0]] = caveFloor
-	a.Ctx.Inventory[item]++
-	a.Ctx.Store.AddItem(a.Ctx.Name, item)
+	yield := 1
+	if a.Ctx.ForagerBoon() { // a gatherer's wearable draws a richer haul
+		yield = 2
+	}
+	for i := 0; i < yield; i++ {
+		a.Ctx.Inventory[item]++
+		a.Ctx.Store.AddItem(a.Ctx.Name, item)
+	}
 	name := item
 	it, known := game.ItemByID(item)
 	if known {
@@ -236,6 +294,9 @@ func (a *area) gather(pos [2]int, item string) {
 	verb := "⛏ mined"
 	if isForage(item) {
 		verb = "🍄 gathered"
+	}
+	if yield > 1 {
+		name = fmt.Sprintf("%s ×%d", name, yield)
 	}
 	a.setToast(verb + " " + name)
 	// The deep prizes double as trophies: a geode wins its circlet, a relic its
@@ -371,7 +432,12 @@ func (a *area) burnLantern() {
 		}
 		return
 	}
-	if a.fuel -= fuelBurn; a.fuel < 0 {
+	a.stepN++
+	burn := fuelBurn
+	if a.Ctx.Wearing("glowcap") && a.stepN%2 == 0 {
+		burn = 0 // the lantern-cap's own glow lets the lantern sip oil — half the burn
+	}
+	if a.fuel -= burn; a.fuel < 0 {
 		a.fuel = 0
 	}
 	if !a.warnedLow && a.fuel <= fuelLow {
