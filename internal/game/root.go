@@ -546,6 +546,9 @@ func (m *Model) charPanel() string {
 			rows = append(rows, fmt.Sprintf("  %s %s", label, m.theme.ChatText.Render(f.val)))
 		}
 	}
+	if p := AccessoryPower(cur.Accessory); p != "" { // what the worn hat actually does
+		rows = append(rows, "  "+m.theme.Dim.Render(padRight("", 6))+" "+m.theme.Accent.Render("✦ "+p))
+	}
 	rows = append(rows, "", m.theme.Dim.Render("↑↓ field · ←→ change · esc close"))
 	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }

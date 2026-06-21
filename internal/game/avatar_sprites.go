@@ -516,4 +516,28 @@ var accessories = []struct {
 		"..HHHHHHHH..",
 		"...hhhhhh...",
 	}},
+	// A gem circlet, won by carrying a geode up out of the deep.
+	{"circlet", "#9CE0FF", []string{
+		"            ",
+		"     HH     ",
+		"..hhHHHHhh..",
+	}},
+	// An ancient jeweled diadem, won by bearing a relic back to the light.
+	{"diadem", "#C9B0FF", []string{
+		"....HH......",
+		"..HHHHHHHH..",
+		".HhHHHHHHhH.",
+	}},
+	// A cluster of bioluminescent caps, from gathering glowspore in moss caves.
+	{"glowcap", "#8BF29C", []string{
+		"..HH...HH...",
+		".HHHH.HHHH..",
+		"..hh...hh...",
+	}},
+	// An amber gem on the brow, from gathering cave amber in ochre caves.
+	{"ambergem", "#FFB347", []string{
+		"     HH     ",
+		"....HHHH....",
+		"...hHHHHh...",
+	}},
 }

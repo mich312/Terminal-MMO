@@ -28,6 +28,7 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 
 	// areas register themselves with the game registry
+	_ "github.com/durst-group/durstworld/internal/areas/cave"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
 	_ "github.com/durst-group/durstworld/internal/areas/grove"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"

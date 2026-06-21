@@ -81,7 +81,17 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				if ph == "" {
 					ph = t.Color
 				}
-				propCols[y][x] = tint(style.tint(ph), amb, ambStr)
+				pc := tint(style.tint(ph), amb, ambStr)
+				// Under a lantern, props that don't shine on their own fade into the
+				// dark with distance like the ground, so a stalagmite or a gold seam
+				// is something the light finds — not a sprite floating on black. The
+				// emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
+				if light.Warm {
+					if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
+						pc = applyLight(pc, originX+x, originY+y, light)
+					}
+				}
+				propCols[y][x] = pc
 			}
 		}
 	}
@@ -148,6 +158,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			for vx := 0; vx < cam.W; vx++ {
 				if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					accumCanopyShadow(shadowMask, imgW, imgH, vx, vy, scale, art)
+				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
+					accumBuildingShadow(shadowMask, imgW, imgH, vx, vy, scale, vs[0])
 				}
 			}
 		}
@@ -158,22 +170,49 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					drawStructure(img, vx, vy, scale, propCols[vy][vx], frame, style.Portal, style.Palette)
 				} else if art, ok := canopyArt(props[vy][vx], originX+vx, originY+vy); ok {
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
+				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
+					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs, frame, props[vy][vx])
 				}
 			}
 		}
-		// Night point lights: emissive props (campfires, portals, lamps, the
-		// reactor core, gem loot…) bloom a warm/cool glow pool on the scene after
-		// dusk, scaled by how dark it is.
-		if _, _, night := sunState(); night > 0.03 {
+		// Point lights: emissive props (campfires, portals, lamps, the reactor
+		// core, gem loot…) bloom a warm/cool glow pool on the scene after dusk,
+		// scaled by how dark it is. Light shafts are the exception — they carry
+		// daylight down through thin rock, so they shine by day and the loop must
+		// run even at noon for them.
+		if _, _, night := sunState(); true {
 			apx := scale / tileArtN
 			if apx < 1 {
 				apx = 1
 			}
 			for vy := 0; vy < cam.H; vy++ {
 				for vx := 0; vx < cam.W; vx++ {
-					if col, rad, mult, ok := emitterGlow(props[vy][vx], propCols[vy][vx], frame, originX+vx, originY+vy); ok {
-						drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, night*mult, apx)
+					p := props[vy][vx]
+					col, rad, mult, ok := emitterGlow(p, propCols[vy][vx], frame, originX+vx, originY+vy)
+					if !ok {
+						continue
 					}
+					amount := night * mult
+					if p == PropLightShaft {
+						amount = mult // already day/night-weighted inside emitterGlow
+					} else if night <= 0.03 {
+						continue // ordinary emitters only bloom after dusk
+					}
+					drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, amount, apx)
+				}
+			}
+			// A worn light shines too: a player in a glowing wearable (a lantern-cap,
+			// a crystal trophy) blooms a pool around themselves after dusk — the same
+			// point-light, carried. Drawn before the sprites so it lights the ground.
+			if night > 0.03 {
+				for _, p := range players {
+					col, rad, ok := AccessoryLight(p.Accessory)
+					if !ok {
+						continue
+					}
+					cx := (p.X-originX)*scale + PlayerW*scale/2
+					cy := (p.Y-originY)*scale + PlayerH*scale/2
+					drawGlow(img, cx, cy, rad*float64(scale), col, 0.9*night, apx)
 				}
 			}
 		}
@@ -181,6 +220,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		drawMist(img, texs, cam, scale, frame, originX, originY)
 		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)
+		// Cave life: bats at the mouths, fish in the pools, glow-worms over the fungi.
+		drawCaveFauna(img, props, cam, scale, frame, originX, originY)
 	}
 
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
@@ -467,6 +508,175 @@ func drawStructure(img *image.RGBA, vx, vy, scale int, col colorful.Color, frame
 			}
 		}
 	}
+}
+
+// buildingArtFor returns the sprite variants for a village building prop.
+func buildingArtFor(p TileProp) ([][]string, bool) {
+	a, ok := buildingArt[p]
+	return a, ok
+}
+
+// bldHash is a stable per-building hash of its world position, used to pick a
+// sprite variant and a small color jitter so neighbours don't look identical.
+func bldHash(wx, wy int) uint32 {
+	return uint32(wx)*73856093 ^ uint32(wy)*19349663
+}
+
+// drawBuilding renders a multi-tile village building, bottom-left-anchored on
+// tile (vx,vy) so it rises up and extends right from its base. It picks one of
+// the type's variants and nudges the color, both keyed on world position (wx,wy)
+// so the same building always looks the same. Codes: P wall, p roof, D
+// base/door, L window, R trim/cross, F glowing forge mouth. The roof takes a
+// material colour (thatch / tile / slate) chosen by building type and position,
+// so a street mixes golden thatch and red-tiled roofs instead of one flat tone.
+func drawBuilding(img *image.RGBA, vx, vy, wx, wy, scale int, col colorful.Color, variants [][]string, frame int, prop TileProp) {
+	hsh := bldHash(wx, wy)
+	art := variants[hsh%uint32(len(variants))]
+	if j := float64(int((hsh>>5)%7)-3) * 0.022; j >= 0 { // ±~7% lightness per building
+		col = col.BlendLab(spriteWhite, j)
+	} else {
+		col = col.BlendLab(shadowColor, -j)
+	}
+	// Per-building wall character so a terrace isn't one flat tone: some houses are
+	// limewashed pale, some timber-framed and browner, some left as bare plaster.
+	// Only the humble dwellings vary this way; stone landmarks keep their material.
+	switch prop {
+	case PropBldCottage, PropBldHouse, PropBldLonghouse, PropBldBarn, PropBldTownhouse, PropBldMarketHall,
+		PropBldRowhouse, PropBldNarrowhouse, PropBldDeephouse:
+		switch (hsh >> 11) % 4 {
+		case 0:
+			col = col.BlendLab(spriteWhite, 0.16) // limewashed
+		case 1:
+			col = col.BlendLab(wallTimber, 0.20) // timber / daub, warmer brown
+		case 2:
+			col = col.BlendLab(wallStone, 0.12) // greyer plaster
+		}
+	}
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	left := vx * scale
+	top := (vy+1)*scale - len(art)*apx
+	body := colorfulToRGBA(col)
+	roof := colorfulToRGBA(roofColor(prop, hsh, col).Clamped())
+	base := colorfulToRGBA(col.BlendLab(shadowColor, 0.62).Clamped())
+	win := colorfulToRGBA(col.BlendLab(spriteWhite, 0.6).Clamped())
+	trim := colorfulToRGBA(col.BlendLab(spriteWhite, 0.32).Clamped())
+	// A forge mouth glows warm orange independent of the building's stone, pulsing
+	// gently on the frame so a smithy reads as fire-lit even by day.
+	forge := colorfulToRGBA(colorful.Color{R: 1, G: 0.46, B: 0.12}.
+		BlendLab(spriteWhite, 0.12+0.1*math.Sin(float64(frame)*0.3+float64(wx*7+wy*3))).Clamped())
+	for ay, row := range art {
+		for ax := 0; ax < len(row); ax++ {
+			var c color.RGBA
+			ok := true
+			switch row[ax] {
+			case 'P':
+				c = body
+			case 'p':
+				c = roof
+			case 'D':
+				c = base
+			case 'L':
+				c = win
+			case 'R':
+				c = trim
+			case 'F':
+				c = forge
+			default:
+				ok = false
+			}
+			if ok {
+				fillRect(img, left+ax*apx, top+ay*apx, apx, apx, c)
+			}
+		}
+	}
+}
+
+// roofMaterials are the roofing palettes a settlement mixes: golden thatch on
+// humble buildings, red clay tile and blue-grey slate on grander ones.
+var (
+	roofThatch = mustHex("#A8823E")
+	roofTile   = mustHex("#9C4A33")
+	roofSlate  = mustHex("#566270")
+	roofLead   = mustHex("#6E7178")
+	// A few tones per humble material so a street of thatch isn't one flat gold and
+	// a row of tile isn't one flat red: fresh straw, weathered tan, old mossy
+	// brown, sun-bleached pale; clay red, brown-red, ochre.
+	roofThatches = []colorful.Color{
+		mustHex("#B2933F"), mustHex("#967A3C"), mustHex("#6E6038"), mustHex("#C2A861"),
+	}
+	roofTiles = []colorful.Color{
+		mustHex("#9C4A33"), mustHex("#864A39"), mustHex("#A86A3A"),
+	}
+	// Wall-character tint targets for per-building variety.
+	wallTimber = mustHex("#7A5A3A")
+	wallStone  = mustHex("#8C8A82")
+)
+
+// roofColor picks a building's roof material by type — thatch for cottages,
+// barns and longhouses; tile or slate for the wealthier townhouses, market
+// halls and churches; lead-grey for the castle's stone — each drawn from a small
+// per-material palette (keyed on hsh) so a district reads as a mix of weathered
+// roofs rather than one flat tone. The chosen material is nudged in lightness so
+// even same-tone neighbours differ a touch.
+func roofColor(prop TileProp, hsh uint32, body colorful.Color) colorful.Color {
+	thatch := roofThatches[hsh%uint32(len(roofThatches))]
+	tile := roofTiles[(hsh/7)%uint32(len(roofTiles))]
+	var mat colorful.Color
+	switch prop {
+	case PropBldCottage, PropBldBarn, PropBldLonghouse, PropBldNarrowhouse:
+		mat = thatch // humble buildings keep thatch
+	case PropBldSmithy:
+		mat = roofSlate // a forge wants a fireproof slate roof, not straw
+	case PropBldTavern:
+		mat = tile // a prosperous tavern is tiled
+	case PropBldTownhouse, PropBldMarketHall:
+		if hsh&1 == 0 {
+			mat = tile
+		} else {
+			mat = roofSlate
+		}
+	case PropBldChurch, PropBldCathedral, PropBldKeep:
+		mat = roofLead // grand stone roofs in lead/slate
+	case PropBldHouse, PropBldRowhouse, PropBldDeephouse:
+		if hsh%3 == 0 { // a mix: mostly thatch, some tiled
+			mat = tile
+		} else {
+			mat = thatch
+		}
+	default:
+		return body.BlendLab(shadowColor, 0.45) // wilderness cabin: shaded body
+	}
+	// Nudge lightness per building so neighbours of the same tone differ a touch.
+	if hsh&2 == 0 {
+		mat = mat.BlendLab(spriteWhite, 0.05)
+	} else {
+		mat = mat.BlendLab(shadowColor, 0.05)
+	}
+	return mat
+}
+
+// accumBuildingShadow records a building's soft contact shadow, centred under
+// its footprint, into the shared max-coverage shadow mask.
+func accumBuildingShadow(mask []uint8, imgW, imgH, vx, vy, scale int, art []string) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	w, h := len(art[0]), len(art)
+	cx := float64(vx*scale) + float64(w*apx)/2
+	by := float64((vy+1)*scale) - float64(apx)
+	shadowBlocks(cx, by, float64(w*apx)*0.5, float64(apx)*1.5, apx, float64(h*apx),
+		func(x, y int, a float64) {
+			if x < 0 || x >= imgW || y < 0 || y >= imgH {
+				return
+			}
+			if v := uint8(a * 255); v > mask[y*imgW+x] {
+				mask[y*imgW+x] = v
+			}
+		})
 }
 
 // canopyArt returns the sprite for a tall flora prop (trees pick a variant by

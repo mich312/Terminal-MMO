@@ -111,6 +111,15 @@ func (a *area) resume() (int, int) {
 		if _, isPortal := a.portalUnder(x, y); !isPortal {
 			return x, y
 		}
+		// The saved spot is a portal — e.g. a cave mouth we just stepped out of.
+		// Surface on a walkable cell right beside it rather than back at the hub.
+		for _, o := range [][2]int{{0, 1}, {1, 0}, {-1, 0}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}} {
+			if nx, ny := x+o[0], y+o[1]; a.fits(nx, ny) {
+				if _, p := a.portalUnder(nx, ny); !p {
+					return nx, ny
+				}
+			}
+		}
 	}
 	return a.spawn()
 }
@@ -300,6 +309,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			a.collectItem() // items are gathered just by walking over them
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
+				// Persist the cell we stepped in from, not the portal itself, so
+				// returning to the Wilds drops us beside the entrance (a cave mouth
+				// out in the hills) rather than back at the distant HQ spawn.
+				a.wx, a.wy = nx-dx, ny-dy
 				a.persist()
 				return game.Transition{To: portal}, nil
 			}
@@ -407,8 +420,8 @@ func (a *area) collectItem() bool {
 	a.ctx.Inventory[it.ID]++
 	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
 	a.setToast("+ " + it.Name)
-	if acc, ok := wearableFromItem[it.ID]; ok {
-		if idx, ok := game.AccessoryIndex(acc); ok && a.unlockHat(idx) {
+	if it.Wear != "" {
+		if idx, ok := game.AccessoryIndex(it.Wear); ok && a.unlockHat(idx) {
 			a.setToast("+ " + it.Name + " - now wearable! (c to equip)")
 		}
 	}
@@ -445,11 +458,22 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
 						t.Ch, t.Color = it.Glyph, it.Hex
-						prop := game.PropGem
-						if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
-							prop = game.PropGemGlow
+						switch it.ID {
+						case "grain": // standing crop, over the field's furrows
+							t.Prop, t.PropHex, t.Tex, t.Ground = game.PropCrop, it.Hex, game.TexField, "#86974A"
+						case "stone": // cut stone on the quarry floor (keep the floor under it)
+							t.Prop, t.PropHex = game.PropStone, it.Hex
+						case "wood": // a log pile by the stump
+							t.Prop, t.PropHex = game.PropLog, it.Hex
+						case "fish": // a catch on the jetty planks
+							t.Prop, t.PropHex = game.PropFish, it.Hex
+						default:
+							prop := game.PropGem
+							if it.Glow { // crystals & mushrooms glow at night; other forage doesn't
+								prop = game.PropGemGlow
+							}
+							t.Prop, t.PropHex, t.Ground = prop, it.Hex, groundColor(cell.Biome)
 						}
-						t.Prop, t.PropHex, t.Ground = prop, it.Hex, groundColor(cell.Biome)
 					}
 				}
 				row[lx] = t
@@ -528,6 +552,11 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
 	if c.Object {
+		if c.Portal == "cave" {
+			// A cave mouth is a dark arch in the hillside, not a glowing gate.
+			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCaveMouth, "#5C5560", "#6B5A44", game.TexRock
+			return t
+		}
 		// Landmark area-entrances are animated portal gates, color-coded to the
 		// destination — distinct from decorative houses.
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPortal, c.Color, groundColor(worldgen.Grass), game.TexGrass
@@ -544,8 +573,44 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropStump, c.Color, groundColor(c.Biome)
 	case '°': // small rock
 		t.Prop, t.PropHex, t.Ground = game.PropRock, c.Color, groundColor(c.Biome)
-	case 'H': // a homestead — decorative house (blocks)
-		t.Prop, t.PropHex, t.Ground = game.PropHouse, c.Color, groundColor(c.Biome)
+	case 'W': // a village well (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropWell, c.Color, groundColor(c.Biome)
+	case 'i': // a city brazier — glows warm at night (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropBrazier, c.Color, "#9A8E78"
+	case 's': // a market stall on the square (blocks)
+		t.Prop, t.PropHex, t.Ground = game.PropStall, c.Color, packedEarth
+	case 'b': // a plank bridge over water (walkable) — Variant carries its run
+		t.Prop = game.PropBridgeH
+		if c.Variant == 1 {
+			t.Prop = game.PropBridgeV
+		}
+		t.PropHex, t.Ground = c.Color, "#6B4A2B"
+	case '=': // a palisade segment (blocks) — orientation carried in Variant
+		switch c.Variant {
+		case 1:
+			t.Prop = game.PropFenceV
+		case 2:
+			t.Prop = game.PropFencePost
+		default:
+			t.Prop = game.PropFenceH
+		}
+		t.PropHex, t.Ground = c.Color, groundColor(c.Biome)
+	case '#': // a town's stone curtain wall (blocks)
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropStoneWall, c.Color, "#6E7077", game.TexRock
+	case 'I': // a town's stone wall tower (blocks, overhangs upward)
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTower, c.Color, "#6E7077", game.TexRock
+	case '"': // a cultivated field — crop rows (walkable)
+		t.Tex, t.Ground = game.TexField, "#86974A"
+	case '%': // a covered building footprint tile — drawn by its anchor (blocks)
+		t.Prop, t.Ground = game.PropBldBody, packedEarth
+	case 'h', 'H', 'L', 'B', 'C', 'K', 'T', 'M', 'S', 'V', 'r', 'n', 'd': // a settlement building anchor (blocks)
+		t.Prop = buildingProp(c.Variant)
+		t.PropHex, t.Ground = c.Color, packedEarth
+		if t.Prop == game.PropHouse { // a lone wilderness cabin keeps its biome ground
+			t.Ground = groundColor(c.Biome)
+		}
+	case 'Y': // an orchard/yard tree in a village — a real tree, but over grass
+		t.Prop, t.PropHex, t.Ground = game.PropTree, c.Color, groundColor(c.Biome)
 	case '♣': // tree on forest floor
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropTree, c.Color, groundColor(worldgen.Forest), game.TexForest
 	case 'ϒ': // acacia on savanna
@@ -566,6 +631,46 @@ func CellTile(c worldgen.Cell) game.Tile {
 		}
 	}
 	return t
+}
+
+// packedEarth is the trodden ground beneath village buildings.
+const packedEarth = "#9B8A6A"
+
+// buildingProp maps a settlement building's type (carried in Cell.Variant) to
+// its sprite. Variant 0 is a lone wilderness cabin (the single-tile PropHouse).
+func buildingProp(variant uint8) game.TileProp {
+	switch variant {
+	case 1:
+		return game.PropBldCottage
+	case 2:
+		return game.PropBldHouse
+	case 3:
+		return game.PropBldLonghouse
+	case 4:
+		return game.PropBldBarn
+	case 5:
+		return game.PropBldChurch
+	case 6:
+		return game.PropBldKeep
+	case 7:
+		return game.PropBldCathedral
+	case 8:
+		return game.PropBldTownhouse
+	case 9:
+		return game.PropBldMarketHall
+	case 10:
+		return game.PropBldSmithy
+	case 11:
+		return game.PropBldTavern
+	case 12:
+		return game.PropBldRowhouse
+	case 13:
+		return game.PropBldNarrowhouse
+	case 14:
+		return game.PropBldDeephouse
+	default:
+		return game.PropHouse
+	}
 }
 
 // texForBiome maps an overworld biome to an HD ground texture.

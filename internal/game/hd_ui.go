@@ -221,6 +221,9 @@ func DrawInventoryPanel(img *image.RGBA, ctx *Ctx) {
 	hatLine := ""
 	if hasSelf {
 		hatLine = "Hat: " + AccessoryName(cur.Accessory)
+		if p := AccessoryPower(cur.Accessory); p != "" {
+			hatLine += " (" + p + ")"
+		}
 	}
 	leftW := avW
 	for _, t := range []string{name, hatLine} {

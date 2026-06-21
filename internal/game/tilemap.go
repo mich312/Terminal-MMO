@@ -37,6 +37,7 @@ const (
 	TexFloor // subtly speckled interior floor
 	TexBrick // staggered brick courses, for walls
 	TexMetal // riveted metal plate, for machine halls
+	TexField // plowed farm furrows, for village fields
 )
 
 // TileProp is a sprite drawn over the ground in the HD renderer — flowers,
@@ -69,12 +70,57 @@ const (
 	PropPipe     // pipe segment with a valve light
 	PropFountain // water feature centerpiece (glows)
 	// Signature overworld flora, one recognizable silhouette per biome.
-	PropAcacia // savanna: flat-topped umbrella tree (tall, blocks)
-	PropPalm   // beach: fronds on a leaning trunk (tall, blocks)
-	PropFir    // snow: snow-tipped conifer (tall, blocks)
+	PropAcacia   // savanna: flat-topped umbrella tree (tall, blocks)
+	PropPalm     // beach: fronds on a leaning trunk (tall, blocks)
+	PropFir      // snow: snow-tipped conifer (tall, blocks)
 	PropReed     // swamp: a clump of thin cattail reeds (in-tile)
 	PropCrag     // hill: a jagged rock spire (in-tile, blocks)
 	PropCampfire // a traveler's campfire — flickers and casts warm light at night
+	// Settlement structures for villages in the Wilds.
+	PropWell      // a stone village well — the heart of a settlement (blocks)
+	PropFenceH    // palisade rail running east–west (blocks)
+	PropFenceV    // palisade rail running north–south (blocks)
+	PropFencePost // palisade corner / junction post (blocks)
+	// Multi-tile village buildings (drawn bottom-left-anchored, overhanging up
+	// and right). PropBldBody marks a footprint tile that the anchor's sprite
+	// covers — it blocks movement but draws nothing itself.
+	PropBldCottage     // 1×1 cottage
+	PropBldHouse       // 2×2 house
+	PropBldLonghouse   // 3×2 longhouse
+	PropBldBarn        // 2×2 barn
+	PropBldChurch      // 2×3 church with a steeple
+	PropBldKeep        // 3×3 castle keep (a city's stronghold)
+	PropBldCathedral   // 3×4 great church (a city's grand centrepiece)
+	PropBldTownhouse   // 2×3 tall multi-storey townhouse
+	PropBldMarketHall  // 3×3 market hall
+	PropBldSmithy      // 2×2 blacksmith's forge (glows warm at night)
+	PropBldTavern      // 2×2 tavern with warm lit windows
+	PropBldRowhouse    // 2×3 deep burgage house
+	PropBldNarrowhouse // 1×2 narrow-fronted deep house
+	PropBldDeephouse   // 2×4 deep, tall burgage house
+	PropBldBody        // a covered footprint tile (no draw)
+	PropCrop           // ripe grain standing in a field (harvestable)
+	PropStone          // cut-stone rubble at a quarry (harvestable)
+	PropLog            // a stack of logs at a lumber camp (harvestable)
+	PropFish           // a fish by a jetty (harvestable)
+	PropStoneWall      // a stone curtain wall segment, for towns (blocks)
+	PropTower          // a stone wall tower, for towns (blocks, overhangs upward)
+	PropBrazier        // a fire brazier on a post — lights a city's gates and squares at night
+	PropStall          // a market stall with a striped awning, on a city's square (blocks)
+	PropBridgeH        // a plank bridge deck running east–west (walkable)
+	PropBridgeV        // a plank bridge deck running north–south (walkable)
+	// Caves: a dark arched mouth in the hills, and the bioluminescent life within.
+	PropCaveMouth  // a cave entrance — a dark arch cut into the rock
+	PropCaveShroom // a cluster of glowing cave mushrooms (bioluminescent, glows)
+	PropGlowPool   // a still cave pool lit from within by glowing algae (glows)
+	PropStalagmite // a rock spire rising from the cave floor (in-tile, walkable)
+	PropColumn     // a floor-to-ceiling cave column (blocks)
+	PropFlowstone  // a draped sheet of flowstone against the rock (in-tile, walkable)
+	PropLightShaft // a shaft of daylight breaking through thin rock (glows, day-bright)
+	PropTimbering  // old mine support timbers under a peak (blocks)
+	PropRelic      // a half-buried relic in deep ruins (a found treasure, glows)
+	PropGeode      // a cracked-open geode, crystal core aglow (the deep cache prize)
+	PropChasm      // a hole in the cave floor — a lit stone rim around a black drop
 )
 
 // Tile is one cell of a parsed map.

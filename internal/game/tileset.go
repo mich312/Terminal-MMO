@@ -75,6 +75,12 @@ var groundArt = map[TileTex][][]string{
 		{"LBBBBB", "BBBBBB", "BBBBBB", "LBBBBB", "BBBBBB", "BBBBBB"},
 		{"BBBBBL", "BBBBBB", "BBBBBB", "BBBBBL", "BBBBBB", "BBBBBB"},
 	},
+	// Field: plowed earth in straight furrows — full-width dark rows so adjacent
+	// field tiles join into continuous plowlines across a farm.
+	TexField: {
+		{"BBBBBB", "DDDDDD", "BBBBBB", "DDDDDD", "BBBBBB", "DDDDDD"},
+		{"DDDDDD", "BBBBBB", "DDDDDD", "BBBBBB", "DDDDDD", "BBBBBB"},
+	},
 }
 
 var propArt = map[TileProp][]string{
@@ -135,6 +141,45 @@ var propArt = map[TileProp][]string{
 		".pp.p.",
 		"......",
 	},
+	// A brazier: a flaming fire-bowl (G flame, W white-hot) on a dark iron post —
+	// lights a city's gates and squares warmly after dark.
+	PropBrazier: {
+		"..G...",
+		".GWG..",
+		"GGWGG.",
+		".DPD..",
+		"..P...",
+		"..D...",
+	},
+	// A market stall: a striped awning (L/W bands) on two posts (D) over a
+	// counter of wares (G goods catch the light) — clusters on a city's square.
+	PropStall: {
+		"LWLWLW",
+		"WLWLWL",
+		"D....D",
+		"DGGGGD",
+		"DGWGGD",
+		"DD..DD",
+	},
+	// A plank bridge deck running east–west: timber planks (P) with seam lines (p)
+	// and dark guard-rails (D) along the two long sides over the open water.
+	PropBridgeH: {
+		"DDDDDD",
+		"PPPPPP",
+		"pppppp",
+		"PPPPPP",
+		"pppppp",
+		"DDDDDD",
+	},
+	// The same deck running north–south: rails down the left and right edges.
+	PropBridgeV: {
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+		"DPpPpD",
+	},
 	// A traveler's campfire: an animated flame (G, pulses) over charred logs.
 	PropCampfire: {
 		"..G...",
@@ -154,6 +199,90 @@ var propArt = map[TileProp][]string{
 		"PLPPLP",
 		"PPppPP",
 		"PPppPP",
+	},
+	// PropWell is a round stone village well: a light-rimmed stone ring (P/L)
+	// around dark water (D), the centrepiece of a settlement.
+	PropWell: {
+		".PPPP.",
+		"PLppLP",
+		"PpDDpP",
+		"PpDDpP",
+		"PLppLP",
+		".pPPp.",
+	},
+	// Ripe grain: a little stand of golden stalks with heavy seed-heads (W),
+	// standing in a field — reads as a crop ready to harvest.
+	PropCrop: {
+		"W.W.W.",
+		"PWPWPW",
+		"PPPPPP",
+		".PPPP.",
+		".PPPP.",
+		"..pp..",
+	},
+	// Cut-stone rubble: a little heap of squared blocks at the quarry.
+	PropStone: {
+		"......",
+		".PPp..",
+		"PPpp..",
+		".PPpP.",
+		"PppppP",
+		"......",
+	},
+	// A stack of logs, seen end-on (dark bark rings around pale cores).
+	PropLog: {
+		"......",
+		"DPPDP.",
+		"DppDp.",
+		"DPPDP.",
+		"DppDp.",
+		"......",
+	},
+	// A fish lying by the jetty: body, tail and a glint of an eye (W).
+	PropFish: {
+		"......",
+		"..PPp.",
+		".PPPPp",
+		"WPPPp.",
+		".PPp..",
+		"......",
+	},
+	// Stone curtain wall: a thick coursed-block wall with battlement notches
+	// along the top. Reads as solid masonry whichever way it runs.
+	PropStoneWall: {
+		"P.PP.P",
+		"PPPPPP",
+		"PppPpP",
+		"PPPPPP",
+		"PppPpP",
+		"PPPPPP",
+	},
+	// Palisade rails: rough timber stakes. The horizontal run shows a long rail
+	// across two posts; the vertical run shows stakes along the line of travel;
+	// the post is a stout corner/junction upright. Autotiling picks between them.
+	PropFenceH: {
+		"......",
+		"P....P",
+		"PPPPPP",
+		"pPPPPp",
+		"P....P",
+		"P....P",
+	},
+	PropFenceV: {
+		".P..P.",
+		".P..P.",
+		".PppP.",
+		".PppP.",
+		".P..P.",
+		".P..P.",
+	},
+	PropFencePost: {
+		"PP..PP",
+		"PP..PP",
+		"PPppPP",
+		"PPppPP",
+		"PP..PP",
+		"PP..PP",
 	},
 	// PropHat is a wearable lying on the ground — a little brimmed hat that
 	// glints (W) so it reads as special loot, not terrain.
@@ -231,6 +360,94 @@ var propArt = map[TileProp][]string{
 		"..PP..",
 		".oPPo.",
 	},
+	PropCaveMouth: { // a dark arch cut into the rock — the way underground
+		".LPPL.",
+		"LPooPL",
+		"PooooP",
+		"PooooP",
+		"PooooP",
+		"oPPPPo",
+	},
+	PropCaveShroom: { // a cluster of glowing mushrooms: caps glow, stems pale
+		"..G.G.",
+		".GGGGG",
+		"GGGGGG",
+		".L.LL.",
+		".L.LL.",
+		"..oo..",
+	},
+	PropGlowPool: { // a still pool lit from within, flecked with brighter motes
+		".GGGG.",
+		"GGWGGG",
+		"GGGGWG",
+		"GWGGGG",
+		"GGGWGG",
+		".GGGG.",
+	},
+	PropStalagmite: { // a cone rising from the floor: lit left face, shaded right
+		"..LP..",
+		"..LP..",
+		".LPPp.",
+		".LPPp.",
+		"LPPPpp",
+		"PPPPpp",
+	},
+	PropColumn: { // a solid floor-to-ceiling pillar (lit edge, body, shaded side)
+		".LPPp.",
+		".LPPp.",
+		".LPPp.",
+		".LPPp.",
+		".LPPp.",
+		".LPPp.",
+	},
+	PropFlowstone: { // a draped sheet of stone melted down the wall in folds
+		"LPpLPp",
+		"LPpLPp",
+		"PpLPpL",
+		"PpLPpL",
+		".pppp.",
+		"......",
+	},
+	PropLightShaft: { // motes of dust adrift in a shaft of daylight (glow added below)
+		"...W..",
+		".W....",
+		"....W.",
+		"..W...",
+		"W...G.",
+		"...W..",
+	},
+	PropTimbering: { // an old mine portal: stout timber frame with corner braces
+		"TTTTTT",
+		"TT..TT",
+		"T....T",
+		"T....T",
+		"T....T",
+		"TT..TT",
+	},
+	PropRelic: { // a glowing idol on a dark plinth — a treasure worth the climb
+		"..GG..",
+		".GWWG.",
+		".GWWG.",
+		"..GG..",
+		".oPPo.",
+		"oPPPPo",
+	},
+	PropGeode: { // a rock geode cracked open on a glittering crystal core
+		".DPPD.",
+		"DPGGPD",
+		"PGWWGP",
+		"PGWWGP",
+		"DPGGPD",
+		".DppD.",
+	},
+	PropChasm: { // a drop in the floor: a lit stone lip around a black void (center transparent)
+		".LPPL.",
+		"LP..PL",
+		"P....P",
+		"P....P",
+		"Lp..pL",
+		".LppL.",
+	},
 	PropCrate: {
 		"oPPPPo",
 		"PLppLP",
@@ -293,6 +510,306 @@ var portalArt = []string{
 	".R@@@@@@@@R.",
 	"..R@@@@@@R..",
 	"...RRRRRR...",
+}
+
+// buildingArt holds the multi-tile sprites for village buildings, generated once
+// from their footprint. Each is (h·6) rows × (w·6) cols of art-pixels, drawn
+// bottom-left-anchored so it rises up (north) and extends right (east) from its
+// base tile. Codes: P wall, p roof, D base/door shade, L window, R trim/cross.
+// Each building type has a few variants (different roofs, window rows, door
+// placement, half-timbering, steeple offset). The renderer picks one per
+// instance by world position, so a street isn't lined with identical copies.
+var buildingArt = map[TileProp][][]string{
+	PropBldCottage:     bldVariants(1, 1, bldDwelling),
+	PropBldHouse:       bldVariants(2, 2, bldDwelling),
+	PropBldLonghouse:   bldVariants(3, 2, bldDwelling),
+	PropBldBarn:        bldVariants(2, 2, bldBarn),
+	PropBldChurch:      bldVariants(2, 3, bldChurch),
+	PropBldCathedral:   bldVariants(3, 4, bldChurch),
+	PropBldTownhouse:   {genTownhouse(2, 3, 0), genTownhouse(2, 4, 1), genTownhouse(2, 3, 2)},
+	PropBldMarketHall:  bldVariants(3, 3, bldDwelling),
+	PropBldSmithy:      bldVariants(2, 2, bldSmithy),
+	PropBldTavern:      bldVariants(2, 2, bldTavern),
+	PropBldRowhouse:    bldVariants(2, 3, bldDwelling),
+	PropBldNarrowhouse: bldVariants(1, 2, bldDwelling),
+	PropBldDeephouse:   bldVariants(2, 4, bldDwelling),
+	PropBldKeep:        {genKeep(3, 3)},
+	PropTower:          {towerArt},
+}
+
+// genTownhouse builds a tall, narrow multi-storey merchant house: a wt-tile-wide
+// footprint drawn artTiles tiles tall (overhanging upward past its footprint),
+// with a band of lit windows for each storey and a shallow tiled roof. The extra
+// height is what gives a wealthy quarter a skyline against the thatched streets.
+func genTownhouse(wt, artTiles, style int) []string {
+	w, h := wt*tileArtN, artTiles*tileArtN
+	g := make([][]byte, h)
+	for y := range g {
+		g[y] = make([]byte, w)
+		for x := range g[y] {
+			g[y][x] = '.'
+		}
+	}
+	roofH := tileArtN*4/5 + style/2 // a low hipped town roof (~0.8 tile), not a spire
+	wallTop, baseY := roofH, h-1
+	for y := wallTop; y <= baseY; y++ {
+		for x := 0; x < w; x++ {
+			g[y][x] = 'P'
+		}
+	}
+	for x := 0; x < w; x++ {
+		g[baseY][x] = 'D' // base course
+	}
+	// Hipped roof: the eaves overhang the wall and the slope stops short of a point,
+	// leaving a flat ridge band — so it reads as a house roof, not a turret.
+	for ry := 0; ry < roofH; ry++ {
+		m := (roofH - 1 - ry) * (w/2 - 1) / roofH
+		for x := m; x < w-m; x++ {
+			g[ry][x] = 'p'
+		}
+	}
+	// Storeys: a window band every three rows, with a trim line between floors so the
+	// height reads as stacked storeys rather than one tall blank wall.
+	for wy := wallTop + 2; wy < baseY-1; wy += 3 {
+		for x := 1; x < w-1; x++ {
+			if (x+style)%2 == 0 {
+				g[wy][x] = 'L'
+			}
+		}
+		if wy-1 > wallTop {
+			for x := 0; x < w; x++ {
+				g[wy-1][x] = 'R' // floor line / eaves band
+			}
+		}
+	}
+	dcx := w / 2 // a door at the base
+	for y := baseY - 1; y <= baseY; y++ {
+		for x := dcx - 1; x <= dcx; x++ {
+			if x >= 0 && x < w {
+				g[y][x] = 'D'
+			}
+		}
+	}
+	out := make([]string, h)
+	for y := range g {
+		out[y] = string(g[y])
+	}
+	return out
+}
+
+// genKeep builds a castle keep: a solid stone block with a flat battlemented
+// crown (merlons), corner turrets a touch taller, arrow slits and a gate.
+func genKeep(wt, ht int) []string {
+	w, h := wt*tileArtN, ht*tileArtN
+	g := make([][]byte, h)
+	for y := range g {
+		g[y] = make([]byte, w)
+		for x := range g[y] {
+			g[y][x] = 'P'
+		}
+	}
+	for x := 0; x < w; x++ {
+		g[h-1][x] = 'D' // base course
+		if x%2 == 1 {
+			g[0][x] = '.' // battlement gaps (merlons between)
+		} else {
+			g[0][x] = 'L' // lit merlon caps
+		}
+	}
+	for y := 2; y < h-2; y += 3 { // arrow slits
+		for x := 2; x < w-2; x += 4 {
+			g[y][x] = 'D'
+		}
+	}
+	dcx := w / 2 // a gate at the base
+	for y := h - 3; y < h; y++ {
+		for x := dcx - 1; x <= dcx+1; x++ {
+			g[y][x] = 'D'
+		}
+	}
+	out := make([]string, h)
+	for y := range g {
+		out[y] = string(g[y])
+	}
+	return out
+}
+
+// towerArt is a stone wall tower: one tile wide, two tall, with a battlemented
+// crown and an arrow slit, drawn bottom-anchored so it rises above the wall.
+var towerArt = []string{
+	"P.PP.P",
+	"PPPPPP",
+	"PPPPPP",
+	"PPDDPP",
+	"PPPPPP",
+	"PpPPpP",
+	"PPPPPP",
+	"PpPPpP",
+	"PPPPPP",
+	"PpPPpP",
+	"PPPPPP",
+	"DDDDDD",
+}
+
+type bldKind uint8
+
+const (
+	bldDwelling bldKind = iota
+	bldBarn
+	bldChurch
+	bldSmithy
+	bldTavern
+)
+
+func bldVariants(wt, ht int, k bldKind) [][]string {
+	return [][]string{
+		genBuilding(wt, ht, k, 0),
+		genBuilding(wt, ht, k, 1),
+		genBuilding(wt, ht, k, 2),
+	}
+}
+
+func genBuilding(wt, ht int, k bldKind, style int) []string {
+	w, h := wt*tileArtN, ht*tileArtN
+	g := make([][]byte, h)
+	for y := range g {
+		g[y] = make([]byte, w)
+		for x := range g[y] {
+			g[y][x] = '.'
+		}
+	}
+	roofH := h * []int{42, 50, 38}[style%3] / 100
+	if roofH < 2 {
+		roofH = 2
+	}
+	wallTop, baseY := roofH, h-1
+	for y := wallTop; y <= baseY; y++ {
+		for x := 0; x < w; x++ {
+			g[y][x] = 'P'
+		}
+	}
+	for x := 0; x < w; x++ {
+		g[baseY][x] = 'D' // base course
+	}
+	// Roof: a pitched ridge, or (style 1) a hipped roof with a flat-ish top.
+	topInset := 0
+	if style == 1 {
+		topInset = w / 4
+	}
+	for ry := 0; ry < roofH; ry++ {
+		m := (roofH - 1 - ry) * (w/2 - topInset) / roofH
+		for x := m; x < w-m; x++ {
+			g[ry][x] = 'p'
+		}
+	}
+	// Half-timbering (style 2 dwellings): dark vertical studs in the walls.
+	if style == 2 && k == bldDwelling {
+		for y := wallTop + 1; y < baseY; y++ {
+			for x := 0; x < w; x++ {
+				if x%4 == 1 {
+					g[y][x] = 'D'
+				}
+			}
+		}
+	}
+	// Windows: one or two rows, phase shifted per style.
+	for r := 0; r < []int{1, 2, 1}[style%3]; r++ {
+		wy := wallTop + 1 + r*2
+		if wy >= baseY {
+			break
+		}
+		for x := 1; x < w-1; x++ {
+			if (x+style)%3 == 1 {
+				g[wy][x] = 'L'
+			}
+		}
+	}
+	// Door, offset per style.
+	dcx := w/2 + []int{0, -w / 6, w / 6}[style%3]
+	dw := w / 4
+	if dw < 1 {
+		dw = 1
+	}
+	for y := baseY - max(1, (baseY-wallTop)/2); y <= baseY; y++ {
+		for x := dcx - dw/2; x <= dcx+dw/2; x++ {
+			if x >= 0 && x < w {
+				g[y][x] = 'D'
+			}
+		}
+	}
+	if k == bldBarn { // big central wagon doors
+		for y := wallTop + (baseY-wallTop)/3; y <= baseY; y++ {
+			for x := w / 4; x < w-w/4; x++ {
+				g[y][x] = 'D'
+			}
+		}
+	}
+	if k == bldChurch { // a steeple rising above the roof, topped with a cross
+		towW := tileArtN/2 + style%2
+		tx0 := w/2 - towW/2 + []int{0, -1, 1}[style%3]
+		if tx0 < 0 {
+			tx0 = 0
+		}
+		for y := 0; y < wallTop; y++ {
+			for x := tx0; x < tx0+towW && x < w; x++ {
+				g[y][x] = 'P'
+			}
+		}
+		cx := tx0 + towW/2
+		if cx >= w {
+			cx = w - 1
+		}
+		g[0][cx], g[1][cx], g[2][cx] = 'R', 'R', 'R'
+		if cx-1 >= 0 {
+			g[1][cx-1] = 'R'
+		}
+		if cx+1 < w {
+			g[1][cx+1] = 'R'
+		}
+	}
+	if k == bldSmithy { // a stout chimney with a forge-mouth glowing at the base
+		for y := 0; y < wallTop+1; y++ { // chimney rising past the roofline
+			g[y][w-2] = 'P'
+			if w-1 < w {
+				g[y][w-1] = 'D'
+			}
+		}
+		fy := baseY - max(1, (baseY-wallTop)/2) // the open forge mouth (glows 'F')
+		for y := fy; y <= baseY; y++ {
+			for x := w/2 - 1; x <= w/2; x++ {
+				if x >= 0 && x < w {
+					g[y][x] = 'F'
+				}
+			}
+		}
+	}
+	if k == bldTavern { // warm-lit windows and a hanging sign board out front
+		for r := 0; r < 2; r++ { // two rows of lit windows — a busy, lit-up tavern
+			wy := wallTop + 1 + r*2
+			if wy >= baseY {
+				break
+			}
+			for x := 1; x < w-1; x++ {
+				if (x+r)%2 == 0 {
+					g[wy][x] = 'L'
+				}
+			}
+		}
+		// A sign on a bracket arm jutting from the right of the front wall: a dark
+		// iron arm (D) and a bright hanging board (R) — the tavern's calling card.
+		ay := wallTop + 2
+		if ay < baseY-1 && w >= 4 {
+			g[ay][w-1] = 'D' // bracket arm
+			for sy := ay + 1; sy <= ay+2 && sy < baseY; sy++ {
+				g[sy][w-2], g[sy][w-1] = 'R', 'R' // the swinging board
+			}
+		}
+	}
+	out := make([]string, h)
+	for y := range g {
+		out[y] = string(g[y])
+	}
+	return out
 }
 
 // trunkColor is the fixed wood color for tree trunks (prop code 'T').

@@ -245,6 +245,13 @@ func cmdAvatar(m *Model, args []string) tea.Cmd {
 	if len(args) == 0 {
 		m.addSystemLine("styles: " + listIndexed(NumAvatarStyles(), AvatarStyleName))
 		m.addSystemLine("hats:   " + ownedHats(m))
+		for i := 1; i < NumAccessories(); i++ {
+			if m.ctx.Hats[i] {
+				if p := AccessoryPower(i); p != "" {
+					m.addSystemLine(fmt.Sprintf("  %s — %s", AccessoryName(i), p))
+				}
+			}
+		}
 		m.addSystemLine(fmt.Sprintf("you: %s + %s — usage: /avatar <style> [hat]  · /character to preview",
 			AvatarStyleName(cur.Style), AccessoryName(cur.Accessory)))
 		return nil
@@ -261,7 +268,11 @@ func cmdAvatar(m *Model, args []string) tea.Cmd {
 	}
 	if m.ctx.World.SetAvatar(m.ctx.Name, style, acc) {
 		m.persistAvatar()
-		m.addSystemLine(fmt.Sprintf("avatar: %s + %s", AvatarStyleName(style), AccessoryName(acc)))
+		line := fmt.Sprintf("avatar: %s + %s", AvatarStyleName(style), AccessoryName(acc))
+		if p := AccessoryPower(acc); p != "" {
+			line += " — " + p // tell them what the thing on their head now does
+		}
+		m.addSystemLine(line)
 	}
 	return nil
 }

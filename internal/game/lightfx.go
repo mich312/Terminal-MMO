@@ -106,6 +106,17 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// Saturated warm light so the fire genuinely warms the ground it reveals,
 		// flickering in both reach and brightness.
 		return whiten(colorful.Color{R: 1, G: 0.5, B: 0.16}, 0.1), 3.4 * flame, flame, true
+	case PropBrazier:
+		// A street brazier: a warm, flickering pool of firelight at the gates and
+		// squares — a touch smaller and steadier than a campfire.
+		return whiten(colorful.Color{R: 1, G: 0.55, B: 0.2}, 0.12), 2.6 * flame, 0.9 * flame, true
+	case PropBldSmithy:
+		// A blacksmith's forge: a strong, warm glow spilling from the forge mouth,
+		// flickering as the fire is worked — the brightest window on a night street.
+		return whiten(colorful.Color{R: 1, G: 0.45, B: 0.13}, 0.1), 2.4 * flame, 0.85 * flame, true
+	case PropBldTavern:
+		// A tavern: cosy lamplight from its windows, steady and inviting.
+		return whiten(colorful.Color{R: 1, G: 0.78, B: 0.42}, 0.3), 2.0 * gentle, 0.6 * gentle, true
 	case PropPortal:
 		return whiten(propCol, 0.6), 2.9, 0.65, true
 	case PropCore, PropFountain:
@@ -122,6 +133,29 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// Only luminous loot (crystals, mushrooms) twinkles; mundane forage and
 		// hats stay dark.
 		return whiten(propCol, 0.5), 1.1, 0.4, true
+	case PropCaveShroom:
+		// Bioluminescent fungi: a soft, steady blue-green wash over the rock.
+		return whiten(propCol, 0.4), 1.6 * gentle, 0.5 * gentle, true
+	case PropGlowPool:
+		// A still pool lit from within by glowing algae — a wider, cooler pool of
+		// light than the mushrooms.
+		return whiten(propCol, 0.45), 2.2 * gentle, 0.55 * gentle, true
+	case PropRelic:
+		// A buried relic with a faint, steady inner light — a beacon in the deep.
+		return whiten(propCol, 0.5), 1.6 * gentle, 0.5 * gentle, true
+	case PropGeode:
+		// A cracked geode's crystal core twinkles like the loot it is.
+		return whiten(propCol, 0.55), 1.4 * gentle, 0.5 * gentle, true
+	case PropLightShaft:
+		// Daylight falling through thin rock: the brightest, widest pool in the
+		// cave by day, fading to a cool wash of moonlight at night — it tracks the
+		// surface sun, so a shaft is a clock as much as a landmark.
+		_, _, night := sunState()
+		day := 1 - night
+		warm := colorful.Color{R: 1, G: 0.95, B: 0.82}
+		cool := colorful.Color{R: 0.7, G: 0.82, B: 1}
+		col := warm.BlendLab(cool, night)
+		return whiten(col, 0.25), 2.4 + 1.4*day, 0.45 + 0.55*day, true
 	}
 	return colorful.Color{}, 0, 0, false
 }
@@ -285,6 +319,85 @@ func drawFireflies(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, 
 			}
 			drawGlow(img, cx, cy, float64(apx)*2, col, night*0.8, apx)
 			fillRect(img, cx, cy, max(1, apx/2), max(1, apx/2), colorfulToRGBA(col))
+		}
+	}
+}
+
+// drawCaveFauna animates the cave's living things — bats wheeling at the mouths,
+// fish darting in the glow-pools, glow-worms drifting over the mushroom groves.
+// Like the fireflies it's procedural (position from frame + cell hash, no state),
+// keyed off the cave props so it only fires underground, and it runs day or night
+// since the cave is always dark.
+func drawCaveFauna(img *image.RGBA, props [][]TileProp, cam Camera, scale, frame, originX, originY int) {
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	dot := func(cx, cy, n int, col colorful.Color) {
+		fillRect(img, cx, cy, max(1, n), max(1, n), colorfulToRGBA(col))
+	}
+	bat := colorful.Color{R: 0.30, G: 0.26, B: 0.34}
+	fish := colorful.Color{R: 0.55, G: 0.92, B: 1}
+	worm := colorful.Color{R: 0.5, G: 1, B: 0.74}
+	mote := colorful.Color{R: 1, G: 0.96, B: 0.82}
+	drip := colorful.Color{R: 0.72, G: 0.9, B: 1}
+	for vy := 0; vy < cam.H; vy++ {
+		for vx := 0; vx < cam.W; vx++ {
+			wx, wy := originX+vx, originY+vy
+			ph := float64(wx*13 + wy*7)
+			cx0, cy0 := vx*scale+scale/2, vy*scale+scale/2
+			switch props[vy][vx] {
+			case PropCaveMouth:
+				// A few bats wheel on erratic orbits over the mouth — dark, flitting
+				// silhouettes that read as a draught of wings.
+				for b := 0; b < 3; b++ {
+					bp := ph + float64(b)*2.1
+					a := float64(frame)*0.16 + bp
+					rad := (0.8 + 0.5*math.Sin(float64(frame)*0.21+bp)) * float64(scale)
+					bx := cx0 + int(math.Cos(a)*rad)
+					by := cy0 + int(math.Sin(a)*rad*0.6) - scale/2
+					dot(bx-apx, by, apx, bat) // two angled wings
+					dot(bx+apx, by, apx, bat)
+					dot(bx, by+max(1, apx/2), max(1, apx/2), bat)
+				}
+			case PropGlowPool:
+				// A fish surfaces and darts across the pool, winking as it turns.
+				if blink := math.Sin(float64(frame)*0.12 + ph); blink > 0.3 {
+					t := math.Sin(float64(frame)*0.18 + ph)
+					fx := cx0 + int(t*float64(scale)*0.3)
+					fy := cy0 + int(math.Cos(float64(frame)*0.1+ph)*float64(scale)*0.18)
+					drawGlow(img, fx, fy, float64(apx)*1.6, fish, 0.5, apx)
+					dot(fx, fy, max(1, apx/2), fish)
+				}
+			case PropCaveShroom:
+				// Glow-worms drift just above the fungi — slow cool motes.
+				for g := 0; g < 2; g++ {
+					gp := ph + float64(g)*3.3
+					if math.Sin(float64(frame)*0.25+gp) < 0 {
+						continue // wink in and out
+					}
+					gx := cx0 + int(math.Sin(float64(frame)*0.09+gp)*float64(scale)*0.4)
+					gy := cy0 + int(math.Cos(float64(frame)*0.07+gp)*float64(scale)*0.3) - scale/3
+					drawGlow(img, gx, gy, float64(apx)*1.4, worm, 0.45, apx)
+					dot(gx, gy, max(1, apx/2), worm)
+				}
+			case PropLightShaft:
+				// Dust drifts down the daylight beam, catching the light as it falls.
+				for m := 0; m < 3; m++ {
+					mp := ph + float64(m)*5.0
+					fall := math.Mod(float64(frame)*0.035+mp*0.13, 1)
+					mx := cx0 + int(math.Sin(float64(frame)*0.05+mp)*float64(scale)*0.22)
+					my := vy*scale + int(fall*float64(scale))
+					drawGlow(img, mx, my, float64(apx)*0.9, mote, 0.45*(1-fall), apx)
+				}
+			case PropStalagmite, PropColumn:
+				// A waterdrop falls now and then onto the formation — a cave's slow clock.
+				if d := math.Mod(float64(frame)*0.03+ph*0.11, 1); d < 0.5 {
+					dx := cx0
+					dy := vy*scale + int(d*2*float64(scale))
+					dot(dx, dy, max(1, apx/2), drip)
+				}
+			}
 		}
 	}
 }

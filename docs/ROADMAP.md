@@ -153,6 +153,97 @@ doors stay open). Two kinds, to exercise both solo and social play:
   are `game.FlavorArea` reward rooms; worldgen places the gates on extended
   trails with clearings, so they're always reachable.
 
+## Phase 8 — Settlements (medieval villages) ✅
+
+Structures beyond the lone homestead: deterministic villages scattered through
+the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
+
+- ✅ **Whole-layout generation, cached.** Unlike the terrain (decided per cell),
+  a village's plan is generated as a whole into a small local grid from its
+  macro-cell hash and cached (`internal/worldgen/settlement.go`); `At()` then
+  looks the cell up. Generating the plan at once is what lets villages have
+  multi-tile buildings, lanes that wrap housing, a wall with real corners, and
+  roads that leave through the gates — none of which a per-cell decision could.
+- ✅ **Medieval nucleated plan:** a central well + a stone **church** with a
+  steeple, a main road bending through (in one gate, out the other) plus a loop
+  lane and branch lanes so housing clusters in 2D; **varied multi-tile
+  buildings** (cottage 1×1, house 2×2, longhouse 3×2, barn, church 2×3) front
+  the streets, densest at the core; an **irregular palisade** (a per-sector
+  vertex polygon, Bresenham-walked) with autotiled rail/corner sprites and gates
+  where roads cross it; and **fields** along the approach.
+- ✅ **Fits the land:** only temperate lowland is settled, the hub stays clear,
+  and footprints clip against water/peaks so a village meets its lake or hillside
+  instead of paving over it; cleared ground keeps the underlying biome look.
+- ✅ **Connecting roads:** each village links toward its nearest neighbour;
+  distant ones dwindle to a faded trail.
+- ✅ Renderer support for bottom-anchored multi-tile buildings (`drawBuilding`,
+  procedural `buildingArt`), oriented palisade sprites, and a furrowed `TexField`.
+- ✅ Tests assert determinism, hub protection, and that a village's centre is
+  always reachable on foot from outside the wall (the roads really do gate it).
+- ✅ Lived-in detail: planted yards (bushes, flowers, tufts, orchard trees) and
+  kitchen gardens between the houses, a duck pond by the green in some villages,
+  per-building roof/colour variety, and **harvestable grain** standing in the
+  fields and gardens — a new collectible that hooks straight into the existing
+  pickup + inventory (`e` to harvest, persists like other forage).
+- ✅ Outlying worksites that follow the nearest natural biome edge: a **stone
+  quarry** cut into nearby rock (hills *or* mountain), a **lumber camp** clearing
+  bitten into the forest, and a **fishing hut** with a **jetty** at the shore.
+  Each only appears where that biome lies within reach; the worksite's own ground
+  is carved into the real biome (rock / trees / water), with the hut on the
+  village side and a path back through a gate. Each worksite is harvestable
+  like the fields — **stone** at the quarry, **timber** at the lumber camp,
+  **fish** off the jetty (`e` to gather, persists in the inventory).
+- ✅ Distant reach: a village's layout extends well past its core, so a worksite
+  can sit at a biome edge ~40 tiles out and be linked by a long resource road —
+  a meadow village still reaches its far-off forest or lake.
+- ✅ **Tangled-medieval stone cities** (~1 in 6 settlements): a much larger,
+  denser tier (roughly double a village's span). Winding lanes radiate from the
+  market to the gates, tied by wobbly ring roads and alleys — a connected,
+  **walkable** web (a test floods from the centre and asserts it reaches a gate).
+  Buildings pack the core solid on cobbled ground, behind a grey **stone curtain
+  wall** with **towers** at corners and gates, around a market square anchored by
+  a great **cathedral** and a castle **keep**. Crucially the footprint is **built
+  to the terrain**: it's the patch of contiguous open lowland around the centre,
+  so a city fills a plain, wraps a lake and stops at forest or hills — the wall
+  conforms to that shape rather than being a disc. Villages keep their organic
+  loop-and-lane layout.
+- ✅ Every settlement draws its **own size** — a continuum of core reach from a
+  small hamlet up to a large city (at/above a threshold it becomes a stone city,
+  below it a timber village), so there's a full range rather than two fixed
+  tiers. Settlements sit **far apart** (macro cell widened to 168 → typically
+  200–490 tiles between neighbours), and their built-up outlines are
+  **lobed/irregular** (harmonic boundaries) so neither villages nor cities ring a
+  tidy circle.
+- ✅ City interiors gained structure: a **citadel** — a castle keep inside its own
+  small rectangular **inner wall** with corner towers and a gate, a fortified
+  contrast to the organic streets — plus **secondary squares** scattered through
+  the blocks alongside the central cathedral + market. Cities now read as having
+  **districts**: a wealthy core of tall multi-storey **townhouses**, ordinary
+  houses on the middling streets, and cottages + **warehouses** on the poorer
+  outskirts; a **market hall** flanks the square opposite the cathedral.
+- ✅ Settlement walls are **traced along the built-up edge** (a boundary trace of
+  the hole-filled footprint) rather than an angular-sector polygon, so they're
+  jagged and can follow concave bays around woods and lakes instead of rounding
+  off; gates are punched where lanes meet the wall.
+- ✅ City street-life pass (no NPCs, just structures and light):
+  - **Cobbled streets** (pale) read distinctly from the darker packed ground
+    between buildings, and city houses **terrace** into solid blocks (shared
+    walls) instead of standing apart.
+  - **Night braziers** flank every gate and dot the squares and citadel bailey,
+    casting warm flickering pools of firelight after dark.
+  - **Market stalls** (striped awnings) cluster on the plaza; a **smithy** whose
+    forge-mouth glows warm day and night, and a **tavern** with cosy lamplit
+    windows, front the central square (placed by an outward ring search so a lane
+    can't crowd them out).
+  - **Roof material variety by district**: golden thatch on cottages, barns and
+    the smithy; red clay tile and blue-grey slate on the wealthy townhouses,
+    market halls and the tavern; lead/slate on the grand churches and the keep —
+    so a tiled-roof core reads against thatched outskirts.
+  - **Plank bridges** span water a city straddles: the enclosed water counts as
+    interior (the wall wraps it), and a bridge is laid where a street meets the
+    bank, straight across to walkable ground on the far side (never a stub — a
+    test asserts every bridge joins two walkable banks).
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**

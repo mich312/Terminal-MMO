@@ -55,6 +55,14 @@ CREATE TABLE IF NOT EXISTS discovery (
 	mask INTEGER NOT NULL,
 	PRIMARY KEY (name, cx, cy)
 );
+CREATE TABLE IF NOT EXISTS cave_discovery (
+	name TEXT NOT NULL,
+	cave TEXT NOT NULL,
+	cx   INTEGER NOT NULL,
+	cy   INTEGER NOT NULL,
+	mask INTEGER NOT NULL,
+	PRIMARY KEY (name, cave, cx, cy)
+);
 CREATE TABLE IF NOT EXISTS inventory (
 	name  TEXT NOT NULL,
 	item  TEXT NOT NULL,
@@ -178,6 +186,40 @@ func (s *sqliteStore) LoadDiscovery(name string) map[[2]int]uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows, err := s.db.Query(`SELECT cx, cy, mask FROM discovery WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[[2]int]uint64{}
+	for rows.Next() {
+		var cx, cy int
+		var mask int64
+		if err := rows.Scan(&cx, &cy, &mask); err == nil {
+			out[[2]int{cx, cy}] = uint64(mask)
+		}
+	}
+	return out
+}
+
+// SaveCaveDiscovery upserts one fog-of-war chunk for a single cave, namespaced by
+// the cave's id (its overworld entrance), so each cave a player explores is
+// remembered separately.
+func (s *sqliteStore) SaveCaveDiscovery(name, cave string, cx, cy int, mask uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO cave_discovery (name, cave, cx, cy, mask) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(name, cave, cx, cy) DO UPDATE SET mask = excluded.mask`,
+		name, cave, cx, cy, int64(mask)); err != nil {
+		log.Printf("store: save cave discovery: %v", err)
+	}
+}
+
+// LoadCaveDiscovery returns every discovered chunk of one cave for a player.
+func (s *sqliteStore) LoadCaveDiscovery(name, cave string) map[[2]int]uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT cx, cy, mask FROM cave_discovery WHERE name = ? AND cave = ?`, name, cave)
 	if err != nil {
 		return nil
 	}
