@@ -28,12 +28,17 @@ func sunState() (elev, azX, night float64) {
 	return
 }
 
-// moonlight returns how strong moonlight should read right now: the Moon's
-// current illuminated fraction (1 at full moon, 0 at new moon), pegged to the
-// real date at Brixen via ui.MoonIllumination. Moonlight effects multiply their
-// strength by it, on top of the usual night gate, so the canopy rim and the
-// water's moon-glitter wax and wane with the real lunar phase.
-func moonlight() float64 { return ui.MoonIllumination(ui.Now()) }
+// moonlight returns how strong moonlight should read right now, pegged to the
+// real lunar phase at Brixen via ui.MoonIllumination. A starlight floor keeps it
+// from ever reaching zero: even a new-moon night carries faint skyglow, so the
+// canopy keeps its texture and the night look only ever dims with the phase
+// rather than switching off. Maps the 0..1 illuminated fraction onto
+// moonFloor..1; moonlight effects multiply their strength by it on top of the
+// usual night gate.
+func moonlight() float64 { return moonFloor + (1-moonFloor)*ui.MoonIllumination(ui.Now()) }
+
+// moonFloor is the residual moonlight (starlight/skyglow) on a new-moon night.
+const moonFloor = 0.35
 
 // Glow lights a pool by multiplying the underlying night-dark pixels back up
 // (revealing the terrain's own colors near the source — that reads as light,
