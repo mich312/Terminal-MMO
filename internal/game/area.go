@@ -73,6 +73,23 @@ type HDOverlayer interface {
 	HDSlide() (src string, footer string, show bool)
 }
 
+// MiniCell is one coarse tile in an area's overview map: its terrain color (Hex
+// empty means unexplored — drawn dark), with Self marking the player's own
+// block. The glyph client renders the map as text; HD draws these as a grid of
+// colored squares, so both clients answer "where am I?" the same way.
+type MiniCell struct {
+	Hex  string
+	Self bool
+}
+
+// HDMinimapper lets an area supply a coarse overview for the HD client to
+// rasterize onto the frame — the pixel twin of the glyph client's 'm' map. show
+// reports whether the map is currently toggled on; rows is the grid top-to-
+// bottom, left-to-right.
+type HDMinimapper interface {
+	HDMinimap() (title string, rows [][]MiniCell, show bool)
+}
+
 // Ctx is everything an area needs: shared world, persistence, and who the
 // local player is. From is the area id the player came from ("" on a fresh
 // connect) so areas can spawn players next to the right portal.

@@ -566,6 +566,37 @@ func (a *area) miniBlock(mx, my, sx, sy int) (glyph, color string, ok bool) {
 	return glyph, color, ok
 }
 
+// HDMinimap supplies the same chart to the HD pixel client, which draws the
+// cells as colored blocks. It mirrors minimap: the same adaptive stride and
+// per-block feature colors (via miniBlock), the player's block marked.
+func (a *area) HDMinimap() (string, [][]game.MiniCell, bool) {
+	if !a.showMap {
+		return "", nil, false
+	}
+	stride := 2
+	for a.w/stride > 46 || a.h/stride > 30 {
+		stride++
+	}
+	rows := make([][]game.MiniCell, 0, a.h/stride+1)
+	for my := 0; my < a.h; my += stride {
+		row := make([]game.MiniCell, 0, a.w/stride+1)
+		for mx := 0; mx < a.w; mx += stride {
+			switch {
+			case a.X >= mx && a.X < mx+stride && a.Y >= my && a.Y < my+stride:
+				row = append(row, game.MiniCell{Self: true})
+			default:
+				if _, color, ok := a.miniBlock(mx, my, stride, stride); ok {
+					row = append(row, game.MiniCell{Hex: color})
+				} else {
+					row = append(row, game.MiniCell{}) // unexplored dark
+				}
+			}
+		}
+		rows = append(rows, row)
+	}
+	return "Map — the cave", rows, true
+}
+
 // caveFog is the unbroken black of cave the lantern hasn't found yet.
 func caveFog() game.Tile {
 	return game.Tile{Kind: game.TileWall, Ch: ' ', Color: "#05070A", Tex: game.TexFlat, Ground: "#05070A"}

@@ -152,20 +152,58 @@ func buildHats() []hatLoot {
 	return out
 }
 
-// hatRate is how often a hat's themed biome yields it — rare, so a find is a
-// real moment.
-const hatRate = 0.004
+// Hats are placed on a coarse, jittered grid rather than rolled independently
+// per cell, so two of the same hat can never cluster: each grid region holds at
+// most one candidate spot for a given hat, kept clear of the region edges so the
+// nearest same-hat candidate in a neighbouring region is always far away. A
+// candidate only becomes a real find if it happens to land on matching, open
+// ground — which keeps hats rare and themed to their biome.
+const (
+	hatGrid     = 44  // a region (in tiles) that holds at most one of each hat type
+	hatMargin   = 14  // keep candidates this far inside a region → min same-hat spacing ≥ 2*margin
+	hatHostFrac = 0.7 // share of regions that host a given hat's candidate
+)
 
 const hatSalt uint64 = 0xA75EED_C0FFEE_42
 
+// floorDiv is integer division that floors toward negative infinity, so grid
+// regions stay contiguous across the world origin (Go's / truncates toward zero).
+func floorDiv(a, b int) int {
+	q := a / b
+	if a%b != 0 && (a < 0) != (b < 0) {
+		q--
+	}
+	return q
+}
+
+// hatCandidate returns the single cell within (x,y)'s grid region where a hat of
+// type idx may sit, and whether the region hosts it at all. The position is
+// jittered but pinned away from the region edges, guaranteeing same-type hats in
+// adjacent regions stay at least 2*hatMargin tiles apart.
+func hatCandidate(idx, x, y int) (cx, cy int, ok bool) {
+	gx, gy := floorDiv(x, hatGrid), floorDiv(y, hatGrid)
+	salt := hatSalt + uint64(idx)
+	if hash01(gx, gy, salt) >= hatHostFrac {
+		return 0, 0, false
+	}
+	span := hatGrid - 2*hatMargin
+	ox := hatMargin + int(hash01(gx, gy, salt+0x9E37)*float64(span))
+	oy := hatMargin + int(hash01(gx, gy, salt+0x1234)*float64(span))
+	return gx*hatGrid + ox, gy*hatGrid + oy, true
+}
+
 // hatAt returns the hat lying at (x,y), if any: a rare, deterministic, themed
-// drop on open ground. Hats take precedence over ordinary items.
+// find on open ground, placed so two of a kind never bunch up. Hats take
+// precedence over ordinary items.
 func hatAt(c worldgen.Cell, x, y int) (hatLoot, bool) {
 	if !c.Walkable || c.Portal != "" {
 		return hatLoot{}, false
 	}
 	for _, h := range hats {
-		if h.biome == c.Biome && hash01(x, y, hatSalt+uint64(h.idx)) < hatRate {
+		if h.biome != c.Biome {
+			continue
+		}
+		if cx, cy, ok := hatCandidate(h.idx, x, y); ok && cx == x && cy == y {
 			return h, true
 		}
 	}

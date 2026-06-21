@@ -306,6 +306,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				game.DrawToast(img, msg)
 			}
 		}
+		// The coarse overview map (toggled with 'm'), drawn as colored blocks.
+		if mm, ok := area.(game.HDMinimapper); ok {
+			if title, rows, show := mm.HDMinimap(); show {
+				game.DrawMinimapPanel(img, title, rows)
+			}
+		}
 		// Chat log + input, fading out when idle so the scene stays clear.
 		var shownChat []game.HDLine
 		if chatActive || time.Since(lastChat) < 12*time.Second {
@@ -693,6 +699,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 		} else if key == "e" { // pick up an item under the player
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			draw()
+		} else if key == "m" { // toggle the area overview map
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 			draw()
 		} else if key == "f2" { // toggle the walkability debug overlay
 			game.DebugWalkable = !game.DebugWalkable
