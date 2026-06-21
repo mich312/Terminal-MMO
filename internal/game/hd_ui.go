@@ -38,8 +38,55 @@ func hudScale(w int) int {
 	return s
 }
 
-// DrawHUD draws the bottom status bar onto an HD frame: the area name, a
-// context hint (e.g. "e - wear the crown") and the control legend.
+// keyHint is one "KEY label" pair in the status bar's control strip.
+type keyHint struct{ key, label string }
+
+// hudControls is the core control strip on the bottom bar's second line. The
+// full reference lives behind "?"; this is just the everyday set, kept short so
+// the bar stays calm.
+var hudControls = []keyHint{
+	{"WASD", "move"}, {"e", "use"}, {"Enter", "chat"},
+	{"c", "char"}, {"i", "bag"}, {"Tab", "who"},
+}
+
+// drawKeyHints draws a row of "KEY label" pairs from x, the key bright and the
+// label dim so the keys are scannable at a glance, returning the end x.
+func drawKeyHints(img *image.RGBA, x, y, s int, hints []keyHint) int {
+	for i, h := range hints {
+		if i > 0 {
+			x += pixel.TextWidth("  ", s) // gap between pairs
+		}
+		pixel.DrawText(img, x, y, s, h.key, hudBright)
+		x += pixel.TextWidth(h.key+" ", s)
+		pixel.DrawText(img, x, y, s, h.label, hudDim)
+		x += pixel.TextWidth(h.label, s)
+	}
+	return x
+}
+
+// truncToWidth trims s so it renders within maxW pixels at the given scale,
+// ending in ".." when shortened (the bitmap font is fixed-width ASCII).
+func truncToWidth(s string, scale, maxW int) string {
+	if maxW <= 0 {
+		return ""
+	}
+	if pixel.TextWidth(s, scale) <= maxW {
+		return s
+	}
+	r := []rune(s)
+	for len(r) > 0 {
+		r = r[:len(r)-1]
+		if cand := string(r) + ".."; pixel.TextWidth(cand, scale) <= maxW {
+			return cand
+		}
+	}
+	return ""
+}
+
+// DrawHUD draws the bottom status bar onto an HD frame. Line one is where you
+// are and what you can do right now (the context hint), with the always-there
+// help key pinned to the right; line two is the everyday control strip, keys
+// lit and labels dimmed so it reads as keys, not a wall of words.
 func DrawHUD(img *image.RGBA, areaName, hint string) {
 	W, H := img.Bounds().Dx(), img.Bounds().Dy()
 	s := hudScale(W)
@@ -49,13 +96,30 @@ func DrawHUD(img *image.RGBA, areaName, hint string) {
 	pixel.Shade(img, 0, by, W, bh, 0.8)
 	pixel.Frame(img, 0, by, W, bh)
 
+	pad := 5 * s
 	y := by + 2*s
-	pixel.DrawText(img, 4*s, y, s, areaName, hudAccent)
-	if hint != "" {
-		pixel.DrawText(img, 4*s+pixel.TextWidth(areaName+"  ", s), y, s, asciiOnly(hint), hudWhite)
+
+	// "? help" pinned to the right edge, accented so the way to everything else
+	// is always in the same place. Reserved first so line 1 can't run into it.
+	help := keyHint{"?", "help"}
+	hx := W - pad - pixel.TextWidth(help.key+" "+help.label, s)
+	pixel.DrawText(img, hx, y, s, help.key, hudAccent)
+	pixel.DrawText(img, hx+pixel.TextWidth(help.key+" ", s), y, s, help.label, hudDim)
+
+	// Line 1: area name, then the live context hint set off by a dim divider,
+	// truncated so it never collides with the pinned help key.
+	x := pad
+	pixel.DrawText(img, x, y, s, areaName, hudAccent)
+	x += pixel.TextWidth(areaName, s)
+	if h := asciiOnly(hint); h != "" {
+		x += pixel.TextWidth("  ", s)
+		pixel.DrawText(img, x, y, s, "|", hudDim)
+		x += pixel.TextWidth("| ", s)
+		pixel.DrawText(img, x, y, s, truncToWidth(h, s, hx-x-pad), hudWhite)
 	}
-	pixel.DrawText(img, 4*s, y+lh, s,
-		"move  e use  enter chat  c char  i bag  ? help  q quit", hudDim)
+
+	// Line 2: the everyday control strip.
+	drawKeyHints(img, pad, y+lh, s, hudControls)
 }
 
 // panelBox centers a pw×ph panel in the play area above the HUD bar, clamping it

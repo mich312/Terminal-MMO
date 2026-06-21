@@ -2,8 +2,10 @@ package game
 
 import (
 	"image"
+	"strings"
 	"testing"
 
+	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -37,6 +39,46 @@ func TestCycleAvatarFieldGatesHats(t *testing.T) {
 func TestAsciiOnly(t *testing.T) {
 	if got := asciiOnly("ab—cd＋"); got != "abcd" {
 		t.Errorf("asciiOnly = %q, want \"abcd\"", got)
+	}
+}
+
+func TestTruncToWidth(t *testing.T) {
+	full := "hello world"
+	if got := truncToWidth(full, 2, pixel.TextWidth(full, 2)); got != full {
+		t.Errorf("a string that fits must pass through unchanged, got %q", got)
+	}
+	// Width for ~5 glyphs forces a cut, and the result must end in ".." and fit.
+	narrow := pixel.TextWidth("xxxxx", 2)
+	got := truncToWidth(full, 2, narrow)
+	if got == full || !strings.HasSuffix(got, "..") {
+		t.Errorf("truncated = %q, want a shortened string ending in ..", got)
+	}
+	if pixel.TextWidth(got, 2) > narrow {
+		t.Errorf("truncated %q is wider (%d) than the budget (%d)", got, pixel.TextWidth(got, 2), narrow)
+	}
+	if truncToWidth(full, 2, 0) != "" {
+		t.Error("zero width must yield empty string")
+	}
+}
+
+// The bottom bar must lay out without panicking — and actually draw — across a
+// tiny frame and a context hint long enough to need truncation, so it never
+// runs into the pinned help key.
+func TestDrawHUDLayouts(t *testing.T) {
+	for _, c := range []struct{ w, h int }{{200, 120}, {820, 480}, {1600, 900}} {
+		img := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
+		DrawHUD(img, "Presentation Wing",
+			"e - sign the guestbook before you head off and greet everyone here")
+		drawn := false
+		for _, b := range img.Pix {
+			if b != 0 {
+				drawn = true
+				break
+			}
+		}
+		if !drawn {
+			t.Errorf("%dx%d: HUD drew nothing", c.w, c.h)
+		}
 	}
 }
 
