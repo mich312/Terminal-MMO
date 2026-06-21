@@ -3,8 +3,10 @@
 > **Status:** ✅ Phases 1–3 shipped — the atomic `world.MutatePlacement`, the
 > `StallState` schema + trade logic, the Concession placeable, and the buyer
 > panel in both clients, with `/sell` and `/collect` as the authoring path. A
-> stocked stall trades to others while the owner is away. ⬜ Phase 4 (a full
-> keyboard owner-authoring panel) is the remaining polish.
+> stocked stall trades to others while the owner is away. ✅ Polish: owners
+> `x`-remove a mislisted offer (refunding its stock) from the panel, and
+> demolishing a stall returns its stock + till. ⬜ Phase 4's remaining bit is
+> in-panel offer *creation* (a keyboard form beyond `/sell`).
 
 > How player-to-player trade lands on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

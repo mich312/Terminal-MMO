@@ -494,6 +494,15 @@ func (m *Model) handleStallKey(msg tea.KeyMsg) tea.Cmd {
 				m.addSystemLine("the till is empty")
 			}
 		}
+	case "x":
+		if StallOwner(m.ctx, m.stallXY[0], m.stallXY[1]) {
+			if RemoveOffer(m.ctx, m.stallXY[0], m.stallXY[1], m.stallSel) {
+				m.addSystemLine("offer removed — stock returned to your pack")
+				if m.stallSel > 0 {
+					m.stallSel--
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -544,7 +553,7 @@ func (m *Model) stallPanel() string {
 			till += n
 		}
 		rows = append(rows, "", m.theme.Dim.Render(fmt.Sprintf("till: %d items waiting — f collect", till)))
-		rows = append(rows, m.theme.Dim.Render("↑↓ offer · e buy · f collect · esc close"))
+		rows = append(rows, m.theme.Dim.Render("↑↓ offer · f collect · x remove · /sell to post · esc close"))
 	} else {
 		rows = append(rows, "", m.theme.Dim.Render("↑↓ offer · e buy · esc close"))
 	}
@@ -677,9 +686,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.ctx.UseStation != nil {
 		xy := *m.ctx.UseStation
 		m.ctx.UseStation = nil
-		if pl, ok := m.ctx.World.PlacementAt(xy[0], xy[1]); ok && IsStall(pl.Kind) {
+		pl, _ := m.ctx.World.PlacementAt(xy[0], xy[1])
+		switch {
+		case IsStall(pl.Kind):
+			m.closePanels()
 			m.stallXY, m.stallSel, m.showStall = xy, 0, true
-		} else {
+		case IsWorkbench(pl.Kind):
+			m.closePanels()
+			m.showCraft, m.craftSel = true, 0
+		default:
+			m.closePanels()
 			m.machineXY = xy
 			_, m.awayOut, m.awayIn, _ = OpenMachine(m.ctx, xy[0], xy[1])
 			m.showMachine = true

@@ -79,9 +79,9 @@ Background and rationale: [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 | Enter | chat — heard within 8 tiles of where you stand |
 | e | pick up a `◆` item in the Wilds · sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
 | k | crafting bench — turn forage into refined goods (`/craft` in glyph) |
-| b | build mode (Wilds) — place structures; move the ghost, `r` next, `e` place, `b` done |
-| e | (beside a machine) open it — refuel (`f`) and collect (`e`); machines run while you're offline |
-| e | (beside a Concession) open it — buy an offer; the owner posts with `/sell` and sweeps the till with `/collect` |
+| b | build mode (Wilds) — place structures; move the ghost, `r` next, `e` place, `x` remove, `b` done |
+| e | (beside a workbench) open crafting · (beside a machine) refuel (`f`) / collect (`e`) · (beside a Concession) buy |
+| e | (your own Concession) `f` collect the till, `x` remove an offer; post offers with `/sell` |
 | n / p | next/previous slide while presenting from your lectern |
 | Tab | open the menu — inventory, character, who, help (HD) · who's online (glyph) |
 | ? | help — every key and chat command, in one panel |

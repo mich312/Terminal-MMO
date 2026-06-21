@@ -498,7 +498,7 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 	title := "DURST GROUP CONCESSION"
 	footer := "up/down offer   e buy   q close"
 	if owner {
-		footer = "up/down offer   f collect till   q close"
+		footer = "up/down offer   f collect   x remove   q close"
 	}
 
 	type row struct {

@@ -472,6 +472,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 					game.AcceptOffer(ctx, stallXY[0], stallXY[1], stallSel)
 				case "f":
 					game.CollectTill(ctx, stallXY[0], stallXY[1])
+				case "x":
+					if game.RemoveOffer(ctx, stallXY[0], stallXY[1], stallSel) && stallSel > 0 {
+						stallSel--
+					}
 				case "q":
 					uiPanel = hdPanelNone
 				}
@@ -680,18 +684,22 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if ctx.UseStation != nil { // the area asked to open a panel
 				xy := *ctx.UseStation
 				ctx.UseStation = nil
-				if pl, ok := w.PlacementAt(xy[0], xy[1]); ok && game.IsStall(pl.Kind) {
+				pl, _ := w.PlacementAt(xy[0], xy[1])
+				switch {
+				case game.IsStall(pl.Kind):
 					stallXY, stallSel, uiPanel = xy, 0, hdPanelStall
-				} else {
+				case game.IsWorkbench(pl.Kind):
+					craftSel, uiPanel = 0, hdPanelCraft
+				default:
 					machineXY = xy
 					_, awayOut, awayIn, _ = game.OpenMachine(ctx, xy[0], xy[1])
 					uiPanel = hdPanelMachine
 				}
 			}
 			draw()
-		} else if key == "b" || key == "r" || key == "[" || key == "]" {
-			// build mode: 'b' toggles, then 'r'/brackets cycle the placeable (the
-			// area reinterprets movement as ghost movement while building).
+		} else if key == "b" || key == "r" || key == "[" || key == "]" || key == "x" {
+			// build mode: 'b' toggles, 'r'/brackets cycle the placeable, 'x' demolishes
+			// under the ghost (the area reinterprets movement as ghost movement).
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 			draw()
 		} else if key == "f2" { // toggle the walkability debug overlay

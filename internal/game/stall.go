@@ -195,6 +195,34 @@ func CollectTill(ctx *Ctx, x, y int) int {
 	return total
 }
 
+// RemoveOffer (owner) takes an offer down and refunds its remaining stock to the
+// owner's pack, so a mislisted offer never traps goods. Returns false if it's
+// not the owner or the index is out of range.
+func RemoveOffer(ctx *Ctx, x, y, idx int) bool {
+	if !StallOwner(ctx, x, y) {
+		return false
+	}
+	var refundItem string
+	var refundN int
+	var done bool
+	ctx.World.MutatePlacement("wilds", x, y, func(s string) (string, bool) {
+		st := decodeStall(s)
+		if idx < 0 || idx >= len(st.Offers) {
+			return s, false
+		}
+		o := st.Offers[idx]
+		refundItem, refundN = o.GiveItem, o.Stock
+		st.Offers = append(st.Offers[:idx:idx], st.Offers[idx+1:]...)
+		done = true
+		return st.encode(), true
+	})
+	if !done {
+		return false
+	}
+	addToPack(ctx, refundItem, refundN)
+	return true
+}
+
 // StationNear finds an interactable placement (a machine or a stall) on the ring
 // around the player's body, using live world position. pred filters which kinds
 // qualify. Shared by the chat commands (which have no area handle).

@@ -278,7 +278,14 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   `/collect`s the till later. The one racy op (concurrent buyers) is settled
   atomically by a new `world.MutatePlacement` primitive (a test fires 60 buyers
   at 20 stock and asserts exactly 20 sell, never oversold). Buyer panel in both
-  clients. ⬜ A keyboard owner-authoring panel is the remaining polish.
+  clients.
+- ✅ **Build/trade polish:** `x` in build mode **demolishes** your own structure
+  and **returns whatever it holds** (a stall's stock + till, a machine's buffers)
+  to your pack — owner-gated, so nobody tears down someone else's Workspace; a
+  placed **workbench opens crafting** when you press `e` beside it (the build →
+  craft loop made literal); and a stall owner can `x` **remove a mislisted
+  offer**, refunding its stock. ⬜ In-panel offer *authoring* (beyond `/sell`) is
+  the last bit.
 - ⬜ Settlement claims and the parked wildlife layer come after.
 
 ## Parked polish

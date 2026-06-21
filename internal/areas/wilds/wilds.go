@@ -257,7 +257,7 @@ func (a *area) stationAdjacent() (int, int, bool) {
 				continue // inside the body, not a border cell
 			}
 			if pl, ok := a.ctx.World.PlacementAt(x, y); ok &&
-				(game.IsMachine(pl.Kind) || game.IsStall(pl.Kind)) {
+				(game.IsMachine(pl.Kind) || game.IsStall(pl.Kind) || game.IsWorkbench(pl.Kind)) {
 				return x, y, true
 			}
 		}
@@ -389,6 +389,12 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				a.buildSel = (a.buildSel + len(game.Placeables) - 1) % len(game.Placeables)
 			case "e", "enter":
 				a.placeStructure()
+			case "x":
+				if game.Demolish(a.ctx, a.bx, a.by) {
+					a.setToast("removed")
+				} else {
+					a.setToast("nothing of yours there")
+				}
 			default:
 				if dx, dy, _, ok := game.MoveKey(ks); ok {
 					nx, ny := a.bx+dx, a.by+dy
@@ -455,7 +461,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 func (a *area) Hint() string {
 	if a.building {
 		pb := game.Placeables[a.buildSel]
-		return fmt.Sprintf("build: %s (%s) · move ghost · e place · r next · b done", pb.Name, game.PlaceableCost(pb))
+		return fmt.Sprintf("build: %s (%s) · move ghost · e place · x remove · r next · b done", pb.Name, game.PlaceableCost(pb))
 	}
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
@@ -476,7 +482,7 @@ func (a *area) Hint() string {
 func (a *area) Prompt() (string, bool) {
 	if a.building {
 		pb := game.Placeables[a.buildSel]
-		return fmt.Sprintf("e build %s (%s) · r next · b done", pb.Name, game.PlaceableCost(pb)), true
+		return fmt.Sprintf("e build %s (%s) · r next · x remove · b done", pb.Name, game.PlaceableCost(pb)), true
 	}
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "step in to enter " + game.DisplayName(name), true
