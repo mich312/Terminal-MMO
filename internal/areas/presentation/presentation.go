@@ -368,7 +368,7 @@ func (a *area) Hint() string {
 			if a.Ctx.World.DeckCount() >= world.MaxDecks {
 				return fmt.Sprintf("wing full (%d/%d) — a presenter must retire a talk", world.MaxDecks, world.MaxDecks)
 			}
-			return "press e — author a presentation"
+			return "e — author a presentation"
 		}
 		if d, ok := a.Ctx.World.GetDeck(st.deckID); ok {
 			if d.Owner == a.Ctx.Name {
@@ -389,6 +389,17 @@ func (a *area) Hint() string {
 		return h
 	}
 	return "walk into a stage to watch · ＋ booth adds one"
+}
+
+// Prompt implements game.Prompter: reuse Hint, but suppress the idle "walk into
+// a stage" fallback so the HD bottom stays clear until you're actually on a
+// lectern, booth, stage or portal.
+func (a *area) Prompt() (string, bool) {
+	h := a.Hint()
+	if h == "" || h == "walk into a stage to watch · ＋ booth adds one" {
+		return "", false
+	}
+	return h, true
 }
 
 // HDSlide implements game.HDOverlayer: when the player stands in a deck stage,

@@ -55,13 +55,18 @@ ssh -t -p 2222 you@localhost glyph   # classic half-block client
 WASD or arrow keys to move, `Y U B N` for diagonals, Shift/uppercase to run,
 `e` to pick things up, `q` to quit. It shares the live world, so you and
 glyph-client players see each other. Because HD is the default client, the
-**UI is drawn into the pixel frame**: a status/hint bar, pickup toasts,
-**chat** (`Enter` to type — plain text, or `/me`, `/w`, `/goto`; the log shows
-recent lines and fades when idle), and single-key panels — `c` opens the
-interactive **character** editor (arrows to cycle body / color / hat) and `i`
-opens your **inventory**. It bypasses bubbletea and streams sixel with delta
-updates (only the changed region each frame). Background and rationale:
-[`docs/pixel-renderer.md`](docs/pixel-renderer.md).
+**UI is drawn into the pixel frame**, and it's deliberately quiet: the world
+fills the screen, the **area name** sits top-left (flaring briefly when you
+enter somewhere new), and a small **mini-legend** (`WASD move · Enter chat ·
+Tab menu · ? help`) lives top-right. The **bottom is empty** until something is
+actually usable, then a **button prompt** pops up for it ("e — wear the Crown",
+"step in to enter Durst HQ"). Everything else is one keypress away: **`Tab`
+opens a menu** listing your **inventory**, **character** editor, **who's
+online** and **controls/help** — each with its shortcut, so the menu teaches
+the fast keys (`i`, `c`, `?`) over time. **Chat** is `Enter` (plain text, or
+`/me`, `/w`, `/who`, `/goto`; the log fades when idle). It bypasses bubbletea
+and streams sixel with delta updates (only the changed region each frame).
+Background and rationale: [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 
 ### Controls
 
@@ -74,7 +79,8 @@ updates (only the changed region each frame). Background and rationale:
 | Enter | chat — heard within 8 tiles of where you stand |
 | e | pick up a `◆` item in the Wilds · sign the guestbook · author a presentation (at the `＋` booth) · edit your deck (at the lectern) |
 | n / p | next/previous slide while presenting from your lectern |
-| Tab | who's online |
+| Tab | open the menu — inventory, character, who, help (HD) · who's online (glyph) |
+| ? | help — every key and chat command, in one panel |
 | q / Ctrl+C | quit (press twice) |
 
 You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near

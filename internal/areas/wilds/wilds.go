@@ -250,13 +250,15 @@ func (a *area) fixPersonalGate(g gate) {
 	a.setToast("the " + g.Name + " opens for you!")
 }
 
-// gatePrompt is the status-bar hint shown while standing at a sealed gate.
+// gatePrompt is the status-bar hint shown while standing at a sealed gate. The
+// co-op gate leads with the action key so the HD client badges it as a keycap;
+// the personal gate is riddle-first (you answer in chat), so it stays plain.
 func (a *area) gatePrompt(g gate) string {
 	if g.kind == gateCoop {
-		return fmt.Sprintf("%s [SEALED] — e: offer a %s  (%d/%d given)",
-			g.Name, itemName(g.item), a.ctx.World.GatePool(g.Portal), g.need)
+		return fmt.Sprintf("e — offer a %s to open the %s  (%d/%d given)",
+			itemName(g.item), g.Name, a.ctx.World.GatePool(g.Portal), g.need)
 	}
-	return fmt.Sprintf("%s [SEALED] — riddle: %s  (say the answer, or e: offer a %s)",
+	return fmt.Sprintf("%s riddle — %s  (answer in chat, or e: offer a %s)",
 		g.Name, g.riddle, itemName(g.item))
 }
 
@@ -337,6 +339,25 @@ func (a *area) Hint() string {
 	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
+}
+
+// Prompt implements game.Prompter: the single action available right where the
+// player stands. The bearing-to-home fallback in Hint is ambient navigation,
+// not an action, so here it returns ok=false to keep the HD bottom clear.
+func (a *area) Prompt() (string, bool) {
+	if name, ok := a.portalUnder(a.wx, a.wy); ok {
+		return "step in to enter " + game.DisplayName(name), true
+	}
+	if g, ok := a.sealedGateUnderBody(); ok {
+		return a.gatePrompt(g), true
+	}
+	if h, _, _, ok := a.hatUnderBody(); ok {
+		return "e — wear the " + h.name, true
+	}
+	if it, _, _, ok := a.itemUnderBody(); ok {
+		return "e — take " + it.Name, true
+	}
+	return "", false
 }
 
 // itemUnderBody returns the first uncollected item beneath the 2×2 footprint.

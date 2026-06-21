@@ -248,6 +248,29 @@ func (m *Model) showInfoPanel(title string, lines []string) {
 	m.showInfo = true
 }
 
+// showHelp opens the "?" overlay: the full control reference (keys + what they
+// do) followed by the chat commands, both drawn from the shared source of truth
+// in controls.go so it can never fall out of step with what the game accepts.
+func (m *Model) showHelp() {
+	var lines []string
+	for _, g := range Controls() {
+		lines = append(lines, m.theme.PanelTitle.Render(g.Title))
+		for _, c := range g.Items {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				m.theme.Bright.Render(padRight(c.Keys, 14)),
+				m.theme.ChatText.Render(c.Desc)))
+		}
+		lines = append(lines, "")
+	}
+	lines = append(lines, m.theme.PanelTitle.Render("Chat commands"))
+	for _, c := range CommandReference() {
+		lines = append(lines, fmt.Sprintf("  %s %s",
+			m.theme.Accent.Render(padRight(c[0], 18)),
+			m.theme.ChatText.Render(c[1])))
+	}
+	m.showInfoPanel("Help", lines)
+}
+
 // handleCharKey drives the interactive character panel: ↑↓ pick a field, ←→
 // change it live (persisting the avatar), esc/enter/q close.
 func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
@@ -365,6 +388,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		m.showPlayers = !m.showPlayers
+		return m, nil
+	case "?":
+		m.showHelp()
 		return m, nil
 	case "enter":
 		m.chatInput.Focus()
@@ -596,7 +622,7 @@ func (m *Model) statusView() string {
 				parts = append(parts, m.theme.StatusHint.Render(" "+hint+" "))
 			}
 		}
-		parts = append(parts, m.theme.Status.Render("WASD/↑↓←→ move · Shift run · Enter chat · /help · Tab players · q quit"))
+		parts = append(parts, m.theme.Status.Render("WASD/↑↓←→ move · Enter chat · Tab players · ? help · q quit"))
 	}
 	bar := strings.Join(parts, m.theme.Status.Render("·"))
 	return m.theme.Bar(m.width).Render(bar)

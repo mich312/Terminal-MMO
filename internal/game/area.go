@@ -27,6 +27,15 @@ type Hinter interface {
 	Hint() string
 }
 
+// Prompter lets an area expose the single contextual action available right
+// where the player stands ("e — wear the Crown", "step in to enter Durst HQ").
+// ok is false when nothing is actionable, so the HD client keeps the bottom of
+// the screen clear. Areas that don't implement it fall back to a non-empty
+// Hint() being treated as the prompt.
+type Prompter interface {
+	Prompt() (text string, ok bool)
+}
+
 // InputCapturer lets an area grab all key input (e.g. while the guestbook
 // panel is open) so the root model's global keys don't interfere.
 type InputCapturer interface {

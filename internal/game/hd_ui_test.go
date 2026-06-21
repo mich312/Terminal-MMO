@@ -2,8 +2,10 @@ package game
 
 import (
 	"image"
+	"strings"
 	"testing"
 
+	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -40,6 +42,50 @@ func TestAsciiOnly(t *testing.T) {
 	}
 }
 
+func TestTruncToWidth(t *testing.T) {
+	full := "hello world"
+	if got := truncToWidth(full, 2, pixel.TextWidth(full, 2)); got != full {
+		t.Errorf("a string that fits must pass through unchanged, got %q", got)
+	}
+	// Width for ~5 glyphs forces a cut, and the result must end in ".." and fit.
+	narrow := pixel.TextWidth("xxxxx", 2)
+	got := truncToWidth(full, 2, narrow)
+	if got == full || !strings.HasSuffix(got, "..") {
+		t.Errorf("truncated = %q, want a shortened string ending in ..", got)
+	}
+	if pixel.TextWidth(got, 2) > narrow {
+		t.Errorf("truncated %q is wider (%d) than the budget (%d)", got, pixel.TextWidth(got, 2), narrow)
+	}
+	if truncToWidth(full, 2, 0) != "" {
+		t.Error("zero width must yield empty string")
+	}
+}
+
+// The on-frame chrome must lay out without panicking — and actually draw —
+// across a tiny frame and a contextual prompt long enough to need truncation,
+// so the prompt never runs off the frame.
+func TestHDChromeLayouts(t *testing.T) {
+	for _, c := range []struct{ w, h int }{{200, 120}, {820, 480}, {1600, 900}} {
+		img := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
+		DrawAreaTitle(img, "Presentation Wing", 1)
+		DrawAreaTitle(img, "Presentation Wing", 0) // settled state
+		DrawTopLegend(img)
+		DrawActionPrompt(img,
+			"e — sign the guestbook before you head off and greet everyone here")
+		DrawMenuPanel(img, 1)
+		drawn := false
+		for _, b := range img.Pix {
+			if b != 0 {
+				drawn = true
+				break
+			}
+		}
+		if !drawn {
+			t.Errorf("%dx%d: chrome drew nothing", c.w, c.h)
+		}
+	}
+}
+
 // The HD overlays draw straight onto an RGBA frame; they must handle a live
 // player + inventory without panicking (basicfont/ASCII, bounds-checked).
 func TestHDPanelsRender(t *testing.T) {
@@ -49,7 +95,7 @@ func TestHDPanelsRender(t *testing.T) {
 	ctx := &Ctx{World: w, Store: store.Open(t.TempDir() + "/y.db"), Name: name,
 		Inventory: map[string]int{"berry": 2}, Hats: map[int]bool{2: true}}
 	img := image.NewRGBA(image.Rect(0, 0, 600, 360))
-	DrawHUD(img, "The Wilds", "e - take Sweet Berry")
+	DrawAreaTitle(img, "The Wilds", 0.5)
 	DrawToast(img, "+ Sweet Berry")
 	DrawCharPanel(img, ctx, 0)
 	DrawInventoryPanel(img, ctx)
