@@ -201,6 +201,20 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, amount, apx)
 				}
 			}
+			// A worn light shines too: a player in a glowing wearable (a lantern-cap,
+			// a crystal trophy) blooms a pool around themselves after dusk — the same
+			// point-light, carried. Drawn before the sprites so it lights the ground.
+			if night > 0.03 {
+				for _, p := range players {
+					col, rad, ok := AccessoryLight(p.Accessory)
+					if !ok {
+						continue
+					}
+					cx := (p.X-originX)*scale + PlayerW*scale/2
+					cy := (p.Y-originY)*scale + PlayerH*scale/2
+					drawGlow(img, cx, cy, rad*float64(scale), col, 0.9*night, apx)
+				}
+			}
 		}
 		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)

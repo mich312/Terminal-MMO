@@ -75,6 +75,33 @@ func AccessoryColor(accessory int) string {
 	return "#FFD166"
 }
 
+// accessoryLights gives the wearables that shine — bioluminescent caps and
+// crystal trophies — the glow they cast around the player after dark: a portable
+// light is the first of the powers a worn thing can grant. Keyed by name so a new
+// luminous wearable is one row; absent means it stays a plain cosmetic.
+var accessoryLights = map[string]struct {
+	hex    string
+	radius float64 // in tiles; keep ≤ overhangTiles so the incremental render stays exact
+}{
+	"glowcap": {"#9BF7AE", 3.4}, // the lantern-plant: the brightest, a warm green
+	"shroom":  {"#D7A0FF", 3.0}, // a glowing mushroom cap
+	"circlet": {"#A8E8FF", 2.7}, // a geode's crystal: cooler and fainter
+}
+
+// AccessoryLight returns the night glow a worn accessory casts — its color and
+// radius in tiles — with ok=false for a non-luminous one. The HD renderer blooms
+// it around the wearer after dusk, so a glowing wearable lights your way.
+func AccessoryLight(accessory int) (colorful.Color, float64, bool) {
+	if accessory <= 0 || accessory >= len(accessories) {
+		return colorful.Color{}, 0, false
+	}
+	l, ok := accessoryLights[accessories[accessory].Name]
+	if !ok {
+		return colorful.Color{}, 0, false
+	}
+	return mustHex(l.hex), l.radius, true
+}
+
 // spritePixel resolves a bitmap code to a color (and whether it's opaque),
 // shading relative to the player's body color. accMain/accShade color the
 // accessory pixels (H/h) so each hat keeps its own hue.
