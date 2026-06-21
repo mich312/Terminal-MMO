@@ -48,6 +48,7 @@ func main() {
 	write("uishots/5-crafting-real.png", panelOver(realCraftPanel))
 	write("uishots/6-machine-real.png", panelOver(realMachinePanel))
 	write("uishots/7-stall-real.png", panelOver(realStallPanel))
+	write("uishots/8-compendium-real.png", panelOver(realCompendiumPanel))
 	write("uishots/2-machine.png", panelOver(machinePanel))
 	write("uishots/3-build.png", buildFrame())
 	write("uishots/4-trade.png", panelOver(tradePanel))
@@ -121,6 +122,18 @@ func realStallPanel(img *image.RGBA) {
 	bctx := &game.Ctx{World: w, Store: store.Open(""), Name: bname,
 		Inventory: map[string]int{"stone": 11}}
 	game.DrawStallPanel(img, bctx, 5, 5, 0)
+}
+
+// realCompendiumPanel renders main's shipped compendium with a pack that holds
+// crafted goods, so the new "Crafted goods" group (the merge synergy) shows.
+func realCompendiumPanel(img *image.RGBA) {
+	w := world.New()
+	defer w.Close()
+	name, _ := w.Join("steurer")
+	ctx := &game.Ctx{World: w, Store: store.Open(""), Name: name, Hats: map[int]bool{},
+		Inventory: map[string]int{"wood": 4, "berry": 2, "plank": 12, "ingot": 3, "lamp": 1, "flour": 5}}
+	scroll := 46 // scroll to the Crafted goods group
+	game.DrawCompendiumPanel(img, ctx, &scroll)
 }
 
 // ── small drawing helpers ──────────────────────────────────────────────────
