@@ -216,6 +216,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				}
 			}
 		}
+		// Low ground mist drifting off the wet lowland (water, swamp) at night.
+		drawMist(img, texs, cam, scale, frame, originX, originY)
 		// Fireflies / bioluminescent motes drifting over woods and swamp at dusk.
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)
 		// Cave life: bats at the mouths, fish in the pools, glow-worms over the fungi.
@@ -745,18 +747,43 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 	left := vx*scale + scale/2 - (w*apx)/2
 	top := (vy+1)*scale - len(art)*apx
 
-	body := colorfulToRGBA(col)
+	bodyC := col
+	dappleC := col.BlendLab(spriteWhite, 0.30).Clamped()
 	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
 	dark := colorfulToRGBA(col.BlendLab(shadowColor, 0.52).Clamped())
-	dapple := colorfulToRGBA(col.BlendLab(spriteWhite, 0.30).Clamped())
 	trunk := colorfulToRGBA(trunkColor)
+
+	// Moonlight: after dusk the crown catches a cool cast — graded so the top
+	// silhouette is brightest, plus coherent-noise dapple scattered through the
+	// canopy so the mass has texture instead of reading as a flat dark blob. Its
+	// strength is pegged to the real lunar phase (full moon = bright, new moon =
+	// none). Static (refreshes on the periodic full repaint, like the tint).
+	_, _, night := sunState()
+	ml := night * moonlight() // night gate × the Moon's illuminated fraction
+	moon := colorful.Color{R: 0.72, G: 0.82, B: 1.0}
+	rimRows := len(art) * 11 / 20 // upper ~55% of the crown
+	lit := func(base colorful.Color, ax, ay int) color.RGBA {
+		if ml > 0.01 {
+			if ay < rimRows { // top-of-crown rim, strongest at the very top
+				k := ml * 0.5 * (1 - float64(ay)/float64(rimRows))
+				base = base.BlendLab(moon, k).Clamped()
+			}
+			// Dappled moonbreak through the leaves — sampled in world space so the
+			// speckle pattern is stable as the camera scrolls. Kept subtle so the
+			// canopy gets texture without looking frosted.
+			if valueNoise(wx*tileArtN+ax, wy*tileArtN+ay) > 0.74 {
+				base = base.BlendLab(moon, ml*0.12).Clamped()
+			}
+		}
+		return colorfulToRGBA(base)
+	}
 	for ay, row := range art {
 		for ax := 0; ax < len(row); ax++ {
 			var c color.RGBA
 			ok := true
 			switch row[ax] {
 			case 'P':
-				c = body
+				c = lit(bodyC, ax, ay)
 			case 'p':
 				// The shade pixels form the canopy rim; coherently dither them away
 				// so silhouettes feather and neighboring crowns blend into one mass
@@ -766,7 +793,7 @@ func drawCanopy(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []st
 					ok = false
 				}
 			case 'L':
-				c = dapple
+				c = lit(dappleC, ax, ay)
 			case 'D':
 				c = dark // solid shadow face (no dither) — for rock crags
 			case 'W':

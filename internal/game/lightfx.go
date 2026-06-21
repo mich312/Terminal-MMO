@@ -9,26 +9,43 @@ import (
 	"github.com/durst-group/durstworld/internal/ui"
 )
 
-// sunState derives lighting from the time-of-day clock (ui.Now):
-//
-//	elev  — sun height: 1 at noon, 0 at the horizon (06:00 / 18:00), <0 at night.
-//	azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
-//	night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
+// sunState derives lighting from the time-of-day clock (ui.Now). It reads the
+// shared ui.SolarHour, so the sun rises and sets with Brixen's seasonal daylight
+// (canonical hour 6 = sunrise, 18 = sunset, whatever real time those fall at):
+//   elev  — sun height: 1 at noon, 0 at the horizon (sunrise / sunset), <0 at night.
+//   azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
+//   night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
 func sunState() (elev, azX, night float64) {
-	t := ui.Now()
-	h := float64(t.Hour()) + float64(t.Minute())/60
+	h := ui.SolarHour(ui.Now())
 	elev = math.Sin(math.Pi * (h - 6) / 12)
 	azX = math.Max(-1, math.Min(1, (h-12)/6))
-	night = math.Max(0, math.Min(1, 1-elev*1.3))
+	// Raw ramp: 0 while the sun is comfortably up, reaching 1 a little before the
+	// horizon. Smoothstep shapes it so midday stays cleanly lit, the fade rolls in
+	// gently through dusk, and the effects only bloom to full strength in true
+	// night — a softer toe and shoulder than the old linear ramp.
+	n := math.Max(0, math.Min(1, 1-elev*1.5))
+	night = n * n * (3 - 2*n)
 	return
 }
+
+// moonlight returns how strong moonlight should read right now, pegged to the
+// real lunar phase at Brixen via ui.MoonIllumination. A starlight floor keeps it
+// from ever reaching zero: even a new-moon night carries faint skyglow, so the
+// canopy keeps its texture and the night look only ever dims with the phase
+// rather than switching off. Maps the 0..1 illuminated fraction onto
+// moonFloor..1; moonlight effects multiply their strength by it on top of the
+// usual night gate.
+func moonlight() float64 { return moonFloor + (1-moonFloor)*ui.MoonIllumination(ui.Now()) }
+
+// moonFloor is the residual moonlight (starlight/skyglow) on a new-moon night.
+const moonFloor = 0.35
 
 // Glow lights a pool by multiplying the underlying night-dark pixels back up
 // (revealing the terrain's own colors near the source — that reads as light,
 // not a white halo) plus a small colored add for the light's hue.
 const (
-	glowGain = 2.2  // how hard the light brightens the dark ground it reveals
-	glowHue  = 0.30 // how much of the light's own color it adds on top
+	glowGain = 2.5  // how hard the light brightens the dark ground it reveals
+	glowHue  = 0.32 // how much of the light's own color it adds on top
 )
 
 // drawGlow paints one light pool: a radial falloff snapped to a px block grid
@@ -88,7 +105,7 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 	case PropCampfire:
 		// Saturated warm light so the fire genuinely warms the ground it reveals,
 		// flickering in both reach and brightness.
-		return whiten(colorful.Color{R: 1, G: 0.5, B: 0.16}, 0.1), 3.0 * flame, flame, true
+		return whiten(colorful.Color{R: 1, G: 0.5, B: 0.16}, 0.1), 3.4 * flame, flame, true
 	case PropBrazier:
 		// A street brazier: a warm, flickering pool of firelight at the gates and
 		// squares — a touch smaller and steadier than a campfire.
@@ -101,11 +118,15 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 		// A tavern: cosy lamplight from its windows, steady and inviting.
 		return whiten(colorful.Color{R: 1, G: 0.78, B: 0.42}, 0.3), 2.0 * gentle, 0.6 * gentle, true
 	case PropPortal:
-		return whiten(propCol, 0.6), 2.8, 0.6, true
+		return whiten(propCol, 0.6), 2.9, 0.65, true
 	case PropCore, PropFountain:
-		return whiten(colorful.Color{R: 0.75, G: 0.92, B: 1}, 0.55), 3.4 * gentle, 0.7 * gentle, true
+		return whiten(colorful.Color{R: 0.75, G: 0.92, B: 1}, 0.55), 3.6 * gentle, 0.75 * gentle, true
 	case PropLamp:
-		return whiten(colorful.Color{R: 1, G: 0.82, B: 0.45}, 0.4), 2.4 * gentle, 0.7 * gentle, true
+		return whiten(colorful.Color{R: 1, G: 0.82, B: 0.45}, 0.4), 2.7 * gentle, 0.75 * gentle, true
+	case PropHouse:
+		// Windows lit from within: a small, steady warm spill at the doorstep, so a
+		// cottage reads as occupied after dark rather than a dark box.
+		return whiten(colorful.Color{R: 1, G: 0.74, B: 0.38}, 0.3), 2.0, 0.55 * gentle, true
 	case PropTurbine, PropScreen:
 		return whiten(colorful.Color{R: 0.5, G: 0.8, B: 1}, 0.6), 2.0, 0.6, true
 	case PropGemGlow:
@@ -141,11 +162,16 @@ func emitterGlow(p TileProp, propCol colorful.Color, frame, wx, wy int) (col col
 
 // waterGlint lays a drifting specular sparkle over water tiles: warm gold when
 // the sun is high, cool moon-glitter at night, the crest band sweeping along the
-// sun's azimuth. Additive and banded, so it shimmers without going smooth.
+// sun's azimuth. Additive and banded, so it shimmers without going smooth. The
+// night moon-glitter scales with the real lunar phase — bright under a full
+// moon, gone on a new-moon night — while the daytime sun-glint is unaffected.
 func waterGlint(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, originX, originY int) {
 	elev, azX, night := sunState()
 	gl := colorful.Color{R: 1, G: 0.93, B: 0.6}.BlendLab(colorful.Color{R: 0.72, G: 0.84, B: 1}, night).Clamped()
 	bright := math.Max(0.3, math.Min(1, elev+0.3)) // night still glitters faintly
+	// Day: full sun-glint. Night: fade the glitter to the moon's illuminated
+	// fraction, so it tracks the phase rather than glittering under a dark sky.
+	bright *= (1 - night) + night*moonlight()
 	apx := scale / tileArtN
 	if apx < 1 {
 		apx = 1
@@ -176,6 +202,77 @@ func waterGlint(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, ori
 								math.Min(255, float64(or)+gl.R*255*w),
 								math.Min(255, float64(og)+gl.G*255*w),
 								math.Min(255, float64(ob)+gl.B*255*w))
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// mistTex reports whether a biome breathes low ground mist at night. It is kept
+// to the wet lowland — open water and swamp — both of which the incremental
+// renderer already treats as animated (water every frame, swamp after dusk), so
+// the mist pass rides along for free without forcing the dominant dry biomes to
+// re-render. (Broad meadow mist would mean marking all grass animated — a full
+// repaint every night frame — so it is deliberately left out for now.)
+func mistTex(t TileTex) bool { return t == TexWater || t == TexSwamp }
+
+// drawMist lays drifting low fog over the wet lowland after dusk: sparse, soft,
+// horizontally-stretched pale banks anchored to a deterministic set of water and
+// swamp tiles and edging sideways on the frame, so the ground breathes a thin
+// veil at night without washing the whole scene out. Like the fireflies pass it
+// is world-coordinate deterministic and stays within the renderer's overhang, so
+// the incremental renderer reproduces it exactly.
+func drawMist(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, originX, originY int) {
+	_, _, night := sunState()
+	if night < 0.3 {
+		return
+	}
+	apx := scale / tileArtN
+	if apx < 1 {
+		apx = 1
+	}
+	col := colorful.Color{R: 0.76, G: 0.82, B: 0.90} // pale, faintly cool grey
+	for vy := 0; vy < cam.H; vy++ {
+		for vx := 0; vx < cam.W; vx++ {
+			if !mistTex(texs[vy][vx]) {
+				continue
+			}
+			wx, wy := originX+vx, originY+vy
+			if hashNoise(wx, wy, 0x2BCD) > 0.6 { // most wet tiles carry a wisp
+				continue
+			}
+			ph := float64(wx*5 + wy*11)
+			// Slow sideways drift (well under a tile) and a gentle breathing fade, so
+			// the bank rolls and thins rather than sitting as a static blob.
+			drift := 0.45 * math.Sin(float64(frame)*0.05+ph) * float64(scale)
+			breathe := 0.55 + 0.45*math.Sin(float64(frame)*0.07+ph*0.7)
+			cxf := float64(vx*scale+scale/2) + drift
+			cyf := float64(vy*scale + scale/2 + scale/5) // hugs the lower half of the tile
+			rx := float64(scale) * 1.5                   // wide, flat bank (reach stays within the overhang)
+			ry := float64(scale) * 0.6
+			bx0 := int(math.Floor((cxf-rx)/float64(apx))) * apx
+			by0 := int(math.Floor((cyf-ry)/float64(apx))) * apx
+			for by := by0; float64(by) <= cyf+ry; by += apx {
+				for bx := bx0; float64(bx) <= cxf+rx; bx += apx {
+					nx := (float64(bx) + float64(apx)/2 - cxf) / rx
+					ny := (float64(by) + float64(apx)/2 - cyf) / ry
+					d := nx*nx + ny*ny
+					if d >= 1 {
+						continue
+					}
+					w := math.Ceil((1-d)*3) / 3 * night * breathe * 0.24 // 3 bands, visible but not soupy on flowing water
+					for yy := by; yy < by+apx; yy++ {
+						for xx := bx; xx < bx+apx; xx++ {
+							or, og, ob, ok := getPixel(img, xx, yy)
+							if !ok {
+								continue
+							}
+							setPixel8(img, xx, yy,
+								float64(or)+col.R*255*w,
+								float64(og)+col.G*255*w,
+								float64(ob)+col.B*255*w)
 						}
 					}
 				}

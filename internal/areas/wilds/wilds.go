@@ -496,10 +496,13 @@ func fogTile() game.Tile {
 		Color: fogColor, Tex: game.TexFlat, Ground: fogColor}
 }
 
-// sightLight is the radial "discovery circle": bright on the player, fading to
-// the night floor at sightR so explored ground beyond it reads as dim memory.
+// sightLight is the radial "torch" around the player: bright on the player,
+// fading to the night floor at sightR so explored ground beyond it reads as dim
+// memory. DayFadedLight eases that darkening out over the day/night cycle, so by
+// midday the circle vanishes and only at night does it pool like a torch. (The
+// wider discoverR reveal circle is unaffected — explored ground stays uncovered.)
 func (a *area) sightLight() game.Light {
-	return game.Light{X: a.wx + game.PlayerW/2, Y: a.wy + game.PlayerH/2, Radius: sightR}
+	return game.DayFadedLight(game.Light{X: a.wx + game.PlayerW/2, Y: a.wy + game.PlayerH/2, Radius: sightR})
 }
 
 // HDView implements game.HDViewer so the Wilds renders in HD pixel mode.

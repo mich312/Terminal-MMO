@@ -62,10 +62,12 @@ func TestIncrementalMatchesFull(t *testing.T) {
 	const vw, vh, scale = 22, 16, 18
 	idle := time.Now().Add(-time.Hour) // far past → deterministic idle walk frame
 
+	// The cycle is compressed into one real hour, so the minute-of-hour selects
+	// the time of day: noon at minute 30, dusk ~minute 47.5, night ~minute 57.5.
 	times := map[string]time.Time{
-		"day":   time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC),
-		"dusk":  time.Date(2026, 6, 16, 19, 30, 0, 0, time.UTC),
-		"night": time.Date(2026, 6, 16, 23, 0, 0, 0, time.UTC),
+		"day":   time.Date(2026, 6, 16, 10, 30, 0, 0, time.UTC),
+		"dusk":  time.Date(2026, 6, 16, 10, 47, 30, 0, time.UTC),
+		"night": time.Date(2026, 6, 16, 10, 57, 30, 0, time.UTC),
 	}
 
 	// Scripted steps: each advances the frame and moves the self/npc avatars.

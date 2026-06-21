@@ -4,9 +4,11 @@ import (
 	"image"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -42,6 +44,12 @@ func meanLum(img *image.RGBA, tx, ty, scale int) float64 {
 // them, at spawn AND far from it.
 func TestSightLightStaysCenteredOnPlayer(t *testing.T) {
 	const vw, vh, scale = 40, 24, 8
+
+	// Pin the day/night clock to deep night: the sight light's falloff now fades
+	// out by day (see game.DayFadedLight), so this falloff assertion only holds
+	// while it's dark. Keep the test deterministic regardless of when it runs.
+	ui.Now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	defer func() { ui.Now = time.Now }()
 
 	w := world.New()
 	defer w.Close()

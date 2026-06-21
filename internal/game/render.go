@@ -54,12 +54,40 @@ func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 }
 
 // Light is a radial light source: tiles fade toward darkness past Radius from
+// Light is a radial light source: tiles fade toward darkness past Radius from
 // (X,Y) in world coordinates. A zero Radius means uniform light. Warm makes it a
 // lantern rather than a vignette — a generous, soft-edged warm pool over a faint
 // ambient floor, the way a held light reads underground.
+//
+// Floor sets how dark the ground outside Radius gets (0 = use the default
+// nightFloor; 1 = no darkening at all). DayFadedLight raises it with the
+// time-of-day clock so a light can fade out by midday.
 type Light struct {
 	X, Y, Radius int
 	Warm         bool
+	Floor        float64
+}
+
+// floor is the brightness the radial falloff bottoms out at outside Radius.
+func (l Light) floor() float64 {
+	if l.Floor <= 0 {
+		return nightFloor
+	}
+	if l.Floor > 1 {
+		return 1
+	}
+	return l.Floor
+}
+
+// DayFadedLight eases a light's outside-radius darkness with the time-of-day
+// cycle: after dusk the surroundings fall to the usual night floor, but by
+// midday they brighten to full daylight so the lit circle fades out entirely.
+// Used for the Wilds' sight light, which should read as a torch at night, not a
+// permanent vignette in broad daylight.
+func DayFadedLight(l Light) Light {
+	_, _, night := sunState()
+	l.Floor = nightFloor + (1-nightFloor)*(1-night)
+	return l
 }
 
 const nightFloor = 0.12
@@ -232,15 +260,19 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if light.Radius <= 0 {
 		return col
 	}
+	floor := light.floor()
+	if floor >= 1 { // fully faded (e.g. midday day-fade): no darkening at all
+		return col
+	}
 	dx := float64(x - light.X)
 	dy := float64(y - light.Y)
 	d := math.Sqrt(dx*dx + dy*dy)
 	r := d / float64(light.Radius)
-	floor := nightFloor
 	var f float64
 	if light.Warm {
 		// A lantern: a bright plateau out to a quarter of the reach, then a soft
-		// quadratic falloff — a wide, legible pool rather than a steep spotlight.
+		// quadratic falloff — a wide, legible pool rather than a steep spotlight,
+		// bottoming out at a faint floor so explored rock stays just legible.
 		floor = caveFloorLight
 		t := math.Max(0, (r-0.25)/0.75)
 		f = 1 - t*t
