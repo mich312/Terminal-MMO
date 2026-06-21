@@ -92,6 +92,13 @@ type World struct {
 	placements   map[[2]int]Placement
 	placementAdd func(Placement) // persist a placement (set by main)
 	placementDel func(x, y int)  // persist a removal (set by main)
+
+	// Player-to-player trading: live tables keyed by both traders' names,
+	// pending incoming requests (recipient → requester), and finished trades
+	// waiting for each party to apply its half (TakeCompletedTrade).
+	trades    map[string]*tradeState
+	pending   map[string]string
+	completed map[string]CompletedTrade
 }
 
 // Placement is one player-built structure in the shared world.
@@ -111,6 +118,9 @@ func New() *World {
 		gatePool:   make(map[string]int),
 		gateFixed:  make(map[string]bool),
 		placements: make(map[[2]int]Placement),
+		trades:     make(map[string]*tradeState),
+		pending:    make(map[string]string),
+		completed:  make(map[string]CompletedTrade),
 	}
 	go w.tickLoop()
 	return w
@@ -362,6 +372,7 @@ func (w *World) Leave(name string) {
 		return
 	}
 	area := p.Area
+	w.cancelTradeLocked(name, TradeCancel) // a disconnect aborts any open trade
 	delete(w.players, name)
 	delete(w.pollers, name)
 	if ch, ok := w.subs[name]; ok {
@@ -384,6 +395,9 @@ func (w *World) EnterArea(name, area string, x, y int, destDisplay string) {
 		return
 	}
 	old := p.Area
+	if old != area {
+		w.cancelTradeLocked(name, TradeCancel) // walking off to another area aborts a trade
+	}
 	p.Area = area
 	p.X, p.Y = x, y
 	p.LastMoved = time.Now()

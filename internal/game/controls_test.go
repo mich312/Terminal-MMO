@@ -53,7 +53,7 @@ func TestMenuEntriesShape(t *testing.T) {
 	if len(e) != 5 {
 		t.Fatalf("MenuEntries has %d rows; the HD menu switch expects 5", len(e))
 	}
-	want := []string{"Inventory", "Crafting", "Character", "Who's online", "Controls & Help"}
+	want := []string{"Compendium", "Crafting", "Character", "Who's online", "Controls & Help"}
 	for i, w := range want {
 		if e[i].Label != w {
 			t.Errorf("row %d = %q, want %q (order is load-bearing)", i, e[i].Label, w)

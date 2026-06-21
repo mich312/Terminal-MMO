@@ -21,6 +21,11 @@ const (
 	chatLogLines = 4
 	chatMax      = 120
 
+	// infoPanelChrome is the vertical space the info-panel frame costs around its
+	// scrolling body: rounded border (2) + padding (2) + title, two blank
+	// separators, and footer (4). Used to size the scroll viewport.
+	infoPanelChrome = 8
+
 	// Intro cinematic timing. The title holds with an animated gradient
 	// sweep, then the camera pans straight down onto the play field.
 	introFrame = 70 * time.Millisecond
@@ -75,9 +80,10 @@ type Model struct {
 
 	// overlays / global state
 	showPlayers bool
-	showInfo    bool // generic info panel (/help, /who)
+	showInfo    bool // generic info panel (/help, /who, /compendium)
 	infoTitle   string
 	infoLines   []string
+	infoScroll  int  // first visible body line, for panels taller than the screen
 	showChar    bool // interactive character panel (/character)
 	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
 	showCraft   bool // interactive crafting panel (/craft)
@@ -88,7 +94,10 @@ type Model struct {
 	awayIn      int  // input it consumed while away
 	showStall   bool // a trade Concession panel
 	stallXY     [2]int
-	stallSel    int // selected offer in the stall panel
+	stallSel    int    // selected offer in the stall panel
+	showTrade   bool   // live trade table (modal: keys drive the offer)
+	tradeSel    int    // selected pack slot in the trade panel
+	tradeReq    string // latest player who asked to trade with us (for /accept)
 	quitArmed   bool
 }
 
@@ -226,6 +235,8 @@ func (m *Model) handleWorldEvent(ev world.Event) tea.Cmd {
 				m.addToast(fmt.Sprintf("· %s left ·", ev.Player))
 			}
 		}
+	case world.EventTrade:
+		m.handleTradeEvent(ev)
 	}
 	if m.area != nil {
 		return m.updateArea(WorldEventMsg(ev))
@@ -254,7 +265,27 @@ func (m *Model) addSystemLine(text string) {
 func (m *Model) showInfoPanel(title string, lines []string) {
 	m.infoTitle = title
 	m.infoLines = lines
+	m.infoScroll = 0
 	m.showInfo = true
+}
+
+// infoViewport is how many body lines the info panel can show at once: the
+// screen height minus the panel chrome (border + padding + title + footer).
+// Panels with more lines than this scroll.
+func (m *Model) infoViewport() int {
+	v := m.height - infoPanelChrome
+	if v < 3 {
+		v = 3
+	}
+	return v
+}
+
+// maxInfoScroll is the largest first-visible-line that still fills the viewport.
+func (m *Model) maxInfoScroll() int {
+	if n := len(m.infoLines) - m.infoViewport(); n > 0 {
+		return n
+	}
+	return 0
 }
 
 // showHelp opens the "?" overlay: the full control reference (keys + what they
@@ -451,7 +482,7 @@ func fmtSecs(sec int) string {
 // closePanels dismisses every modal overlay (so opening one starts clean).
 func (m *Model) closePanels() {
 	m.showInfo, m.showPlayers, m.showChar = false, false, false
-	m.showCraft, m.showMachine, m.showStall = false, false, false
+	m.showCraft, m.showMachine, m.showStall, m.showTrade = false, false, false, false
 }
 
 // handleStallKey drives the Concession panel: ↑↓ pick an offer, e buys it, the
@@ -629,9 +660,36 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.updateArea(msg)
 	}
 
+	if m.showTrade {
+		return m, m.handleTradeKey(msg)
+	}
+
 	if m.showInfo {
-		// any key dismisses the info panel and is otherwise swallowed
-		m.showInfo = false
+		// Arrow/page keys scroll a panel taller than the screen; anything else
+		// dismisses it (and is otherwise swallowed).
+		switch msg.String() {
+		case "up", "k":
+			m.infoScroll--
+		case "down", "j":
+			m.infoScroll++
+		case "pgup", "b":
+			m.infoScroll -= m.infoViewport()
+		case "pgdown", " ", "f":
+			m.infoScroll += m.infoViewport()
+		case "home", "g":
+			m.infoScroll = 0
+		case "end", "G":
+			m.infoScroll = m.maxInfoScroll()
+		default:
+			m.showInfo = false
+			return m, nil
+		}
+		if m.infoScroll > m.maxInfoScroll() {
+			m.infoScroll = m.maxInfoScroll()
+		}
+		if m.infoScroll < 0 {
+			m.infoScroll = 0
+		}
 		return m, nil
 	}
 
@@ -824,7 +882,12 @@ func (m *Model) playView() string {
 
 	view := titleBar + "\n" + areaBlock + "\n" + chat + "\n" + status
 
-	if m.showInfo {
+	if m.showTrade {
+		panel := m.tradePanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showInfo {
 		panel := m.infoPanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
@@ -901,12 +964,30 @@ func (m *Model) charPanel() string {
 func (m *Model) infoPanel() string {
 	var rows []string
 	rows = append(rows, m.theme.PanelTitle.Render(m.infoTitle), "")
-	if len(m.infoLines) == 0 {
+	footer := "any key to close"
+	switch {
+	case len(m.infoLines) == 0:
 		rows = append(rows, m.theme.Dim.Render("(nothing to show)"))
-	} else {
+	case len(m.infoLines) <= m.infoViewport():
 		rows = append(rows, m.infoLines...)
+	default:
+		// Taller than the screen — show a window and a scroll hint.
+		start := m.infoScroll
+		end := start + m.infoViewport()
+		if end > len(m.infoLines) {
+			end = len(m.infoLines)
+		}
+		rows = append(rows, m.infoLines[start:end]...)
+		arrows := ""
+		if start > 0 {
+			arrows += "↑"
+		}
+		if end < len(m.infoLines) {
+			arrows += "↓"
+		}
+		footer = fmt.Sprintf("%s scroll · any other key to close", arrows)
 	}
-	rows = append(rows, "", m.theme.Dim.Render("any key to close"))
+	rows = append(rows, "", m.theme.Dim.Render(footer))
 	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 

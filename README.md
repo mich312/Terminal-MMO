@@ -61,7 +61,7 @@ enter somewhere new), and a small **mini-legend** (`WASD move · Enter chat ·
 Tab menu · ? help`) lives top-right. The **bottom is empty** until something is
 actually usable, then a **button prompt** pops up for it ("e — wear the Crown",
 "step in to enter Durst HQ"). Everything else is one keypress away: **`Tab`
-opens a menu** listing your **inventory**, **character** editor, **who's
+opens a menu** listing your **compendium**, **character** editor, **who's
 online** and **controls/help** — each with its shortcut, so the menu teaches
 the fast keys (`i`, `c`, `?`) over time. **Chat** is `Enter` (plain text, or
 `/me`, `/w`, `/who`, `/goto`; the log fades when idle). It bypasses bubbletea
@@ -83,7 +83,7 @@ Background and rationale: [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 | e | (beside a workbench) open crafting · (beside a machine) refuel (`f`) / collect (`e`) · (beside a Concession) buy |
 | e | (your own Concession) `f` collect the till, `x` remove an offer; post offers with `/sell` |
 | n / p | next/previous slide while presenting from your lectern |
-| Tab | open the menu — inventory, character, who, help (HD) · who's online (glyph) |
+| Tab | open the menu — compendium, character, who, help (HD) · who's online (glyph) |
 | ? | help — every key and chat command, in one panel |
 | q / Ctrl+C | quit (press twice) |
 
@@ -100,7 +100,9 @@ snowfields and snow-capped peaks, wetlands, sand, hills — give each direction 
 distinct look, each with its own HD pixel-art ground texture. Scattered through
 them are `◆` **collectibles** — berries and mushrooms in the woods, shells on
 the beach, crystals in the snow — that you forage by standing on one and
-pressing `e`; `/inventory` (`/i`) shows your haul. Rarer still are wearable
+pressing `e`; the **compendium** (`i`, or `/compendium` · `/codex`) is the
+codex of every find and wearable — what each is, where it turns up, and what it
+does — with a count beside the ones you've collected. Rarer still are wearable
 `♚` **hats**, each hidden in a themed biome (a crown in the hills, a halo in
 the snow…): find one and you unlock and wear it. Out past the hub stand
 **sealed gates** — broken arches to hidden areas. The *Whispering Gate* is

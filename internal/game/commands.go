@@ -78,9 +78,9 @@ func init() {
 			run:     cmdGoto,
 		},
 		{
-			name: "inventory", aliases: []string{"i", "inv"}, usage: "/inventory",
-			summary: "show the items you've collected",
-			run:     cmdInventory,
+			name: "compendium", aliases: []string{"inventory", "i", "inv", "codex"}, usage: "/compendium",
+			summary: "the codex of every collectible & wearable — and what each does",
+			run:     cmdCompendium,
 		},
 		{
 			name: "character", aliases: []string{"char"}, usage: "/character",
@@ -101,6 +101,21 @@ func init() {
 			name: "collect", usage: "/collect",
 			summary: "sweep your Concession's till into your pack",
 			run:     cmdCollect,
+		},
+		{
+			name: "trade", aliases: []string{"tr"}, usage: "/trade <player>",
+			summary: "ask a nearby player to swap items",
+			run:     cmdTrade,
+		},
+		{
+			name: "accept", usage: "/accept",
+			summary: "accept a pending trade request",
+			run:     cmdAccept,
+		},
+		{
+			name: "decline", usage: "/decline",
+			summary: "decline a pending trade request",
+			run:     cmdDecline,
 		},
 		{
 			name: "clear", usage: "/clear",
@@ -362,27 +377,112 @@ func cmdGoto(m *Model, args []string) tea.Cmd {
 	return m.startTransition(dest)
 }
 
-func cmdInventory(m *Model, args []string) tea.Cmd {
-	inv := m.ctx.Inventory
-	total := 0
-	lines := make([]string, 0, len(Items))
-	for _, it := range Items {
-		n := inv[it.ID]
-		if n == 0 {
-			continue
+func cmdCompendium(m *Model, args []string) tea.Cmd {
+	groups := Compendium(m.ctx.Inventory)
+	found, kinds := 0, 0
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			kinds++
+			if e.Owned > 0 {
+				found++
+			}
 		}
-		total += n
-		glyph := m.theme.Fg(lipgloss.Color(it.Hex)).Render(string(it.Glyph))
-		lines = append(lines, fmt.Sprintf("%s  %s %s",
-			glyph, m.theme.ChatText.Render(padRight(it.Name, 14)),
-			m.theme.Accent.Render(fmt.Sprintf("×%d", n))))
 	}
-	if total == 0 {
-		m.addSystemLine("your pack is empty — explore the Wilds and press e on a ◆ to pick it up")
-		return nil
-	}
-	m.showInfoPanel(fmt.Sprintf("Inventory — %d", total), lines)
+	m.showInfoPanel(fmt.Sprintf("Compendium — %d/%d found", found, kinds), m.compendiumLines(groups))
 	return nil
+}
+
+// compendiumLines renders the full codex for the scrolling info panel: every
+// collectible grouped by source (owned ones lit with a count, the rest dimmed),
+// each with what it is and what it does, then the wearables and their powers.
+// Detail text is word-wrapped to the terminal width so it stays inside the panel
+// even at the 80-column minimum.
+func (m *Model) compendiumLines(groups []CompendiumGroup) []string {
+	const indent = "    "
+	dw := m.detailWidth()
+	var lines []string
+	addDetail := func(text string, style lipgloss.Style) {
+		for _, seg := range wrapText(text, dw) {
+			lines = append(lines, indent+style.Render(seg))
+		}
+	}
+	for _, g := range groups {
+		lines = append(lines, m.theme.PanelTitle.Render(g.Title))
+		for _, e := range g.Entries {
+			it := e.Item
+			rarity := m.theme.Dim.Render(it.Rarity.String())
+			if e.Owned > 0 {
+				glyph := m.theme.Fg(lipgloss.Color(it.Hex)).Render(string(it.Glyph))
+				lines = append(lines, fmt.Sprintf("%s  %s %s  %s", glyph,
+					m.theme.Bright.Render(padRight(it.Name, 18)),
+					m.theme.Accent.Render(fmt.Sprintf("×%d", e.Owned)), rarity))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s  %s %s  %s",
+					m.theme.Dim.Render(string(it.Glyph)),
+					m.theme.Dim.Render(padRight(it.Name, 18)),
+					m.theme.Dim.Render("—"), rarity))
+			}
+			addDetail(it.About+" "+it.Found, m.theme.Dim)
+			if e.Note != "" {
+				addDetail(e.Note, m.theme.ChatText)
+			}
+		}
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, m.theme.PanelTitle.Render("Wearables"))
+	for _, w := range Wearables(m.ctx) {
+		power := w.Power
+		if power == "" {
+			power = "cosmetic"
+		}
+		if w.Owned {
+			suffix := ""
+			if w.Worn {
+				suffix = m.theme.Accent.Render(" worn")
+			}
+			lines = append(lines, fmt.Sprintf("%s %s%s", m.theme.Accent.Render("✓"),
+				m.theme.Bright.Render(padRight(w.Name, 12)), suffix))
+			addDetail(power, m.theme.ChatText)
+		} else {
+			lines = append(lines, fmt.Sprintf("%s %s", m.theme.Dim.Render("·"),
+				m.theme.Dim.Render(padRight(w.Name, 12))))
+			addDetail(power+" — "+w.Source, m.theme.Dim)
+		}
+	}
+	return lines
+}
+
+// detailWidth is the wrap width for the compendium's indented detail text: the
+// screen minus the panel border + padding (6) and the 4-space indent.
+func (m *Model) detailWidth() int {
+	if w := m.width - 10; w >= 24 {
+		return w
+	}
+	return 24
+}
+
+// wrapText word-wraps s to at most width columns per line (greedy; assumes the
+// ASCII catalog prose, so byte length tracks display width). A single
+// over-long word is left intact on its own line rather than split.
+func wrapText(s string, width int) []string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	var (
+		lines []string
+		cur   = words[0]
+	)
+	for _, w := range words[1:] {
+		if len(cur)+1+len(w) > width {
+			lines = append(lines, cur)
+			cur = w
+		} else {
+			cur += " " + w
+		}
+	}
+	return append(lines, cur)
 }
 
 func cmdCharacter(m *Model, args []string) tea.Cmd {

@@ -439,7 +439,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			a.wx, a.wy = nx, ny
 			a.reveal()
-			a.collectItem() // items are gathered just by walking over them
+			a.pickUp() // hats and items are gathered just by walking over them
 			if portal, ok := a.portalUnder(nx, ny); ok {
 				a.ctx.World.Move(a.ctx.Name, nx, ny)
 				// Persist the cell we stepped in from, not the portal itself, so
@@ -540,7 +540,8 @@ func (a *area) hatUnderBody() (hatLoot, int, int, bool) {
 
 // pickUp harvests whatever lies under the player. Hats take precedence: they
 // unlock the accessory and equip it; ordinary items go into the pack. Both mark
-// the cell collected and persist.
+// the cell collected and persist. Called both by the 'e' key and by movement, so
+// finds — hats included — are gathered just by walking over them.
 func (a *area) pickUp() {
 	if h, x, y, ok := a.hatUnderBody(); ok {
 		a.collected[[2]int{x, y}] = true
@@ -571,12 +572,11 @@ func (a *area) unlockHat(idx int) bool {
 }
 
 // collectItem harvests an ordinary item under the player into the pack, marks
-// the cell collected and persists it. Hats are deliberately excluded — wearing
-// one changes your avatar, so that stays a manual 'e' action — which is why this
-// is split out from pickUp: movement calls it to gather loot just by walking
-// over it. A find that has a matching wearable (a mushroom → the shroom
-// accessory) also unlocks it, so some foraged loot doubles as an outfit.
-// Returns whether anything was taken.
+// the cell collected and persists it. Split out from pickUp so the hat branch can
+// take precedence: pickUp tries a hat first, then falls back here for loot. A
+// find that has a matching wearable (a mushroom → the shroom accessory) also
+// unlocks it, so some foraged loot doubles as an outfit. Returns whether anything
+// was taken.
 func (a *area) collectItem() bool {
 	it, x, y, ok := a.itemUnderBody()
 	if !ok {
@@ -611,6 +611,9 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 				cell := a.gen.At(wx, wy)
 				t := CellTile(cell)
 				if g, ok := gateAtCell(wx, wy); ok {
+					// Both the open gate and the broken (sealed) arch carry the name of
+					// where they lead, so the renderer can float a label above them.
+					t.Label = game.DisplayName(g.Portal)
 					if !a.gateOpen(g) { // sealed: a dull, broken arch (no swirl)
 						t.Ch, t.Color = '⊘', "#8A8A98"
 						t.Prop, t.PropHex = game.PropSealed, "#7A7A88"
@@ -955,6 +958,41 @@ func (a *area) minimap() string {
 	}
 	b.WriteString(th.Dim.Render("m or move to close"))
 	return th.Panel.Render(b.String())
+}
+
+// HDMinimap supplies the same coarse overview to the HD pixel client, which
+// rasterizes the cells as colored blocks rather than glyphs. It mirrors minimap:
+// one block per few tiles, centered on the player, filling in as you explore.
+func (a *area) HDMinimap() (string, [][]game.MiniCell, bool) {
+	if !a.showMap {
+		return "", nil, false
+	}
+	const (
+		stride = 4
+		halfW  = 19
+		halfH  = 9
+	)
+	rows := make([][]game.MiniCell, 0, 2*halfH+1)
+	for ry := -halfH; ry <= halfH; ry++ {
+		row := make([]game.MiniCell, 0, 2*halfW+1)
+		for rx := -halfW; rx <= halfW; rx++ {
+			switch {
+			case rx == 0 && ry == 0:
+				row = append(row, game.MiniCell{Self: true})
+			case !a.seen(a.wx+rx*stride, a.wy+ry*stride):
+				row = append(row, game.MiniCell{}) // unexplored
+			default:
+				c := a.gen.At(a.wx+rx*stride, a.wy+ry*stride)
+				hex := c.Color
+				if hex == "" {
+					hex = ui.HexDim
+				}
+				row = append(row, game.MiniCell{Hex: hex})
+			}
+		}
+		rows = append(rows, row)
+	}
+	return "Map — The Wilds", rows, true
 }
 
 func footprintWalkable(g *worldgen.Generator, x, y int) bool {

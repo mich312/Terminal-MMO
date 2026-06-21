@@ -9,6 +9,25 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
+// TestGateItemsDocumented keeps the compendium honest: every item a gate spends
+// must describe that use on its catalog card, so the codex's "what it does" line
+// can't drift from the gates that actually consume it.
+func TestGateItemsDocumented(t *testing.T) {
+	for dest, g := range gates {
+		if g.item == "" {
+			continue
+		}
+		it, ok := game.ItemByID(g.item)
+		if !ok {
+			t.Errorf("gate %q needs unknown item %q", dest, g.item)
+			continue
+		}
+		if it.Use == "" {
+			t.Errorf("%s repairs the %s gate but its catalog card documents no Use", it.Name, dest)
+		}
+	}
+}
+
 // A personal gate opens for the individual — by offering its item or by saying
 // the riddle's answer at it — and then behaves like a portal for that player.
 func TestPersonalGate(t *testing.T) {

@@ -62,6 +62,48 @@ func findItemByID(a *area, id string) (int, int, bool) {
 	return 0, 0, false
 }
 
+// The forage scatter must stay sparse and rarity-tiered: only a small share of
+// walkable ground carries loot (so the world doesn't read as "filled"), and a
+// rare find turns up far less often than a common one. Bounds are wide enough to
+// survive worldgen tweaks but tight enough to catch a re-flood.
+func TestForageDensityAndRarity(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	ctx := &game.Ctx{World: w, Store: store.Open(t.TempDir() + "/d.db"), Name: name, Theme: ui.Default, Hats: map[int]bool{}}
+	a := game.NewArea("wilds", ctx).(*area)
+	self, _ := w.Self(name)
+	a.Init(&self)
+
+	walk, items := 0, 0
+	byRarity := map[game.Rarity]int{}
+	for x := -200; x <= 200; x++ {
+		for y := -200; y <= 200; y++ {
+			c := a.gen.At(x, y)
+			if c.Walkable && c.Portal == "" {
+				walk++
+			}
+			if it, ok := itemAt(c, x, y); ok {
+				items++
+				byRarity[it.Rarity]++
+			}
+		}
+	}
+	if walk == 0 {
+		t.Fatal("no walkable ground sampled")
+	}
+	frac := float64(items) / float64(walk)
+	if frac < 0.004 || frac > 0.014 {
+		t.Errorf("forage density = %.4f of walkable cells, want a sparse 0.004–0.014", frac)
+	}
+	if byRarity[game.Common] <= byRarity[game.Uncommon] {
+		t.Errorf("commons (%d) should outnumber uncommons (%d)", byRarity[game.Common], byRarity[game.Uncommon])
+	}
+	if byRarity[game.Uncommon] <= byRarity[game.Rare] {
+		t.Errorf("uncommons (%d) should outnumber rares (%d)", byRarity[game.Uncommon], byRarity[game.Rare])
+	}
+}
+
 // Foraging a mushroom unlocks the matching "shroom" accessory (collect-to-wear),
 // and the unlock persists — so some loot doubles as an outfit.
 func TestForagingMushroomUnlocksShroom(t *testing.T) {
@@ -192,6 +234,44 @@ func TestItemPickupAndPersist(t *testing.T) {
 	b.wx, b.wy = ix, iy
 	if _, _, _, still := b.itemUnderBody(); still {
 		t.Fatal("harvested cell should stay empty after reconnect")
+	}
+}
+
+// Hats of the same type never bunch up: the jittered-grid placement keeps any
+// two same-hat finds at least 2*hatMargin tiles apart, so you never stumble on
+// the same hat a few blocks away. Scan a wide swath and check every pair.
+func TestHatsDoNotCluster(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	st := store.Open(t.TempDir() + "/w.db")
+	ctx := &game.Ctx{World: w, Store: st, Name: name, Theme: ui.Default, Hats: map[int]bool{}}
+	a := game.NewArea("wilds", ctx).(*area)
+
+	// Collect every hat in a large window, keyed by type.
+	byType := map[int][][2]int{}
+	const span = 400
+	for x := -span; x <= span; x++ {
+		for y := -span; y <= span; y++ {
+			if h, ok := hatAt(a.gen.At(x, y), x, y); ok {
+				byType[h.idx] = append(byType[h.idx], [2]int{x, y})
+			}
+		}
+	}
+	if len(byType) == 0 {
+		t.Fatal("no hats found in a 800×800 window — placement is too sparse")
+	}
+	const minSpacing = 2 * hatMargin
+	for idx, pts := range byType {
+		for i := 0; i < len(pts); i++ {
+			for j := i + 1; j < len(pts); j++ {
+				dx, dy := pts[i][0]-pts[j][0], pts[i][1]-pts[j][1]
+				if dx*dx+dy*dy < minSpacing*minSpacing {
+					t.Errorf("hat %d at %v and %v are %d² apart, want ≥ %d² (clustered)",
+						idx, pts[i], pts[j], dx*dx+dy*dy, minSpacing*minSpacing)
+				}
+			}
+		}
 	}
 }
 
