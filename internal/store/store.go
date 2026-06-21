@@ -23,6 +23,15 @@ type GuestbookEntry struct {
 	CreatedAt time.Time
 }
 
+// Placement is one player-placed structure in the shared world: a kind (a
+// game.Placeable id) at an absolute (x,y), with its owner and when it was built.
+type Placement struct {
+	X, Y    int
+	Kind    string // placeable id (workbench, fence, chest, …)
+	Owner   string // the SSH username that placed it
+	Created int64  // unix seconds
+}
+
 // DeckRecord is a persisted presentation deck (owned by a user).
 type DeckRecord struct {
 	ID      string
@@ -92,6 +101,13 @@ type Store interface {
 	SaveGateWorld(gate string, pool int, fixed bool)
 	// LoadGateWorld returns the shared co-op gate pools and fixed flags.
 	LoadGateWorld() (pools map[string]int, fixed map[string]bool)
+	// AddPlacement upserts a player-placed structure at (x,y) (the shared
+	// placements layer overlaid on the deterministic Wilds).
+	AddPlacement(p Placement)
+	// RemovePlacement deletes whatever is placed at (x,y).
+	RemovePlacement(x, y int)
+	// LoadPlacements returns every placement in the world (a small, shared set).
+	LoadPlacements() []Placement
 	Close() error
 }
 
@@ -139,6 +155,9 @@ func (noopStore) LoadHats(string) map[int]bool                       { return ni
 func (noopStore) FixPersonalGate(string, string)                     {}
 func (noopStore) LoadPersonalGates(string) map[string]bool           { return nil }
 func (noopStore) SaveGateWorld(string, int, bool)                    {}
+func (noopStore) AddPlacement(Placement)                             {}
+func (noopStore) RemovePlacement(int, int)                           {}
+func (noopStore) LoadPlacements() []Placement                        { return nil }
 func (noopStore) LoadGateWorld() (map[string]int, map[string]bool) {
 	return map[string]int{}, map[string]bool{}
 }

@@ -90,6 +90,14 @@ CREATE TABLE IF NOT EXISTS gates_world (
 	pool  INTEGER NOT NULL DEFAULT 0,
 	fixed INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS placements (
+	x       INTEGER NOT NULL,
+	y       INTEGER NOT NULL,
+	kind    TEXT NOT NULL,
+	owner   TEXT NOT NULL,
+	created INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (x, y)
+);
 `
 
 type sqliteStore struct {
@@ -401,6 +409,47 @@ func (s *sqliteStore) LoadGateWorld() (map[string]int, map[string]bool) {
 		}
 	}
 	return pools, fixed
+}
+
+// AddPlacement upserts a placed structure at (x,y).
+func (s *sqliteStore) AddPlacement(p Placement) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO placements (x, y, kind, owner, created) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(x, y) DO UPDATE SET kind = excluded.kind, owner = excluded.owner,
+		 created = excluded.created`,
+		p.X, p.Y, p.Kind, p.Owner, p.Created); err != nil {
+		log.Printf("store: add placement: %v", err)
+	}
+}
+
+// RemovePlacement deletes whatever is placed at (x,y).
+func (s *sqliteStore) RemovePlacement(x, y int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM placements WHERE x = ? AND y = ?`, x, y); err != nil {
+		log.Printf("store: remove placement: %v", err)
+	}
+}
+
+// LoadPlacements returns every placement in the world.
+func (s *sqliteStore) LoadPlacements() []Placement {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT x, y, kind, owner, created FROM placements`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Placement
+	for rows.Next() {
+		var p Placement
+		if err := rows.Scan(&p.X, &p.Y, &p.Kind, &p.Owner, &p.Created); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // LoadAvatar returns a player's saved avatar customization.

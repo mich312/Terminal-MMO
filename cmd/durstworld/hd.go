@@ -629,6 +629,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		} else if key == "e" { // pick up an item under the player
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 			draw()
+		} else if key == "b" || key == "r" || key == "[" || key == "]" {
+			// build mode: 'b' toggles, then 'r'/brackets cycle the placeable (the
+			// area reinterprets movement as ghost movement while building).
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			draw()
 		} else if key == "f2" { // toggle the walkability debug overlay
 			game.DebugWalkable = !game.DebugWalkable
 			draw()

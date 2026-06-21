@@ -244,6 +244,32 @@ the Wilds, still a pure function of `(seed, x, y)` — nothing is stored.
     bank, straight across to walkable ground on the far side (never a stub — a
     test asserts every bridge joins two walkable banks).
 
+## Phase 9 — Cozy frontier: craft, build, automate (in progress)
+
+The turn from a *place* into a *game* — see [`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md)
+and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval voice.
+
+- ✅ **Crafting** (`internal/game/recipes.go`): a static recipe catalog (Planks,
+  Flour, Gold Ingot, Field Salve, Wrought Lamp) and pure `Craftable`/`Craft`
+  that spend forage and yield refined goods through the existing inventory +
+  store plumbing. A `DrawCraftPanel` in HD (open with `k` or the Tab menu) and a
+  matching glyph panel via `/craft`; both list live craftable counts.
+- ✅ **Production sprites**: `PropWorkbench/Sawmill/Mill/Furnace/Chest` as 6×6
+  art in `tileset.go`, the furnace wired into the night light emitters.
+- ✅ **Placements layer** (the one architectural piece): a SQLite `placements`
+  table + a shared `world` set (`Place`/`Unplace`/`PlacementAt`, `EventPlaced`),
+  overlaid on the stateless Wilds at render time — the co-op gate generalized
+  from one pool to many owned, positioned objects. Terrain stays pure-seed;
+  placements are the only stored mutable layer, and they make built walls solid
+  (movement collision now consults placements, not just the generator).
+- ✅ **Build mode** (`b` in the Wilds): a placeable catalog (Fence, Workbench,
+  Cold Storage, Lamppost) with material costs; a green/red ghost follows the
+  cursor, `r` cycles, `e` spends and places. Works in both clients.
+- ⬜ **Offline machines** (step 3): a machine is a placement whose state carries
+  input/output buffers + a wall-clock; a pure `Settle` fast-forwards elapsed
+  time (no per-tick RNG) so it produces while you're logged off.
+- ⬜ **Trade** and settlement claims layer on after.
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**

@@ -60,6 +60,11 @@ type area struct {
 	collected  map[[2]int]bool   // world cells whose item this player has taken
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
+
+	// build mode (the shared placements layer)
+	building bool // placing a structure: movement drives the ghost, not the body
+	buildSel int  // selected placeable in game.Placeables
+	bx, by   int  // ghost cursor, absolute world coords
 }
 
 // toastDuration is how long a pickup message lingers.
@@ -181,6 +186,67 @@ func (a *area) spawn() (int, int) {
 
 func (a *area) fits(x, y int) bool { return footprintWalkable(a.gen, x, y) }
 
+// walkableAt is the movement collision test: a blocking placement (a fence, a
+// machine) stops you, otherwise the terrain decides. This is what makes built
+// structures solid, since the generator alone knows nothing about placements.
+func (a *area) walkableAt(x, y int) bool {
+	if pl, ok := a.ctx.World.PlacementAt(x, y); ok {
+		if pb, ok := game.PlaceableByID(pl.Kind); ok && !pb.Walkable {
+			return false
+		}
+	}
+	return a.gen.Walkable(x, y)
+}
+
+// canBuildAt reports whether the ghost cell is a legal spot: discovered, buildable
+// ground, not already occupied, and not on a gate or the player's own footprint.
+func (a *area) canBuildAt(x, y int) bool {
+	if _, ok := a.ctx.World.PlacementAt(x, y); ok {
+		return false
+	}
+	if !a.seen(x, y) || !a.gen.Walkable(x, y) {
+		return false
+	}
+	if _, ok := gateAtCell(x, y); ok {
+		return false
+	}
+	if x >= a.wx && x < a.wx+game.PlayerW && y >= a.wy && y < a.wy+game.PlayerH {
+		return false // can't build under yourself
+	}
+	return true
+}
+
+// placeStructure tries to build the selected placeable at the ghost. It reserves
+// the cell in the shared world first (atomic occupancy check) and only spends
+// materials once the spot is secured, so a lost race never costs you anything.
+func (a *area) placeStructure() {
+	if a.buildSel < 0 || a.buildSel >= len(game.Placeables) {
+		return
+	}
+	p := game.Placeables[a.buildSel]
+	if !a.canBuildAt(a.bx, a.by) {
+		a.setToast("can't build there")
+		return
+	}
+	if !game.CanAfford(p, a.ctx.Inventory) {
+		a.setToast("need " + game.PlaceableCost(p))
+		return
+	}
+	if !a.ctx.World.Place("wilds", world.Placement{X: a.bx, Y: a.by, Kind: p.ID, Owner: a.ctx.Name}) {
+		a.setToast("something's already there")
+		return
+	}
+	game.SpendFor(a.ctx, p)
+	a.setToast("built " + p.Name)
+}
+
+func iabs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
@@ -281,11 +347,46 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
-		if msg.String() == "m" {
+		ks := msg.String()
+
+		// Build mode toggle (works from anywhere).
+		if ks == "b" {
+			a.building = !a.building
+			if a.building {
+				if a.buildSel < 0 || a.buildSel >= len(game.Placeables) {
+					a.buildSel = 0
+				}
+				a.bx, a.by = a.wx, a.wy-1 // ghost just above the body to start
+			}
+			return a, nil
+		}
+		// While building, keys drive the ghost and the picker, not the body.
+		if a.building {
+			switch ks {
+			case "esc":
+				a.building = false
+			case "r", "]":
+				a.buildSel = (a.buildSel + 1) % len(game.Placeables)
+			case "[":
+				a.buildSel = (a.buildSel + len(game.Placeables) - 1) % len(game.Placeables)
+			case "e", "enter":
+				a.placeStructure()
+			default:
+				if dx, dy, _, ok := game.MoveKey(ks); ok {
+					nx, ny := a.bx+dx, a.by+dy
+					if iabs(nx-a.wx) <= 10 && iabs(ny-a.wy) <= 8 { // keep the ghost on-screen, near home
+						a.bx, a.by = nx, ny
+					}
+				}
+			}
+			return a, nil
+		}
+
+		if ks == "m" {
 			a.showMap = !a.showMap
 			return a, nil
 		}
-		if msg.String() == "e" {
+		if ks == "e" {
 			if g, ok := a.sealedGateUnderBody(); ok {
 				a.offerToGate(g)
 			} else {
@@ -296,14 +397,14 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		if a.showMap {
 			a.showMap = false // any other key closes the map
 		}
-		dx, dy, steps, ok := game.MoveKey(msg.String())
+		dx, dy, steps, ok := game.MoveKey(ks)
 		if !ok {
 			return a, nil
 		}
 		sx, sy := a.wx, a.wy
 		for i := 0; i < steps; i++ {
 			nx, ny := a.wx+dx, a.wy+dy
-			if !game.CanStep(a.gen.Walkable, a.wx, a.wy, dx, dy) {
+			if !game.CanStep(a.walkableAt, a.wx, a.wy, dx, dy) {
 				break
 			}
 			a.wx, a.wy = nx, ny
@@ -328,6 +429,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 }
 
 func (a *area) Hint() string {
+	if a.building {
+		pb := game.Placeables[a.buildSel]
+		return fmt.Sprintf("build: %s (%s) · move ghost · e place · r next · b done", pb.Name, game.PlaceableCost(pb))
+	}
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
 	}
@@ -345,6 +450,10 @@ func (a *area) Hint() string {
 // player stands. The bearing-to-home fallback in Hint is ambient navigation,
 // not an action, so here it returns ok=false to keep the HD bottom clear.
 func (a *area) Prompt() (string, bool) {
+	if a.building {
+		pb := game.Placeables[a.buildSel]
+		return fmt.Sprintf("e build %s (%s) · r next · b done", pb.Name, game.PlaceableCost(pb)), true
+	}
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "step in to enter " + game.DisplayName(name), true
 	}
@@ -497,9 +606,35 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						}
 					}
 				}
+				// Player-built structures (the shared placements layer) sit on top of
+				// the biome ground, overriding any loot the cell would otherwise show.
+				if pl, ok := a.ctx.World.PlacementAt(wx, wy); ok {
+					if pb, ok := game.PlaceableByID(pl.Kind); ok {
+						t.Ch, t.Color = pb.Glyph, pb.Hex
+						t.Prop, t.PropHex = pb.Prop, pb.Hex
+						t.Walkable = pb.Walkable
+						t.Ground = groundColor(cell.Biome)
+					}
+				}
 				row[lx] = t
 			} else {
 				row[lx] = fogTile() // the unexplored world stays hidden
+			}
+
+			// The build ghost draws over everything (even fog), green where it can
+			// go and red where it can't, so placement reads before you commit.
+			if a.building && wx == a.bx && wy == a.by {
+				pb := game.Placeables[a.buildSel]
+				hex := "#7BD88F"
+				if !a.canBuildAt(wx, wy) {
+					hex = "#E0604D"
+				}
+				g := row[lx]
+				g.Ch, g.Color, g.Prop, g.PropHex = pb.Glyph, hex, pb.Prop, hex
+				if g.Ground == "" || g.Ground == fogColor {
+					g.Ground = "#33402F"
+				}
+				row[lx] = g
 			}
 		}
 		tiles[ly] = row
