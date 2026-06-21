@@ -104,6 +104,28 @@ func AccessoryLight(accessory int) (colorful.Color, float64, bool) {
 	return mustHex(l.hex), l.radius, true
 }
 
+// accessoryPowers is the one place that says, in a few words, what each earned
+// wearable does — so the /avatar listing, the equip line and the character panel
+// can all tell the player. Keyed by name; absent means a plain cosmetic.
+var accessoryPowers = map[string]string{
+	"glowcap":  "night light · saves lantern oil · 2× forage",
+	"shroom":   "night light",
+	"circlet":  "night light (crystal)",
+	"ambergem": "night light (amber)",
+	"diadem":   "night light · crosses cave chasms",
+	"crown":    "senses cave treasure through the dark",
+	"flower":   "2× forage",
+}
+
+// AccessoryPower is a short description of what a worn accessory grants, or ""
+// when it's purely cosmetic.
+func AccessoryPower(accessory int) string {
+	if accessory <= 0 || accessory >= len(accessories) {
+		return ""
+	}
+	return accessoryPowers[accessories[accessory].Name]
+}
+
 // spritePixel resolves a bitmap code to a color (and whether it's opaque),
 // shading relative to the player's body color. accMain/accShade color the
 // accessory pixels (H/h) so each hat keeps its own hue.
