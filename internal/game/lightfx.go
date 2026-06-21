@@ -12,9 +12,10 @@ import (
 // sunState derives lighting from the time-of-day clock (ui.Now). It reads the
 // shared ui.SolarHour, so the sun rises and sets with Brixen's seasonal daylight
 // (canonical hour 6 = sunrise, 18 = sunset, whatever real time those fall at):
-//   elev  — sun height: 1 at noon, 0 at the horizon (sunrise / sunset), <0 at night.
-//   azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
-//   night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
+//
+//	elev  — sun height: 1 at noon, 0 at the horizon (sunrise / sunset), <0 at night.
+//	azX   — horizontal sun direction: −1 at dawn (east) … +1 at dusk (west).
+//	night — 0 in full day, ramping to 1 after dusk; gates night-only effects.
 func sunState() (elev, azX, night float64) {
 	h := ui.SolarHour(ui.Now())
 	elev = math.Sin(math.Pi * (h - 6) / 12)

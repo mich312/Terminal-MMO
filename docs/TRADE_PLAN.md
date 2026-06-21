@@ -1,5 +1,11 @@
 # Trade Plan — the Durst Group Concession
 
+> **Status:** ✅ Phases 1–3 shipped — the atomic `world.MutatePlacement`, the
+> `StallState` schema + trade logic, the Concession placeable, and the buyer
+> panel in both clients, with `/sell` and `/collect` as the authoring path. A
+> stocked stall trades to others while the owner is away. ⬜ Phase 4 (a full
+> keyboard owner-authoring panel) is the remaining polish.
+
 > How player-to-player trade lands on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),
 > [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)). Grounded in the real

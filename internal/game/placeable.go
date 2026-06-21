@@ -34,6 +34,9 @@ var Placeables = []Placeable{
 	{ID: "lamppost", Name: "Lamppost", Glyph: '☼', Prop: PropLamp, Hex: "#FFD27A",
 		Cost: []Ingredient{{"lamp", 1}}, Walkable: false,
 		Blurb: "Casts a warm, compliant glow over the night shift."},
+	{ID: "stall", Name: "Durst Group Concession", Glyph: '╒', Prop: PropStall, Hex: "#C98A4A",
+		Cost: []Ingredient{{"plank", 4}}, Walkable: false,
+		Blurb: "Vends your goods to passers-by. Trades while you're away."},
 	// Machines (see machine.go): inert until fueled, then they produce offline.
 	{ID: "sawmill", Name: "Sawmill", Glyph: '⊞', Prop: PropSawmill, Hex: "#8FB7FF",
 		Cost: []Ingredient{{"plank", 6}, {"lamp", 1}}, Walkable: false,

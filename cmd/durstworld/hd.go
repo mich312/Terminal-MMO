@@ -60,6 +60,7 @@ const (
 	hdPanelMenu
 	hdPanelCraft
 	hdPanelMachine
+	hdPanelStall
 )
 
 // areaFlare is how long an area's name stays emphasized after you enter it,
@@ -237,6 +238,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		machineXY  [2]int        // the machine whose panel is open
 		awayOut    int           // output a machine made while away (panel banner)
 		awayIn     int           // input it consumed while away
+		stallXY    [2]int        // the trade stall whose panel is open
+		stallSel   int           // selected offer in the stall panel
 		enteredAt  = time.Now()  // when the current area was entered (for the title flare)
 		chatLog    []game.HDLine // recent chat lines
 		chatInput  string        // text being typed
@@ -326,6 +329,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawCraftPanel(img, ctx, craftSel)
 		case hdPanelMachine:
 			game.DrawMachinePanel(img, ctx, machineXY[0], machineXY[1], awayOut, awayIn)
+		case hdPanelStall:
+			game.DrawStallPanel(img, ctx, stallXY[0], stallXY[1], stallSel)
 		}
 
 		var buf bytes.Buffer
@@ -450,6 +455,31 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 			return true
 		}
+		// Trade stall: arrows pick an offer, e buys, owner f collects, q closes.
+		if uiPanel == hdPanelStall {
+			if st, ok := game.StallSnapshot(ctx, stallXY[0], stallXY[1]); ok {
+				n := len(st.Offers)
+				switch key {
+				case "up":
+					if n > 0 {
+						stallSel = (stallSel + n - 1) % n
+					}
+				case "down":
+					if n > 0 {
+						stallSel = (stallSel + 1) % n
+					}
+				case "e", "\r", "\n":
+					game.AcceptOffer(ctx, stallXY[0], stallXY[1], stallSel)
+				case "f":
+					game.CollectTill(ctx, stallXY[0], stallXY[1])
+				case "q":
+					uiPanel = hdPanelNone
+				}
+			} else {
+				uiPanel = hdPanelNone
+			}
+			return true
+		}
 		// Passive panels: any key closes them (and is otherwise swallowed).
 		if uiPanel == hdPanelHelp || uiPanel == hdPanelWho || uiPanel == hdPanelInv {
 			uiPanel = hdPanelNone
@@ -547,7 +577,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	applyMove := func(km tea.KeyMsg) {
 		next, _ := area.Update(km)
 		if t, isTransition := next.(game.Transition); isTransition {
-			fw.Reset() // new scene → full repaint
+			fw.Reset()  // new scene → full repaint
 			inc.Reset() // new area → discard the cached terrain
 			ctrl("\x1b[2J")
 			areaID, area, hv = enterHD(ctx, areaID, t.To)
@@ -645,13 +675,18 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			} else {
 				havePending = true
 			}
-		} else if key == "e" { // pick up an item, or open a machine beside you
+		} else if key == "e" { // pick up an item, or open a station beside you
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-			if ctx.UseMachine != nil { // the area asked to open a machine panel
-				machineXY = *ctx.UseMachine
-				ctx.UseMachine = nil
-				_, awayOut, awayIn, _ = game.OpenMachine(ctx, machineXY[0], machineXY[1])
-				uiPanel = hdPanelMachine
+			if ctx.UseStation != nil { // the area asked to open a panel
+				xy := *ctx.UseStation
+				ctx.UseStation = nil
+				if pl, ok := w.PlacementAt(xy[0], xy[1]); ok && game.IsStall(pl.Kind) {
+					stallXY, stallSel, uiPanel = xy, 0, hdPanelStall
+				} else {
+					machineXY = xy
+					_, awayOut, awayIn, _ = game.OpenMachine(ctx, xy[0], xy[1])
+					uiPanel = hdPanelMachine
+				}
 			}
 			draw()
 		} else if key == "b" || key == "r" || key == "[" || key == "]" {

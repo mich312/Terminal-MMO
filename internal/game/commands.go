@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/durst-group/durstworld/internal/ui"
+	"github.com/durst-group/durstworld/internal/world"
 )
 
 // command is one slash-command. run may produce local feedback (chat lines or
@@ -90,6 +91,16 @@ func init() {
 			name: "craft", aliases: []string{"k"}, usage: "/craft",
 			summary: "open the workbench and craft from your pack",
 			run:     cmdCraft,
+		},
+		{
+			name: "sell", usage: "/sell <n> <item> for <m> <item>",
+			summary: "post an offer at your Concession (stocks it from your pack)",
+			run:     cmdSell,
+		},
+		{
+			name: "collect", usage: "/collect",
+			summary: "sweep your Concession's till into your pack",
+			run:     cmdCollect,
 		},
 		{
 			name: "clear", usage: "/clear",
@@ -375,17 +386,104 @@ func cmdInventory(m *Model, args []string) tea.Cmd {
 }
 
 func cmdCharacter(m *Model, args []string) tea.Cmd {
-	m.showInfo, m.showPlayers, m.showCraft, m.showMachine = false, false, false, false
+	m.closePanels()
 	m.showChar = true
 	m.charField = 0
 	return nil
 }
 
 func cmdCraft(m *Model, args []string) tea.Cmd {
-	m.showInfo, m.showPlayers, m.showChar, m.showMachine = false, false, false, false
+	m.closePanels()
 	m.showCraft = true
 	m.craftSel = 0
 	return nil
+}
+
+// cmdSell posts an offer at the Concession the owner is standing beside:
+// "/sell 10 plank for 6 stone". Items are by id or display name (lowercased).
+func cmdSell(m *Model, args []string) tea.Cmd {
+	x, y, ok := StationNear(m.ctx, func(p world.Placement) bool {
+		return IsStall(p.Kind) && p.Owner == m.ctx.Name
+	})
+	if !ok {
+		m.addSystemLine("stand beside your own Concession to post an offer")
+		return nil
+	}
+	giveN, give, askN, ask, ok := parseSell(args)
+	if !ok {
+		m.addSystemLine("usage: /sell <n> <item> for <m> <item>  (e.g. /sell 10 plank for 6 stone)")
+		return nil
+	}
+	if n := AddOffer(m.ctx, x, y, give, giveN, ask, askN); n > 0 {
+		m.addSystemLine(fmt.Sprintf("listed %d %s for %d %s (stocked %d)",
+			giveN, itemName(give), askN, itemName(ask), n))
+	} else {
+		m.addSystemLine(fmt.Sprintf("can't list that — need at least %d %s in your pack", giveN, itemName(give)))
+	}
+	return nil
+}
+
+func cmdCollect(m *Model, args []string) tea.Cmd {
+	x, y, ok := StationNear(m.ctx, func(p world.Placement) bool {
+		return IsStall(p.Kind) && p.Owner == m.ctx.Name
+	})
+	if !ok {
+		m.addSystemLine("stand beside your own Concession to collect the till")
+		return nil
+	}
+	if n := CollectTill(m.ctx, x, y); n > 0 {
+		m.addSystemLine(fmt.Sprintf("collected %d items from the till", n))
+	} else {
+		m.addSystemLine("the till is empty")
+	}
+	return nil
+}
+
+// parseSell reads "<n> <item> for <m> <item>" into its parts.
+func parseSell(args []string) (giveN int, give string, askN int, ask string, ok bool) {
+	// find the "for" separator
+	fi := -1
+	for i, a := range args {
+		if strings.EqualFold(a, "for") {
+			fi = i
+			break
+		}
+	}
+	if fi < 2 || fi+2 >= len(args)+1 || fi+3 != len(args) {
+		return 0, "", 0, "", false
+	}
+	gn, err1 := strconv.Atoi(args[0])
+	an, err2 := strconv.Atoi(args[fi+1])
+	if err1 != nil || err2 != nil || gn <= 0 || an <= 0 {
+		return 0, "", 0, "", false
+	}
+	give = resolveItem(strings.Join(args[1:fi], " "))
+	ask = resolveItem(args[fi+2])
+	if give == "" || ask == "" {
+		return 0, "", 0, "", false
+	}
+	return gn, give, an, ask, true
+}
+
+// resolveItem maps an id or a (case-insensitive) display name to an item id.
+func resolveItem(s string) string {
+	s = strings.TrimSpace(s)
+	if _, ok := ItemByID(strings.ToLower(s)); ok {
+		return strings.ToLower(s)
+	}
+	for _, it := range Items {
+		if strings.EqualFold(it.Name, s) || strings.EqualFold(it.ID, s) {
+			return it.ID
+		}
+	}
+	return ""
+}
+
+func itemName(id string) string {
+	if it, ok := ItemByID(id); ok {
+		return it.Name
+	}
+	return id
 }
 
 func cmdClear(m *Model, args []string) tea.Cmd {

@@ -271,7 +271,15 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   produces while you're logged off. Stand beside one and press `e` to open its
   panel — input/output meters, a "while you were away" delta, and Collect /
   Refuel. Built like any structure; the furnace glows as it works. Both clients.
-- ⬜ **Trade** and settlement claims layer on after.
+- ✅ **Trade — the Durst Group Concession** (`internal/game/stall.go`,
+  [`TRADE_PLAN.md`](TRADE_PLAN.md)): asynchronous vending stalls on the placements
+  layer — build one, `/sell 10 plank for 6 stone` to post an offer (stocked from
+  your pack), and anyone can press `e` to buy whenever, online or not; the owner
+  `/collect`s the till later. The one racy op (concurrent buyers) is settled
+  atomically by a new `world.MutatePlacement` primitive (a test fires 60 buyers
+  at 20 stock and asserts exactly 20 sell, never oversold). Buyer panel in both
+  clients. ⬜ A keyboard owner-authoring panel is the remaining polish.
+- ⬜ Settlement claims and the parked wildlife layer come after.
 
 ## Parked polish
 

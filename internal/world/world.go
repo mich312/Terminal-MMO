@@ -177,6 +177,34 @@ func (w *World) Unplace(area string, x, y int) (Placement, bool) {
 	return p, true
 }
 
+// MutatePlacement runs fn against the placement at (x,y) under the world mutex,
+// for an atomic read-modify-write of its opaque State — the safe way to settle a
+// race like two buyers hitting one stall at once. fn receives the current State
+// and returns the new State plus whether it changed anything; the change is
+// persisted and broadcast only when fn reports true. fn must stay pure (decode,
+// decide, encode) and must not call back into the world. Returns false if
+// nothing is placed there or fn made no change.
+func (w *World) MutatePlacement(area string, x, y int, fn func(state string) (string, bool)) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.placements[[2]int{x, y}]
+	if !ok {
+		return false
+	}
+	ns, changed := fn(p.State)
+	if !changed {
+		return false
+	}
+	p.State = ns
+	w.placements[[2]int{x, y}] = p
+	if w.placementAdd != nil {
+		w.placementAdd(p)
+	}
+	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area,
+		X: x, Y: y, Detail: p.Kind})
+	return true
+}
+
 // UpdatePlacementState rewrites the opaque State of the placement at (x,y)
 // (a machine ticking, refueling or being collected), persists it and nudges a
 // redraw. No-op (false) if nothing is placed there.

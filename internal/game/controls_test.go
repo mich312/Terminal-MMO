@@ -107,6 +107,14 @@ func TestHDHelpAndWhoPanelsRender(t *testing.T) {
 			DrawMachinePanel(img, ctx, 4, 4, 3, 6)
 			ctx.Inventory = map[string]int{}
 		}},
+		{"stall", func(img *image.RGBA) {
+			w.EnterArea(name, "wilds", 0, 0, "")
+			w.Place("wilds", world.Placement{X: 6, Y: 6, Kind: "stall", Owner: name})
+			ctx.Inventory = map[string]int{"plank": 20, "stone": 4}
+			AddOffer(ctx, 6, 6, "plank", 5, "stone", 3)
+			DrawStallPanel(img, ctx, 6, 6, 0)
+			ctx.Inventory = map[string]int{}
+		}},
 	} {
 		img := image.NewRGBA(image.Rect(0, 0, 900, 560))
 		c.draw(img)

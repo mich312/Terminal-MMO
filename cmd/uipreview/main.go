@@ -47,6 +47,7 @@ func main() {
 	write("uishots/1-crafting.png", panelOver(craftPanel))
 	write("uishots/5-crafting-real.png", panelOver(realCraftPanel))
 	write("uishots/6-machine-real.png", panelOver(realMachinePanel))
+	write("uishots/7-stall-real.png", panelOver(realStallPanel))
 	write("uishots/2-machine.png", panelOver(machinePanel))
 	write("uishots/3-build.png", buildFrame())
 	write("uishots/4-trade.png", panelOver(tradePanel))
@@ -99,6 +100,27 @@ func realMachinePanel(img *image.RGBA) {
 	w.Place("wilds", world.Placement{X: 5, Y: 5, Kind: "furnace", Owner: name})
 	game.RefuelMachine(ctx, 5, 5)
 	game.DrawMachinePanel(img, ctx, 5, 5, 5, 10) // pretend it made 5 ingots while away
+}
+
+// realStallPanel renders the shipped game.DrawStallPanel from a buyer's view: a
+// stall with a couple of offers, the buyer holding enough stone for one.
+func realStallPanel(img *image.RGBA) {
+	w := world.New()
+	defer w.Close()
+	oname, _ := w.Join("anna")
+	w.EnterArea(oname, "wilds", 0, 0, "")
+	octx := &game.Ctx{World: w, Store: store.Open(""), Name: oname,
+		Inventory: map[string]int{"plank": 20, "ingot": 4, "salve": 10}}
+	w.Place("wilds", world.Placement{X: 5, Y: 5, Kind: "stall", Owner: oname})
+	game.AddOffer(octx, 5, 5, "plank", 10, "stone", 6)
+	game.AddOffer(octx, 5, 5, "ingot", 2, "geode", 1)
+	game.AddOffer(octx, 5, 5, "salve", 5, "grain", 8)
+
+	bname, _ := w.Join("steurer")
+	w.EnterArea(bname, "wilds", 0, 0, "")
+	bctx := &game.Ctx{World: w, Store: store.Open(""), Name: bname,
+		Inventory: map[string]int{"stone": 11}}
+	game.DrawStallPanel(img, bctx, 5, 5, 0)
 }
 
 // ── small drawing helpers ──────────────────────────────────────────────────

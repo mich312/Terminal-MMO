@@ -474,6 +474,132 @@ func DrawMachinePanel(img *image.RGBA, ctx *Ctx, x, y, awayOut, awayIn int) {
 	pixel.DrawText(img, rx+4*s, fy, s, refuel, hudWarn)
 }
 
+// DrawStallPanel draws a Durst Group Concession: the offer list (give ⇄ ask)
+// with stock and a green/amber affordability mark, plus the till for the owner.
+// sel is the highlighted offer.
+func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
+	st, ok := StallSnapshot(ctx, x, y)
+	if !ok {
+		return
+	}
+	owner := StallOwner(ctx, x, y)
+	name := func(id string) string {
+		if it, ok := ItemByID(id); ok {
+			return it.Name
+		}
+		return id
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 10 * s
+	box := 9 * s
+
+	title := "DURST GROUP CONCESSION"
+	footer := "up/down offer   e buy   q close"
+	if owner {
+		footer = "up/down offer   f collect till   q close"
+	}
+
+	type row struct {
+		give, ask, stock string
+		can, dim         bool
+	}
+	var rows []row
+	for _, o := range st.Offers {
+		rows = append(rows, row{
+			give:  itoa(o.GiveN) + " " + name(o.GiveItem),
+			ask:   itoa(o.AskN) + " " + name(o.AskItem),
+			stock: "x" + itoa(o.Stock/maxi(o.GiveN, 1)),
+			can:   CanAcceptOffer(o, invOf(ctx)),
+			dim:   o.Stock < o.GiveN,
+		})
+	}
+
+	// width
+	giveCol, askCol := 0, 0
+	for _, r := range rows {
+		if w := pixel.TextWidth(r.give, s); w > giveCol {
+			giveCol = w
+		}
+		if w := pixel.TextWidth(r.ask, s); w > askCol {
+			askCol = w
+		}
+	}
+	rowW := box + 4*s + giveCol + pixel.TextWidth("  <->  ", s) + box + 4*s + askCol + pixel.TextWidth("  x00", s)
+	contentW := rowW
+	for _, t := range []string{title, footer} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+	nrows := len(rows)
+	if nrows == 0 {
+		nrows = 1
+	}
+	ph := pad*2 + lh + lh/2 + nrows*lh + lh + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	xx := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, xx, oy+pad, s, title, hudAccent)
+	if !owner {
+		if pl, ok := ctx.World.PlacementAt(x, y); ok {
+			pixel.DrawText(img, right-pixel.TextWidth(pl.Owner+"'s", s), oy+pad, s, pl.Owner+"'s", hudDim)
+		}
+	}
+	yy := oy + pad + lh + lh/2
+
+	if len(rows) == 0 {
+		pixel.DrawText(img, xx, yy, s, "no offers yet — /sell to post one", hudDim)
+	}
+	askX := xx + box + 4*s + giveCol + pixel.TextWidth("  <->  ", s)
+	for i, r := range rows {
+		if i == sel {
+			pixel.Shade(img, xx-2*s, yy-2*s, pw-2*pad+4*s, lh, 0.3)
+			pixel.DrawText(img, xx-s, yy, s, ">", hudAccent)
+		}
+		o := st.Offers[i]
+		itemSwatch(img, xx+4*s, yy, box, mustItemHex(o.GiveItem))
+		gc := hudWhite
+		if r.dim {
+			gc = hudDim
+		}
+		pixel.DrawText(img, xx+box+8*s, yy, s, r.give, gc)
+		pixel.DrawText(img, xx+box+8*s+giveCol+4*s, yy, s, "<->", hudDim)
+		itemSwatch(img, askX, yy, box, mustItemHex(o.AskItem))
+		ac := hudWhite
+		if i == sel {
+			if r.can {
+				ac = hudGood
+			} else {
+				ac = hudWarn
+			}
+		}
+		pixel.DrawText(img, askX+box+4*s, yy, s, r.ask, ac)
+		pixel.DrawText(img, right-pixel.TextWidth(r.stock, s), yy, s, r.stock, hudDim)
+		yy += lh
+	}
+
+	if owner {
+		till := 0
+		for _, n := range st.Till {
+			till += n
+		}
+		yy += lh / 4
+		pixel.DrawText(img, xx, yy, s, "till: "+itoa(till)+" items waiting", hudGood)
+	}
+	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+func mustItemHex(id string) string {
+	if it, ok := ItemByID(id); ok {
+		return it.Hex
+	}
+	return "#9AA3AD"
+}
+
 func drawMeter(img *image.RGBA, x, y, w, filled, total int, c color.RGBA) {
 	s := hudScale(img.Bounds().Dx())
 	h := 8 * s
