@@ -28,6 +28,20 @@ const (
 	// EventDeck: a presentation deck was created or edited, so the Presentation
 	// Wing should rebuild its stages. Detail holds the deck id.
 	EventDeck
+	// EventTrade: a player-to-player trade changed state. Target is the other
+	// party (from the recipient's view) and Detail is the phase:
+	// "request", "open", "update", "done", "cancel", or "declined".
+	EventTrade
+)
+
+// Trade event phases, carried in Event.Detail.
+const (
+	TradeRequest  = "request"  // someone wants to trade with you
+	TradeOpen     = "open"     // the table is now open for both
+	TradeUpdate   = "update"   // an offer or ready flag changed
+	TradeDone     = "done"     // both confirmed; apply your delta
+	TradeCancel   = "cancel"   // the table closed without a swap
+	TradeDeclined = "declined" // your request was declined
 )
 
 // ChatRadius is the Chebyshev distance within which chat is heard.

@@ -86,6 +86,13 @@ type World struct {
 	gatePool    map[string]int
 	gateFixed   map[string]bool
 	gatePersist func(gate string, pool int, fixed bool) // set by main
+
+	// Player-to-player trading: live tables keyed by both traders' names,
+	// pending incoming requests (recipient → requester), and finished trades
+	// waiting for each party to apply its half (TakeCompletedTrade).
+	trades    map[string]*tradeState
+	pending   map[string]string
+	completed map[string]CompletedTrade
 }
 
 func New() *World {
@@ -96,6 +103,9 @@ func New() *World {
 		stop:      make(chan struct{}),
 		gatePool:  make(map[string]int),
 		gateFixed: make(map[string]bool),
+		trades:    make(map[string]*tradeState),
+		pending:   make(map[string]string),
+		completed: make(map[string]CompletedTrade),
 	}
 	go w.tickLoop()
 	return w
@@ -237,6 +247,7 @@ func (w *World) Leave(name string) {
 		return
 	}
 	area := p.Area
+	w.cancelTradeLocked(name, TradeCancel) // a disconnect aborts any open trade
 	delete(w.players, name)
 	delete(w.pollers, name)
 	if ch, ok := w.subs[name]; ok {
@@ -259,6 +270,9 @@ func (w *World) EnterArea(name, area string, x, y int, destDisplay string) {
 		return
 	}
 	old := p.Area
+	if old != area {
+		w.cancelTradeLocked(name, TradeCancel) // walking off to another area aborts a trade
+	}
 	p.Area = area
 	p.X, p.Y = x, y
 	p.LastMoved = time.Now()
