@@ -54,11 +54,14 @@ const (
 const (
 	hdPanelNone = iota
 	hdPanelChar
-	hdPanelInv
+	hdPanelCompendium
 	hdPanelHelp
 	hdPanelWho
 	hdPanelMenu
 )
+
+// compScrollPage is how many lines a page-up/down jumps in the compendium.
+const compScrollPage = 6
 
 // areaFlare is how long an area's name stays emphasized after you enter it,
 // before settling to the quiet top-left label.
@@ -231,6 +234,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		uiPanel    = hdPanelNone // which on-frame UI panel is open
 		uiField    int           // selected field in the character panel
 		menuSel    int           // selected row in the Tab menu
+		compScroll int           // first visible line in the compendium panel
 		enteredAt  = time.Now()  // when the current area was entered (for the title flare)
 		chatLog    []game.HDLine // recent chat lines
 		chatInput  string        // text being typed
@@ -308,8 +312,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		switch uiPanel {
 		case hdPanelChar:
 			game.DrawCharPanel(img, ctx, uiField)
-		case hdPanelInv:
-			game.DrawInventoryPanel(img, ctx)
+		case hdPanelCompendium:
+			game.DrawCompendiumPanel(img, ctx, &compScroll)
 		case hdPanelHelp:
 			game.DrawHelpPanel(img, ctx)
 		case hdPanelWho:
@@ -360,7 +364,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	openMenuSel := func() {
 		switch menuSel {
 		case 0:
-			uiPanel = hdPanelInv
+			uiPanel, compScroll = hdPanelCompendium, 0
 		case 1:
 			uiPanel, uiField = hdPanelChar, 0
 		case 2:
@@ -374,7 +378,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case "c":
 			return toggle(hdPanelChar)
 		case "i":
-			return toggle(hdPanelInv)
+			compScroll = 0
+			return toggle(hdPanelCompendium)
 		case "?":
 			return toggle(hdPanelHelp)
 		case "tab":
@@ -401,8 +406,29 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 			return true
 		}
+		// The compendium scrolls (arrows / page keys); any other key closes it.
+		if uiPanel == hdPanelCompendium {
+			switch key {
+			case "up":
+				compScroll--
+			case "down":
+				compScroll++
+			case "pgup", "b":
+				compScroll -= compScrollPage
+			case "pgdown", " ", "f":
+				compScroll += compScrollPage
+			default:
+				uiPanel = hdPanelNone
+			}
+			if compScroll < 0 {
+				compScroll = 0
+			}
+			// The upper bound depends on the frame size, so DrawCompendiumPanel
+			// clamps compScroll against the live layout each render.
+			return true
+		}
 		// Passive panels: any key closes them (and is otherwise swallowed).
-		if uiPanel == hdPanelHelp || uiPanel == hdPanelWho || uiPanel == hdPanelInv {
+		if uiPanel == hdPanelHelp || uiPanel == hdPanelWho {
 			uiPanel = hdPanelNone
 			return true
 		}
@@ -498,7 +524,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	applyMove := func(km tea.KeyMsg) {
 		next, _ := area.Update(km)
 		if t, isTransition := next.(game.Transition); isTransition {
-			fw.Reset() // new scene → full repaint
+			fw.Reset()  // new scene → full repaint
 			inc.Reset() // new area → discard the cached terrain
 			ctrl("\x1b[2J")
 			areaID, area, hv = enterHD(ctx, areaID, t.To)

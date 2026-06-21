@@ -77,9 +77,9 @@ func init() {
 			run:     cmdGoto,
 		},
 		{
-			name: "inventory", aliases: []string{"i", "inv"}, usage: "/inventory",
-			summary: "show the items you've collected",
-			run:     cmdInventory,
+			name: "compendium", aliases: []string{"inventory", "i", "inv", "codex"}, usage: "/compendium",
+			summary: "the codex of every collectible & wearable — and what each does",
+			run:     cmdCompendium,
 		},
 		{
 			name: "character", aliases: []string{"char"}, usage: "/character",
@@ -346,27 +346,72 @@ func cmdGoto(m *Model, args []string) tea.Cmd {
 	return m.startTransition(dest)
 }
 
-func cmdInventory(m *Model, args []string) tea.Cmd {
-	inv := m.ctx.Inventory
-	total := 0
-	lines := make([]string, 0, len(Items))
-	for _, it := range Items {
-		n := inv[it.ID]
-		if n == 0 {
-			continue
+func cmdCompendium(m *Model, args []string) tea.Cmd {
+	groups := Compendium(m.ctx.Inventory)
+	found, kinds := 0, 0
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			kinds++
+			if e.Owned > 0 {
+				found++
+			}
 		}
-		total += n
-		glyph := m.theme.Fg(lipgloss.Color(it.Hex)).Render(string(it.Glyph))
-		lines = append(lines, fmt.Sprintf("%s  %s %s",
-			glyph, m.theme.ChatText.Render(padRight(it.Name, 14)),
-			m.theme.Accent.Render(fmt.Sprintf("×%d", n))))
 	}
-	if total == 0 {
-		m.addSystemLine("your pack is empty — explore the Wilds and press e on a ◆ to pick it up")
-		return nil
-	}
-	m.showInfoPanel(fmt.Sprintf("Inventory — %d", total), lines)
+	m.showInfoPanel(fmt.Sprintf("Compendium — %d/%d found", found, kinds), m.compendiumLines(groups))
 	return nil
+}
+
+// compendiumLines renders the full codex for the scrolling info panel: every
+// collectible grouped by source (owned ones lit with a count, the rest dimmed),
+// each with what it is and what it does, then the wearables and their powers.
+func (m *Model) compendiumLines(groups []CompendiumGroup) []string {
+	var lines []string
+	for _, g := range groups {
+		lines = append(lines, m.theme.PanelTitle.Render(g.Title))
+		for _, e := range g.Entries {
+			it := e.Item
+			rarity := m.theme.Dim.Render(it.Rarity.String())
+			if e.Owned > 0 {
+				glyph := m.theme.Fg(lipgloss.Color(it.Hex)).Render(string(it.Glyph))
+				lines = append(lines, fmt.Sprintf("%s  %s %s  %s", glyph,
+					m.theme.Bright.Render(padRight(it.Name, 18)),
+					m.theme.Accent.Render(fmt.Sprintf("×%d", e.Owned)), rarity))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s  %s %s  %s",
+					m.theme.Dim.Render(string(it.Glyph)),
+					m.theme.Dim.Render(padRight(it.Name, 18)),
+					m.theme.Dim.Render("—"), rarity))
+			}
+			lines = append(lines, "    "+m.theme.Dim.Render(it.About+" "+it.Found))
+			if e.Note != "" {
+				lines = append(lines, "    "+m.theme.ChatText.Render(e.Note))
+			}
+		}
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, m.theme.PanelTitle.Render("Wearables"))
+	for _, w := range Wearables(m.ctx) {
+		power := w.Power
+		if power == "" {
+			power = "cosmetic"
+		}
+		if w.Owned {
+			mark := m.theme.Accent.Render("✓")
+			suffix := ""
+			if w.Worn {
+				suffix = m.theme.Accent.Render(" worn")
+			}
+			lines = append(lines, fmt.Sprintf("%s %s%s  %s", mark,
+				m.theme.Bright.Render(padRight(w.Name, 12)), suffix,
+				m.theme.ChatText.Render(power)))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s %s  %s", m.theme.Dim.Render("·"),
+				m.theme.Dim.Render(padRight(w.Name, 12)),
+				m.theme.Dim.Render(power+" — "+w.Source)))
+		}
+	}
+	return lines
 }
 
 func cmdCharacter(m *Model, args []string) tea.Cmd {

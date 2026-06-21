@@ -35,7 +35,7 @@ func Controls() []ControlGroup {
 		}},
 		{"Panels", []Control{
 			{"c", "character editor"},
-			{"i", "inventory & hats"},
+			{"i", "compendium (items & wearables)"},
 			{"Tab", "who's online"},
 			{"?", "this help"},
 			{"q", "quit (press twice)"},
@@ -66,7 +66,7 @@ type MenuEntry struct {
 // while staying the single discoverable entry point for everything.
 func MenuEntries() []MenuEntry {
 	return []MenuEntry{
-		{"Inventory", "i"},
+		{"Compendium", "i"},
 		{"Character", "c"},
 		{"Who's online", ""},
 		{"Controls & Help", "?"},
