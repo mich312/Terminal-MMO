@@ -528,4 +528,16 @@ var accessories = []struct {
 		"..HHHHHHHH..",
 		".HhHHHHHHhH.",
 	}},
+	// A cluster of bioluminescent caps, from gathering glowspore in moss caves.
+	{"glowcap", "#8BF29C", []string{
+		"..HH...HH...",
+		".HHHH.HHHH..",
+		"..hh...hh...",
+	}},
+	// An amber gem on the brow, from gathering cave amber in ochre caves.
+	{"ambergem", "#FFB347", []string{
+		"     HH     ",
+		"....HHHH....",
+		"...hHHHHh...",
+	}},
 }

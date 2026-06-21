@@ -26,8 +26,8 @@ var Items = []Item{
 	{"fish", "Fresh Fish", '⊰', "#7FD7E8", false, ""},
 	{"geode", "Glittering Geode", '◈', "#9CE0FF", true, "circlet"},
 	{"relic", "Ancient Relic", '◈', "#C9B0FF", true, "diadem"},
-	{"spore", "Glowspore", '◆', "#8BF29C", true, ""},
-	{"amber", "Cave Amber", '◆', "#FFB347", true, ""},
+	{"spore", "Glowspore", '◆', "#8BF29C", true, "glowcap"},
+	{"amber", "Cave Amber", '◆', "#FFB347", true, "ambergem"},
 }
 
 var itemIndex = func() map[string]Item {
