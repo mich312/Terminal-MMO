@@ -99,6 +99,10 @@ var Gates = []Landmark{
 	{0, 18, "vault", "Sunken Gate", '◈', "#56E1FF", 2},
 }
 
+// plazaBraziers are the standing fires that light the HQ spawn plaza after dark.
+// On the clearing's diagonals so they frame the square clear of the axial trails.
+var plazaBraziers = [][2]int{{3, 3}, {-3, 3}, {3, -3}, {-3, -3}}
+
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
 func (g *Generator) At(x, y int) Cell {
 	for _, lm := range Landmarks {
@@ -112,6 +116,14 @@ func (g *Generator) At(x, y int) Cell {
 	for _, gt := range Gates {
 		if x == gt.X && y == gt.Y {
 			return Cell{Biome: Grass, Glyph: gt.Glyph, Color: gt.Color, Walkable: true, Object: true}
+		}
+	}
+	// Braziers ring the HQ plaza so spawn is a warm, well-lit place after dark
+	// rather than a clearing swallowed by the night. They sit off the axial trails
+	// (the diagonals), so they light the square without ever blocking a way out.
+	for _, b := range plazaBraziers {
+		if x == b[0] && y == b[1] {
+			return Cell{Biome: Grass, Glyph: 'i', Color: "#FF7A1E"} // blocks, glows at night
 		}
 	}
 	// Forced grassy clearings around each landmark and gate keep them walkable.
