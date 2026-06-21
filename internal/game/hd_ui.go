@@ -329,15 +329,15 @@ func DrawCharPanel(img *image.RGBA, ctx *Ctx, field int) {
 }
 
 // compLine is one rendered row of the HD compendium: text in a color, optionally
-// preceded by a gem swatch (an item) or an accessory icon (a wearable), at a
-// left indent measured in icon-gutter widths.
+// preceded by an item portrait or an accessory icon, at a left indent measured
+// in icon-gutter widths.
 type compLine struct {
-	text           string
-	col            color.RGBA
-	indent         int  // 0 flush, 1 indented under an entry
-	gem            bool // draw an item gem before the text
-	gemBase, gemHi color.RGBA
-	acc            int // >0: draw this accessory's icon before the text
+	text   string
+	col    color.RGBA
+	indent int   // 0 flush, 1 indented under an entry
+	item   *Item // draw this item's portrait before the text
+	dim    bool  // render the portrait dimmed (not yet found)
+	acc    int   // >0: draw this accessory's icon before the text
 }
 
 // hdInline makes a glyph-client string safe for the HD bitmap font (ASCII only),
@@ -363,28 +363,25 @@ func compendiumStats(inv map[string]int) (found, kinds int) {
 // lit with a count, unfound ones dimmed) each with a line on what it does, then
 // the wearables and their powers.
 func compendiumLinesHD(ctx *Ctx) []compLine {
-	dimGem := color.RGBA{0x46, 0x4C, 0x55, 0xFF}
 	var ls []compLine
 	for _, g := range Compendium(ctx.Inventory) {
 		ls = append(ls, compLine{text: strings.ToUpper(g.Title), col: hudAccent})
 		for _, e := range g.Entries {
 			it := e.Item
-			c := mustHex(it.Hex)
-			base := colorfulToRGBA(c)
-			hi := colorfulToRGBA(c.BlendLab(spriteWhite, 0.55).Clamped())
 			head, col := "", hudWhite
 			if e.Owned > 0 {
 				head = fmt.Sprintf("%s   x%d   (%s)", it.Name, e.Owned, it.Rarity)
 			} else {
 				head, col = fmt.Sprintf("%s   -   (%s)", it.Name, it.Rarity), hudDim
-				base, hi = dimGem, dimGem
 			}
-			ls = append(ls, compLine{text: hdInline(head), col: col, gem: true, gemBase: base, gemHi: hi})
+			itc := it
+			ls = append(ls, compLine{text: hdInline(head), col: col, item: &itc, dim: e.Owned == 0})
 			sub := e.Note // what it does; fall back to the flavor for plain materials
 			if sub == "" {
 				sub = it.About
 			}
 			ls = append(ls, compLine{text: hdInline(sub), col: hudDim, indent: 1})
+			ls = append(ls, compLine{}) // breathing room below the portrait
 		}
 		ls = append(ls, compLine{}) // spacer between groups
 	}
@@ -420,9 +417,11 @@ func DrawCompendiumPanel(img *image.RGBA, ctx *Ctx, scroll *int) {
 	s := hudScale(W)
 	lh := 16 * s
 	pad := 8 * s
-	gem := lh - 4*s     // gem/icon box, fitted to a text line
-	gutter := gem + s*3 // space an icon (and its gap) takes before text
-	indentPx := gutter  // an entry's sub-line indents one gutter
+	accBox := lh - 4*s        // wearable icon box, fitted to a text line
+	accGutter := accBox + s*3 // space a wearable icon takes before its text
+	itemBox := lh*2 - 2*s     // an item portrait spans the entry's two lines
+	itemGutter := itemBox + s*3
+	indentPx := itemGutter // an entry's sub-line aligns under its header text
 
 	lines := compendiumLinesHD(ctx)
 	found, kinds := compendiumStats(ctx.Inventory)
@@ -451,11 +450,14 @@ func DrawCompendiumPanel(img *image.RGBA, ctx *Ctx, scroll *int) {
 
 	contentW := pixel.TextWidth(title, s)
 	for _, l := range lines {
-		w := l.indent*indentPx + pixel.TextWidth(l.text, s)
-		if l.gem || l.acc > 0 {
-			w += gutter
+		lead := l.indent * indentPx
+		switch {
+		case l.item != nil:
+			lead = itemGutter
+		case l.acc > 0:
+			lead = accGutter
 		}
-		if w > contentW {
+		if w := lead + pixel.TextWidth(l.text, s); w > contentW {
 			contentW = w
 		}
 	}
@@ -472,15 +474,23 @@ func DrawCompendiumPanel(img *image.RGBA, ctx *Ctx, scroll *int) {
 	if end > len(lines) {
 		end = len(lines)
 	}
+	bodyTop := top + lh + lh/2
 	for _, l := range lines[*scroll:end] {
 		x := ox + pad + l.indent*indentPx
 		switch {
-		case l.gem:
-			drawGem(img, x, y+(lh-gem)/2, gem, l.gemBase, l.gemHi)
-			x += gutter
+		case l.item != nil:
+			iy := y - (itemBox-lh)/2 // center the portrait across the entry's two lines
+			if iy < bodyTop {
+				iy = bodyTop
+			}
+			drawItemIcon(img, ox+pad, iy, itemBox, *l.item)
+			if l.dim { // not yet found — show the silhouette, darkened
+				pixel.Shade(img, ox+pad, iy, itemBox, itemBox, 0.55)
+			}
+			x = ox + pad + itemGutter
 		case l.acc > 0:
-			drawAccessoryIcon(img, x, y+(lh-gem)/2, gem, l.acc)
-			x += gutter
+			drawAccessoryIcon(img, x, y+(lh-accBox)/2, accBox, l.acc)
+			x += accGutter
 		}
 		if l.text != "" {
 			pixel.DrawText(img, x, y, s, l.text, l.col)
