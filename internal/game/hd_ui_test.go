@@ -98,14 +98,15 @@ func TestHDPanelsRender(t *testing.T) {
 	DrawAreaTitle(img, "The Wilds", 0.5)
 	DrawToast(img, "+ Sweet Berry")
 	DrawCharPanel(img, ctx, 0)
-	DrawInventoryPanel(img, ctx)
+	scroll := 0
+	DrawCompendiumPanel(img, ctx, &scroll)
 }
 
-// The redesigned inventory panel includes a screen-scaled avatar and must lay
-// out without panicking across frame sizes and inventory states: empty, full,
-// and more hats than fit (the "+N more" overflow). It draws onto the frame, so
-// each render must touch some pixels.
-func TestInventoryPanelLayouts(t *testing.T) {
+// The compendium panel lists the whole catalog and must lay out without
+// panicking across frame sizes and inventory states: empty, full, and a single
+// item. It scrolls, so an over-large offset must clamp (not index out of range)
+// and the top of the list must always draw something.
+func TestCompendiumPanelLayouts(t *testing.T) {
 	w := world.New()
 	t.Cleanup(w.Close)
 	name, _ := w.Join("ada")
@@ -130,17 +131,23 @@ func TestInventoryPanelLayouts(t *testing.T) {
 		{"one-item", 1000, 700, &Ctx{World: w, Store: st, Name: name, Inventory: map[string]int{"berry": 1}, Hats: map[int]bool{2: true}}},
 	}
 	for _, c := range cases {
-		img := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
-		DrawInventoryPanel(img, c.ctx)
-		drawn := false
-		for _, b := range img.Pix {
-			if b != 0 {
-				drawn = true
-				break
+		for _, scroll := range []int{0, 9999} {
+			img := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
+			sc := scroll
+			DrawCompendiumPanel(img, c.ctx, &sc)
+			if sc < 0 {
+				t.Errorf("%s scroll=%d: clamped negative (%d)", c.name, scroll, sc)
 			}
-		}
-		if !drawn {
-			t.Errorf("%s: panel drew nothing", c.name)
+			drawn := false
+			for _, b := range img.Pix {
+				if b != 0 {
+					drawn = true
+					break
+				}
+			}
+			if !drawn {
+				t.Errorf("%s scroll=%d: panel drew nothing", c.name, scroll)
+			}
 		}
 	}
 }

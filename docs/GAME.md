@@ -80,8 +80,15 @@ portals.
   minimap (`m`). Persisted as 8×8 chunk bitmasks alongside your position.
 - **Collectibles (`◆`).** Sparse, deterministic, biome-appropriate loot —
   berries/mushrooms in forest, shells on sand, crystals in snow, nuggets in
-  hills. Stand on one and press `e` to forage it into your pack. Per-item counts
-  and harvested cells persist.
+  hills, plus worksite harvests (grain, stone, timber, fish) and cave finds
+  (geodes, relics, glowspore, amber). Stand on one and press `e` to forage it
+  into your pack. Per-item counts and harvested cells persist.
+- **Compendium (`i`, or `/compendium` · `/codex`).** The in-game codex of every
+  collectible and wearable: what each find is, where it turns up, how rare it is,
+  and what it can do (the gate it repairs, the wearable it unlocks and that
+  wearable's power). Items you've found show a count; the rest stay dimmed but
+  still described, so it doubles as a checklist. The panel scrolls. It's built
+  straight from the item catalog, so both clients show the same thing.
 - **Wearable hats (`♚`).** Five accessories are *found, not free* — each hides
   in a themed biome (a crown in the hills, a halo in the snow…). Pick one up to
   unlock and equip it; you can only wear hats you've found.
@@ -91,6 +98,13 @@ portals.
     repairs their own.
   - *Sunken Gate → The Vault* — **co-op**: everyone presses `e` to pool
     offerings; when the pool fills, the gate opens for the whole community.
+- **Trading.** Stand next to another player and `/trade <name>`; they `/accept`,
+  and a table opens for both. Each lays items from their pack (←→ pick, `+`/`-`
+  stage), and once **both** press `r` (ready) the swap commits atomically — items
+  move in both inventories and persist. Changing an offer clears both ready
+  flags, and walking off or disconnecting cancels the table. Negotiation lives in
+  the shared world; each session applies its own half, so it works even with
+  persistence off.
 
 ### Hand-built areas (reached from Wilds landmarks)
 
@@ -127,8 +141,8 @@ live slide index resets).
 | Enter | chat — heard within 8 tiles |
 | e | pick up `◆` · sign guestbook · author/edit a deck (`＋` booth / lectern) |
 | n / p | next/previous slide while presenting |
-| Tab | open the menu — inventory, character, who, help (HD) · who's online (glyph) |
-| c | character editor (HD); `i` inventory (HD) |
+| Tab | open the menu — compendium, character, who, help (HD) · who's online (glyph) |
+| c | character editor (HD); `i` compendium (HD) |
 | ? | help — every key and chat command, in one panel |
 | q / Ctrl+C | quit (press twice) |
 
@@ -145,7 +159,7 @@ them.
 | `/roll [NdM]` | roll dice for everyone nearby |
 | `/color [0-21]` | change avatar color |
 | `/goto <area>` | teleport to an area |
-| `/character` · `/inventory` (`/i`) | open the avatar editor / list your pack |
+| `/character` · `/compendium` (`/i` · `/codex`) | open the avatar editor / the items & wearables codex |
 | `/clear` · `/help` | clear your log; list commands |
 
 ## Persistence model
