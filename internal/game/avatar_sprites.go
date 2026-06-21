@@ -516,4 +516,16 @@ var accessories = []struct {
 		"..HHHHHHHH..",
 		"...hhhhhh...",
 	}},
+	// A gem circlet, won by carrying a geode up out of the deep.
+	{"circlet", "#9CE0FF", []string{
+		"            ",
+		"     HH     ",
+		"..hhHHHHhh..",
+	}},
+	// An ancient jeweled diadem, won by bearing a relic back to the light.
+	{"diadem", "#C9B0FF", []string{
+		"....HH......",
+		"..HHHHHHHH..",
+		".HhHHHHHHhH.",
+	}},
 }

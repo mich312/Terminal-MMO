@@ -18,12 +18,9 @@ var biomeItems = map[worldgen.Biome][]string{
 	worldgen.Swamp:   {"mushroom", "herb"},
 }
 
-// wearableFromItem maps a foraged item to an accessory it unlocks, so some
-// finds double as an outfit: the mushroom you pick can then be worn. (Flowers
-// have no item, so they stay a found-on-the-ground wearable.)
-var wearableFromItem = map[string]string{
-	"mushroom": "shroom",
-}
+// Which foraged finds double as an outfit (a mushroom → the shroom cap) now
+// lives on the catalog item itself (game.Item.Wear), so the wilds and the caves
+// unlock wearables the same way.
 
 // itemRate is the share of eligible cells that carry an item — sparse, so a
 // find feels earned.

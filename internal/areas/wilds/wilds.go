@@ -420,8 +420,8 @@ func (a *area) collectItem() bool {
 	a.ctx.Inventory[it.ID]++
 	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
 	a.setToast("+ " + it.Name)
-	if acc, ok := wearableFromItem[it.ID]; ok {
-		if idx, ok := game.AccessoryIndex(acc); ok && a.unlockHat(idx) {
+	if it.Wear != "" {
+		if idx, ok := game.AccessoryIndex(it.Wear); ok && a.unlockHat(idx) {
 			a.setToast("+ " + it.Name + " - now wearable! (c to equip)")
 		}
 	}

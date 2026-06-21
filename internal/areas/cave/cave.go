@@ -208,6 +208,16 @@ func (a *area) nodeNear() ([2]int, string, bool) {
 	return [2]int{}, "", false
 }
 
+// isForage reports whether an item is soft glowing life you gather by hand
+// (the mood gatherables) rather than rock you have to mine.
+func isForage(item string) bool {
+	switch item {
+	case "mushroom", "spore", "amber":
+		return true
+	}
+	return false
+}
+
 // gather works out a seam or picks a mushroom: it drops into the player's pack,
 // the spot becomes plain cave floor, and a toast confirms the haul.
 func (a *area) gather(pos [2]int, item string) {
@@ -216,14 +226,36 @@ func (a *area) gather(pos [2]int, item string) {
 	a.Ctx.Inventory[item]++
 	a.Ctx.Store.AddItem(a.Ctx.Name, item)
 	name := item
-	if it, ok := game.ItemByID(item); ok {
+	it, known := game.ItemByID(item)
+	if known {
 		name = it.Name
 	}
 	verb := "⛏ mined"
-	if item == "mushroom" {
-		verb = "🍄 picked"
+	if isForage(item) {
+		verb = "🍄 gathered"
 	}
 	a.setToast(verb + " " + name)
+	// The deep prizes double as trophies: a geode wins its circlet, a relic its
+	// diadem, the first time you carry one out into your hands.
+	if known && it.Wear != "" {
+		if idx, ok := game.AccessoryIndex(it.Wear); ok && a.unlockHat(idx) {
+			a.setToast("✦ " + name + " — now wearable! (c to equip)")
+		}
+	}
+}
+
+// unlockHat marks an accessory owned and persists it, idempotently; returns
+// whether it was newly unlocked (so the caller can announce the trophy).
+func (a *area) unlockHat(idx int) bool {
+	if a.Ctx.Hats == nil {
+		a.Ctx.Hats = map[int]bool{}
+	}
+	if a.Ctx.Hats[idx] {
+		return false
+	}
+	a.Ctx.Hats[idx] = true
+	a.Ctx.Store.UnlockHat(a.Ctx.Name, idx)
+	return true
 }
 
 func (a *area) setToast(s string) { a.toast, a.toastUntil = s, time.Now().Add(3*time.Second) }
@@ -240,8 +272,8 @@ func (a *area) Hint() string {
 			name = it.Name
 		}
 		verb := "mine"
-		if item == "mushroom" {
-			verb = "pick"
+		if isForage(item) {
+			verb = "gather"
 		}
 		return "e — " + verb + " the " + name
 	}
@@ -478,22 +510,23 @@ var nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 // quite alike: ice under the cold heights, moss under wet woods, ochre under
 // warm dry country, cool slate under temperate hills.
 type cavePalette struct {
-	rock    colorful.Color // hue the rock (walls, floor, stone) is shifted toward
-	glow    string         // bioluminescence: mushrooms and pools
-	crystal string         // crystal seams and the geode core
-	slate   bool           // the default mood — leave the rock as authored
+	rock     colorful.Color // hue the rock (walls, floor, stone) is shifted toward
+	glow     string         // bioluminescence: mushrooms and pools
+	crystal  string         // crystal seams and the geode core
+	material string         // the signature thing its glowing life is gathered as
+	slate    bool           // the default mood — leave the rock as authored
 }
 
 func paletteFor(temp, moist float64) cavePalette {
 	switch {
 	case temp < 0.34: // cold heights: blue ice and frost
-		return cavePalette{rock: mustHex("#3B4A6B"), glow: "#8FE0FF", crystal: "#CFEEFF"}
-	case moist > 0.60: // wet woods: green moss and glow
-		return cavePalette{rock: mustHex("#36482F"), glow: "#8BF29C", crystal: "#7DF0C6"}
-	case temp > 0.60 && moist < 0.42: // warm dry country: ochre sandstone
-		return cavePalette{rock: mustHex("#54422C"), glow: "#FFC871", crystal: "#FFE3A0"}
+		return cavePalette{rock: mustHex("#3B4A6B"), glow: "#8FE0FF", crystal: "#CFEEFF", material: "crystal"}
+	case moist > 0.60: // wet woods: green moss and glowspore
+		return cavePalette{rock: mustHex("#36482F"), glow: "#8BF29C", crystal: "#7DF0C6", material: "spore"}
+	case temp > 0.60 && moist < 0.42: // warm dry country: ochre sandstone and amber
+		return cavePalette{rock: mustHex("#54422C"), glow: "#FFC871", crystal: "#FFE3A0", material: "amber"}
 	default: // temperate hills: cool slate (as authored)
-		return cavePalette{glow: "#7CF2C4", crystal: "#7DF0FF", slate: true}
+		return cavePalette{glow: "#7CF2C4", crystal: "#7DF0FF", material: "mushroom", slate: true}
 	}
 }
 
@@ -638,7 +671,17 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 	c.special(tiles, region, doors, nodes)
 	clutter(rng, tiles, region, c.w, c.h)
 	_, moist, temp := g.Climate(overDoors[0][0], overDoors[0][1]) // mood from the land above
-	c.recolour(tiles, paletteFor(temp, moist))
+	pal := paletteFor(temp, moist)
+	c.recolour(tiles, pal)
+	// The cave's glowing life is gathered as its mood's signature material, so a
+	// haul tells you which cave it came from: spores from moss, amber from ochre.
+	if pal.material != "mushroom" {
+		for p, item := range nodes {
+			if item == "mushroom" {
+				nodes[p] = pal.material
+			}
+		}
+	}
 	return &game.TileMap{W: c.w, H: c.h, Tiles: tiles}, doors, nodes, c.w, c.h
 }
 
