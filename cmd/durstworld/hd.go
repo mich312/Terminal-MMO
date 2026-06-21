@@ -57,7 +57,12 @@ const (
 	hdPanelInv
 	hdPanelHelp
 	hdPanelWho
+	hdPanelMenu
 )
+
+// areaFlare is how long an area's name stays emphasized after you enter it,
+// before settling to the quiet top-left label.
+const areaFlare = 2500 * time.Millisecond
 
 // setupAvatar restores a player's persisted color/style/accessory, or — on a
 // first visit — rolls a random look and remembers it, so everyone spawns with a
@@ -225,6 +230,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		start      = time.Now()
 		uiPanel    = hdPanelNone // which on-frame UI panel is open
 		uiField    int           // selected field in the character panel
+		menuSel    int           // selected row in the Tab menu
+		enteredAt  = time.Now()  // when the current area was entered (for the title flare)
 		chatLog    []game.HDLine // recent chat lines
 		chatInput  string        // text being typed
 		chatActive bool          // chat input has focus
@@ -273,13 +280,19 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 		}
 
-		// HD UI overlays: the status/hint bar, a transient pickup toast, and any
-		// open panel — so the default client carries the full interface.
-		hint := ""
-		if h, ok := area.(game.Hinter); ok {
-			hint = h.Hint()
+		// HD UI overlays. The world fills the screen; the chrome is minimal and
+		// mostly contextual: a quiet area title (flaring on entry) top-left, the
+		// persistent mini-legend top-right, a transient pickup toast, and — only
+		// when something's actually usable — a button prompt near the bottom.
+		emphasis := 0.0
+		if d := time.Since(enteredAt); d < areaFlare {
+			emphasis = 1 - float64(d)/float64(areaFlare)
 		}
-		game.DrawHUD(img, area.Name(), hint)
+		game.DrawAreaTitle(img, area.Name(), emphasis)
+		game.DrawTopLegend(img)
+		if prompt, show := actionPrompt(area); show {
+			game.DrawActionPrompt(img, prompt)
+		}
 		if tz, ok := area.(game.Toaster); ok {
 			if msg, show := tz.Toast(); show {
 				game.DrawToast(img, msg)
@@ -301,6 +314,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawHelpPanel(img, ctx)
 		case hdPanelWho:
 			game.DrawWhoPanel(img, ctx)
+		case hdPanelMenu:
+			game.DrawMenuPanel(img, menuSel)
 		}
 
 		var buf bytes.Buffer
@@ -329,10 +344,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			framesSent, float64(sent)/1024, float64(sent)/1024/dur, dur))
 	}
 
-	// uiKey handles HD interface keys: 'c'/'i'/'?'/Tab toggle the character,
-	// inventory, help and who panels. The character panel is interactive (arrows
-	// edit it); help/who/inventory are passive and any key dismisses them.
-	// Returns whether the key was consumed by the UI.
+	// uiKey handles HD interface keys. Direct keys ('c' character, 'i' inventory,
+	// '?' help) toggle their panels from anywhere; Tab opens the menu hub. The
+	// character editor and the menu are interactive (arrows navigate); help, who
+	// and inventory are passive (any key dismisses them). Returns whether the key
+	// was consumed by the UI.
 	toggle := func(p int) bool {
 		if uiPanel == p {
 			uiPanel = hdPanelNone
@@ -340,6 +356,18 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			uiPanel, uiField = p, 0
 		}
 		return true
+	}
+	openMenuSel := func() {
+		switch menuSel {
+		case 0:
+			uiPanel = hdPanelInv
+		case 1:
+			uiPanel, uiField = hdPanelChar, 0
+		case 2:
+			uiPanel = hdPanelWho
+		case 3:
+			uiPanel = hdPanelHelp
+		}
 	}
 	uiKey := func(key string) bool {
 		switch key {
@@ -350,10 +378,28 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case "?":
 			return toggle(hdPanelHelp)
 		case "tab":
-			return toggle(hdPanelWho)
+			if uiPanel == hdPanelMenu {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel, menuSel = hdPanelMenu, 0
+			}
+			return true
 		}
 		if uiPanel == hdPanelNone {
 			return false
+		}
+		if uiPanel == hdPanelMenu {
+			switch key {
+			case "up":
+				menuSel = (menuSel + len(game.MenuEntries()) - 1) % len(game.MenuEntries())
+			case "down":
+				menuSel = (menuSel + 1) % len(game.MenuEntries())
+			case "\r", "\n":
+				openMenuSel()
+			case "q":
+				uiPanel = hdPanelNone
+			}
+			return true
 		}
 		// Passive panels: any key closes them (and is otherwise swallowed).
 		if uiPanel == hdPanelHelp || uiPanel == hdPanelWho || uiPanel == hdPanelInv {
@@ -421,6 +467,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 					inc.Reset() // new area → discard the cached terrain
 					ctrl("\x1b[2J")
 					areaID, area, hv = enterHD(ctx, areaID, dest)
+					enteredAt = time.Now()
 				} else {
 					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
 				}
@@ -455,6 +502,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			inc.Reset() // new area → discard the cached terrain
 			ctrl("\x1b[2J")
 			areaID, area, hv = enterHD(ctx, areaID, t.To)
+			enteredAt = time.Now()
 		} else {
 			area = next
 		}
@@ -645,6 +693,22 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 		}
 	}
+}
+
+// actionPrompt returns the contextual action available where the player stands,
+// preferring an area's Prompter; areas that only implement Hinter treat a
+// non-empty hint as the prompt. The bool is false when nothing is actionable,
+// so the HD client leaves the bottom of the screen clear.
+func actionPrompt(a game.Area) (string, bool) {
+	if p, ok := a.(game.Prompter); ok {
+		return p.Prompt()
+	}
+	if h, ok := a.(game.Hinter); ok {
+		if t := h.Hint(); t != "" {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 // enterHD constructs and spawns into an area for HD mode, returning its id, the

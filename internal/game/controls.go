@@ -53,3 +53,22 @@ func CommandReference() [][2]string {
 	}
 	return out
 }
+
+// MenuEntry is one row of the HD Tab menu: a panel to open and the direct key
+// that also opens it (blank when the panel is only reachable through the menu).
+type MenuEntry struct {
+	Label string
+	Key   string
+}
+
+// MenuEntries is the HD menu hub: the panels a player can open. Listing the
+// direct key beside each one means the menu teaches the shortcuts over time,
+// while staying the single discoverable entry point for everything.
+func MenuEntries() []MenuEntry {
+	return []MenuEntry{
+		{"Inventory", "i"},
+		{"Character", "c"},
+		{"Who's online", ""},
+		{"Controls & Help", "?"},
+	}
+}

@@ -61,14 +61,18 @@ func TestTruncToWidth(t *testing.T) {
 	}
 }
 
-// The bottom bar must lay out without panicking — and actually draw — across a
-// tiny frame and a context hint long enough to need truncation, so it never
-// runs into the pinned help key.
-func TestDrawHUDLayouts(t *testing.T) {
+// The on-frame chrome must lay out without panicking — and actually draw —
+// across a tiny frame and a contextual prompt long enough to need truncation,
+// so the prompt never runs off the frame.
+func TestHDChromeLayouts(t *testing.T) {
 	for _, c := range []struct{ w, h int }{{200, 120}, {820, 480}, {1600, 900}} {
 		img := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
-		DrawHUD(img, "Presentation Wing",
-			"e - sign the guestbook before you head off and greet everyone here")
+		DrawAreaTitle(img, "Presentation Wing", 1)
+		DrawAreaTitle(img, "Presentation Wing", 0) // settled state
+		DrawTopLegend(img)
+		DrawActionPrompt(img,
+			"e — sign the guestbook before you head off and greet everyone here")
+		DrawMenuPanel(img, 1)
 		drawn := false
 		for _, b := range img.Pix {
 			if b != 0 {
@@ -77,7 +81,7 @@ func TestDrawHUDLayouts(t *testing.T) {
 			}
 		}
 		if !drawn {
-			t.Errorf("%dx%d: HUD drew nothing", c.w, c.h)
+			t.Errorf("%dx%d: chrome drew nothing", c.w, c.h)
 		}
 	}
 }
@@ -91,7 +95,7 @@ func TestHDPanelsRender(t *testing.T) {
 	ctx := &Ctx{World: w, Store: store.Open(t.TempDir() + "/y.db"), Name: name,
 		Inventory: map[string]int{"berry": 2}, Hats: map[int]bool{2: true}}
 	img := image.NewRGBA(image.Rect(0, 0, 600, 360))
-	DrawHUD(img, "The Wilds", "e - take Sweet Berry")
+	DrawAreaTitle(img, "The Wilds", 0.5)
 	DrawToast(img, "+ Sweet Berry")
 	DrawCharPanel(img, ctx, 0)
 	DrawInventoryPanel(img, ctx)

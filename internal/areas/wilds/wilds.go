@@ -326,6 +326,25 @@ func (a *area) Hint() string {
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
 }
 
+// Prompt implements game.Prompter: the single action available right where the
+// player stands. The bearing-to-home fallback in Hint is ambient navigation,
+// not an action, so here it returns ok=false to keep the HD bottom clear.
+func (a *area) Prompt() (string, bool) {
+	if name, ok := a.portalUnder(a.wx, a.wy); ok {
+		return "step in to enter " + game.DisplayName(name), true
+	}
+	if g, ok := a.sealedGateUnderBody(); ok {
+		return a.gatePrompt(g), true
+	}
+	if h, _, _, ok := a.hatUnderBody(); ok {
+		return "e — wear the " + h.name, true
+	}
+	if it, _, _, ok := a.itemUnderBody(); ok {
+		return "e — take " + it.Name, true
+	}
+	return "", false
+}
+
 // itemUnderBody returns the first uncollected item beneath the 2×2 footprint.
 func (a *area) itemUnderBody() (game.Item, int, int, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {

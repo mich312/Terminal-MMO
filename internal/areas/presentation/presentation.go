@@ -391,6 +391,17 @@ func (a *area) Hint() string {
 	return "walk into a stage to watch · ＋ booth adds one"
 }
 
+// Prompt implements game.Prompter: reuse Hint, but suppress the idle "walk into
+// a stage" fallback so the HD bottom stays clear until you're actually on a
+// lectern, booth, stage or portal.
+func (a *area) Prompt() (string, bool) {
+	h := a.Hint()
+	if h == "" || h == "walk into a stage to watch · ＋ booth adds one" {
+		return "", false
+	}
+	return h, true
+}
+
 // HDSlide implements game.HDOverlayer: when the player stands in a deck stage,
 // the current slide's markdown is drawn on the big screen in HD pixel mode.
 func (a *area) HDSlide() (string, string, bool) {

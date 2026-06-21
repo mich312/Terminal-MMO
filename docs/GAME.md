@@ -127,7 +127,7 @@ live slide index resets).
 | Enter | chat — heard within 8 tiles |
 | e | pick up `◆` · sign guestbook · author/edit a deck (`＋` booth / lectern) |
 | n / p | next/previous slide while presenting |
-| Tab | who's online |
+| Tab | open the menu — inventory, character, who, help (HD) · who's online (glyph) |
 | c | character editor (HD); `i` inventory (HD) |
 | ? | help — every key and chat command, in one panel |
 | q / Ctrl+C | quit (press twice) |

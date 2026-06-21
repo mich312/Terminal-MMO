@@ -46,6 +46,21 @@ func TestControlsCoverCoreKeys(t *testing.T) {
 	}
 }
 
+// The HD menu hub's selection handler (openMenuSel in cmd/durstworld) maps a row
+// index to a panel, so the entry list's length and order are load-bearing.
+func TestMenuEntriesShape(t *testing.T) {
+	e := MenuEntries()
+	if len(e) != 4 {
+		t.Fatalf("MenuEntries has %d rows; the HD menu switch expects 4", len(e))
+	}
+	want := []string{"Inventory", "Character", "Who's online", "Controls & Help"}
+	for i, w := range want {
+		if e[i].Label != w {
+			t.Errorf("row %d = %q, want %q (order is load-bearing)", i, e[i].Label, w)
+		}
+	}
+}
+
 // "?" opens the glyph help overlay, and it must list both the control reference
 // and the chat commands.
 func TestQuestionKeyOpensHelp(t *testing.T) {
