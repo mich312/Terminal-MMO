@@ -328,201 +328,187 @@ func DrawCharPanel(img *image.RGBA, ctx *Ctx, field int) {
 	pixel.DrawText(img, ox+pad, y, s, footer, hudDim)
 }
 
-// DrawInventoryPanel draws the player's pack: their hero (a large avatar that
-// grows with the screen) with name and worn hat on the left, and a gem-iconed
-// item list with owned hats on the right.
-func DrawInventoryPanel(img *image.RGBA, ctx *Ctx) {
+// compLine is one rendered row of the HD compendium: text in a color, optionally
+// preceded by an item portrait or an accessory icon, at a left indent measured
+// in icon-gutter widths.
+type compLine struct {
+	text   string
+	col    color.RGBA
+	indent int   // 0 flush, 1 indented under an entry
+	item   *Item // draw this item's portrait before the text
+	dim    bool  // render the portrait dimmed (not yet found)
+	acc    int   // >0: draw this accessory's icon before the text
+}
+
+// hdInline makes a glyph-client string safe for the HD bitmap font (ASCII only),
+// keeping the meaning of the punctuation the catalog uses.
+func hdInline(s string) string {
+	return asciiOnly(strings.NewReplacer(
+		"—", " - ", "·", "-", "×", "x", "’", "'", "“", "", "”", "").Replace(s))
+}
+
+// compendiumStats counts how many item kinds the player has found, of the total.
+func compendiumStats(inv map[string]int) (found, kinds int) {
+	for _, it := range Items {
+		kinds++
+		if inv[it.ID] > 0 {
+			found++
+		}
+	}
+	return found, kinds
+}
+
+// compendiumLinesHD flattens the catalog and wearables into rows for the HD
+// panel, mirroring the glyph /compendium: items grouped by source (owned ones
+// lit with a count, unfound ones dimmed) each with a line on what it does, then
+// the wearables and their powers.
+func compendiumLinesHD(ctx *Ctx) []compLine {
+	var ls []compLine
+	for _, g := range Compendium(ctx.Inventory) {
+		ls = append(ls, compLine{text: strings.ToUpper(g.Title), col: hudAccent})
+		for _, e := range g.Entries {
+			it := e.Item
+			head, col := "", hudWhite
+			if e.Owned > 0 {
+				head = fmt.Sprintf("%s   x%d   (%s)", it.Name, e.Owned, it.Rarity)
+			} else {
+				head, col = fmt.Sprintf("%s   -   (%s)", it.Name, it.Rarity), hudDim
+			}
+			itc := it
+			ls = append(ls, compLine{text: hdInline(head), col: col, item: &itc, dim: e.Owned == 0})
+			sub := e.Note // what it does; fall back to the flavor for plain materials
+			if sub == "" {
+				sub = it.About
+			}
+			ls = append(ls, compLine{text: hdInline(sub), col: hudDim, indent: 1})
+			ls = append(ls, compLine{}) // breathing room below the portrait
+		}
+		ls = append(ls, compLine{}) // spacer between groups
+	}
+	ls = append(ls, compLine{text: "WEARABLES", col: hudAccent})
+	for _, w := range Wearables(ctx) {
+		power := w.Power
+		if power == "" {
+			power = "cosmetic"
+		}
+		text, col := "", hudWhite
+		if w.Owned {
+			text = w.Name
+			if w.Worn {
+				text += "  (worn)"
+			}
+			text += "   " + power
+		} else {
+			text, col = w.Name+"   "+power+" - "+w.Source, hudDim
+		}
+		ls = append(ls, compLine{text: hdInline(text), col: col, acc: w.Index})
+	}
+	return ls
+}
+
+// DrawCompendiumPanel draws the items-and-wearables codex onto an HD frame: the
+// full catalog (owned finds lit with their count, unfound ones dimmed) with what
+// each is and does, then every wearable and its power. The listing is taller
+// than the screen, so it scrolls — *scroll is clamped here against the live
+// layout (its upper bound depends on the frame height) and the input loop just
+// nudges it. Reuses the 'i' key and Tab menu.
+func DrawCompendiumPanel(img *image.RGBA, ctx *Ctx, scroll *int) {
 	W, H := img.Bounds().Dx(), img.Bounds().Dy()
 	s := hudScale(W)
 	lh := 16 * s
 	pad := 8 * s
-	gap := pad // gutter between the two columns
+	accBox := lh - 4*s        // wearable icon box, fitted to a text line
+	accGutter := accBox + s*3 // space a wearable icon takes before its text
+	itemBox := lh*2 - 2*s     // an item portrait spans the entry's two lines
+	itemGutter := itemBox + s*3
+	indentPx := itemGutter // an entry's sub-line aligns under its header text
 
-	cur, hasSelf := ctx.World.Self(ctx.Name)
+	lines := compendiumLinesHD(ctx)
+	found, kinds := compendiumStats(ctx.Inventory)
+	title := fmt.Sprintf("COMPENDIUM  -  %d / %d found", found, kinds)
 
-	// Right column: collected items (with their gem color) and owned hats.
-	type itemRow struct {
-		name string
-		n    int
-		base color.RGBA
-		hi   color.RGBA
+	// Size the body to fill the frame between panelBox's top/bottom margins.
+	avail := H - 5*lh
+	chrome := pad*2 + lh + lh/2 + lh/2 + lh // padding, title, two half-gaps, footer
+	bodyRows := (avail - chrome) / lh
+	if bodyRows < 3 {
+		bodyRows = 3
 	}
-	var items []itemRow
-	total := 0
-	for _, it := range Items {
-		if n := ctx.Inventory[it.ID]; n > 0 {
-			c := mustHex(it.Hex)
-			items = append(items, itemRow{it.Name, n, colorfulToRGBA(c),
-				colorfulToRGBA(c.BlendLab(spriteWhite, 0.55).Clamped())})
-			total += n
-		}
+	if bodyRows > len(lines) {
+		bodyRows = len(lines)
 	}
-	var hatIdxs []int
-	for _, idx := range OwnedHats(ctx) {
-		if idx != 0 {
-			hatIdxs = append(hatIdxs, idx)
-		}
+	maxScroll := len(lines) - bodyRows
+	if maxScroll < 0 {
+		maxScroll = 0
 	}
-	const maxHatRows = 6
-	hatsShown := len(hatIdxs)
-	if hatsShown > maxHatRows {
-		hatsShown = maxHatRows
+	if *scroll > maxScroll {
+		*scroll = maxScroll
 	}
-	equipped := -1
-	if hasSelf {
-		equipped = cur.Accessory
+	if *scroll < 0 {
+		*scroll = 0
 	}
 
-	gem := lh - 4*s // gem-icon box, fitted to a text line
-	emptyMsg := "Empty - walk over loot to gather it."
-
-	// Left column: the hero, scaled up with the frame ("bigger you on a bigger
-	// screen"), then clamped so it never eats more than a third of the width.
-	aScale := H / 90
-	if aScale > 16 {
-		aScale = 16
-	}
-	if aScale < s*3 {
-		aScale = s * 3
-	}
-	var avW, avH, bw, bh int
-	var bmp []string
-	if hasSelf {
-		bmp = AvatarBitmap(cur.Style, cur.Accessory, world.DirS, 0)
-		bw, bh = len([]rune(bmp[0])), len(bmp)
-		for aScale > s*2 && bw*aScale > W/3 {
-			aScale--
+	contentW := pixel.TextWidth(title, s)
+	for _, l := range lines {
+		lead := l.indent * indentPx
+		switch {
+		case l.item != nil:
+			lead = itemGutter
+		case l.acc > 0:
+			lead = accGutter
 		}
-		avW, avH = bw*aScale, bh*aScale
-	}
-	name := asciiOnly(ctx.Name)
-	hatLine := ""
-	if hasSelf {
-		hatLine = "Hat: " + AccessoryName(cur.Accessory)
-		if p := AccessoryPower(cur.Accessory); p != "" {
-			hatLine += " (" + p + ")"
-		}
-	}
-	leftW := avW
-	for _, t := range []string{name, hatLine} {
-		if w := pixel.TextWidth(t, s); w > leftW {
-			leftW = w
-		}
-	}
-	leftH := avH + lh/2 + lh + lh/4 + lh // avatar, name, hat
-
-	// Right-column width: title, item rows (gem + name + count), hat rows.
-	title := fmt.Sprintf("INVENTORY  -  %d item", total)
-	if total != 1 {
-		title += "s"
-	}
-	rightW := pixel.TextWidth("ACCESSORIES", s)
-	for _, r := range items {
-		w := gem + s*3 + pixel.TextWidth(r.name, s) + s*4 + pixel.TextWidth(fmt.Sprintf("x%d", r.n), s)
-		if w > rightW {
-			rightW = w
-		}
-	}
-	if len(items) == 0 {
-		if w := pixel.TextWidth(emptyMsg, s); w > rightW {
-			rightW = w
-		}
-	}
-	for i := 0; i < hatsShown; i++ {
-		label := AccessoryName(hatIdxs[i])
-		if hatIdxs[i] == equipped {
-			label += "  worn"
-		}
-		if w := gem + s*3 + pixel.TextWidth(label, s); w > rightW {
-			rightW = w
+		if w := lead + pixel.TextWidth(l.text, s); w > contentW {
+			contentW = w
 		}
 	}
 
-	itemLines := len(items)
-	if itemLines == 0 {
-		itemLines = 1
-	}
-	rightH := itemLines * lh
-	if len(hatIdxs) > 0 {
-		rightH += lh/2 + lh + hatsShown*lh
-		if len(hatIdxs) > hatsShown {
-			rightH += lh
-		}
-	}
-
-	bodyH := leftH
-	if rightH > bodyH {
-		bodyH = rightH
-	}
-	contentW := leftW + gap + rightW
-	if !hasSelf {
-		contentW = rightW
-	}
-	ph := pad*2 + lh + lh/2 + bodyH + lh/2 + lh
+	ph := chrome + bodyRows*lh
 	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
 	pixel.DrawPanel(img, ox, oy, pw, ph)
 
-	// Header.
 	top := oy + pad
 	pixel.DrawText(img, ox+pad, top, s, title, hudAccent)
-	bodyY := top + lh + lh/2
 
-	rightX := ox + pad
-	if hasSelf {
-		// Left column: a shaded pedestal, the avatar, name and worn hat.
-		leftX := ox + pad
-		ax := leftX + (leftW-avW)/2
-		pixel.Shade(img, ax-s, bodyY+avH-2*s, avW+2*s, 3*s, 0.5)
-		drawAvatarInto(img, ax, bodyY, aScale, cur.Style, cur.Accessory, cur.Color)
-		ny := bodyY + avH + lh/2
-		pixel.DrawText(img, leftX+(leftW-pixel.TextWidth(name, s))/2, ny, s, name, hudBright)
-		pixel.DrawText(img, leftX+(leftW-pixel.TextWidth(hatLine, s))/2, ny+lh+lh/4, s, hatLine, hudDim)
-		rightX = leftX + leftW + gap
+	y := top + lh + lh/2
+	end := *scroll + bodyRows
+	if end > len(lines) {
+		end = len(lines)
 	}
-
-	// Right column: items, then owned hats.
-	y := bodyY
-	if len(items) == 0 {
-		pixel.DrawText(img, rightX, y, s, emptyMsg, hudDim)
-		y += lh
-	}
-	for _, r := range items {
-		drawGem(img, rightX, y+(lh-gem)/2, gem, r.base, r.hi)
-		pixel.DrawText(img, rightX+gem+s*3, y, s, r.name, hudWhite)
-		cnt := fmt.Sprintf("x%d", r.n)
-		pixel.DrawText(img, rightX+rightW-pixel.TextWidth(cnt, s), y, s, cnt, hudAccent)
-		y += lh
-	}
-	if len(hatIdxs) > 0 {
-		y += lh / 2
-		pixel.DrawText(img, rightX, y, s, "ACCESSORIES", hudDim)
-		y += lh
-		for i := 0; i < hatsShown; i++ {
-			idx := hatIdxs[i]
-			worn := idx == equipped
-			if worn {
-				// Highlight strip behind the equipped accessory.
-				pixel.Shade(img, rightX-s, y-s, rightW+2*s, lh, 0.35)
+	bodyTop := top + lh + lh/2
+	for _, l := range lines[*scroll:end] {
+		x := ox + pad + l.indent*indentPx
+		switch {
+		case l.item != nil:
+			iy := y - (itemBox-lh)/2 // center the portrait across the entry's two lines
+			if iy < bodyTop {
+				iy = bodyTop
 			}
-			drawAccessoryIcon(img, rightX, y+(lh-gem)/2, gem, idx)
-			nm := AccessoryName(idx)
-			nameCol := hudWhite
-			if worn {
-				nameCol = hudBright
+			drawItemIcon(img, ox+pad, iy, itemBox, *l.item)
+			if l.dim { // not yet found — show the silhouette, darkened
+				pixel.Shade(img, ox+pad, iy, itemBox, itemBox, 0.55)
 			}
-			pixel.DrawText(img, rightX+gem+s*3, y, s, nm, nameCol)
-			if worn {
-				pixel.DrawText(img, rightX+gem+s*3+pixel.TextWidth(nm+"  ", s), y, s, "worn", hudAccent)
-			}
-			y += lh
+			x = ox + pad + itemGutter
+		case l.acc > 0:
+			drawAccessoryIcon(img, x, y+(lh-accBox)/2, accBox, l.acc)
+			x += accGutter
 		}
-		if extra := len(hatIdxs) - hatsShown; extra > 0 {
-			pixel.DrawText(img, rightX+gem+s*3, y, s, fmt.Sprintf("+%d more", extra), hudDim)
-			y += lh
+		if l.text != "" {
+			pixel.DrawText(img, x, y, s, l.text, l.col)
 		}
+		y += lh
 	}
 
 	footer := "i or q: close"
+	if maxScroll > 0 {
+		hint := ""
+		if *scroll > 0 {
+			hint += "up "
+		}
+		if end < len(lines) {
+			hint += "down "
+		}
+		footer = hint + "scroll  -  i/q close"
+	}
 	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)
 }
 

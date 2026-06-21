@@ -4,8 +4,31 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/durst-group/durstworld/internal/ui"
 )
+
+// The compendium panel must stay inside the screen at the 80-column minimum:
+// every body line, once rendered, has to fit within the panel's content width
+// (screen minus the rounded border + horizontal padding). Long catalog prose is
+// word-wrapped to make this hold.
+func TestCompendiumFitsNarrowWidth(t *testing.T) {
+	m := playingModel(t)
+	m.width, m.height = MinWidth, MinHeight
+	m.ctx.Inventory = map[string]int{"berry": 3, "spore": 1, "crystal": 2}
+	m.ctx.Hats = map[int]bool{2: true}
+	m.runChatLine("/compendium")
+	if !m.showInfo {
+		t.Fatal("/compendium should open the info panel")
+	}
+	max := m.width - 6 // border (2) + padding (2 each side)
+	for i, line := range m.infoLines {
+		if w := lipgloss.Width(line); w > max {
+			t.Errorf("line %d width %d exceeds %d: %q", i, w, max, line)
+		}
+	}
+}
 
 // a second registered area so /goto has somewhere to go.
 func init() {

@@ -22,26 +22,45 @@ var biomeItems = map[worldgen.Biome][]string{
 // lives on the catalog item itself (game.Item.Wear), so the wilds and the caves
 // unlock wearables the same way.
 
-// itemRate is the share of eligible cells that carry an item — sparse, so a
-// find feels earned.
-const itemRate = 0.018
+// itemRate is the share of eligible cells that even come up for a forage roll.
+// It's deliberately low and then thinned again per-item by rarity (see
+// rarityRate), so the open world reads uncluttered and an actual find feels
+// earned rather than carpeting the ground.
+const itemRate = 0.011
 
 const (
-	itemSalt  uint64 = 0x1726E_17E45_C0DE1
-	itemSalt2 uint64 = 0x5A1771_C0FFEE_2B0B
-	cropSalt  uint64 = 0xC0FFEE_F1E1D_5EED
-	stoneSalt uint64 = 0x57014E_B10C5_2D1A
-	woodSalt  uint64 = 0x000DBA_BE10C5_3E2B
-	fishSalt  uint64 = 0xF15B00_47C0DE_4F3C
+	itemSalt   uint64 = 0x1726E_17E45_C0DE1
+	itemSalt2  uint64 = 0x5A1771_C0FFEE_2B0B
+	raritySalt uint64 = 0x9A71D7_C0FFEE_E5C2
+	cropSalt   uint64 = 0xC0FFEE_F1E1D_5EED
+	stoneSalt  uint64 = 0x57014E_B10C5_2D1A
+	woodSalt   uint64 = 0x000DBA_BE10C5_3E2B
+	fishSalt   uint64 = 0xF15B00_47C0DE_4F3C
 )
 
-// Harvest rates: how much of each worksite is ready to gather.
+// Harvest rates: how much of each worksite is ready to gather. Worksites are
+// small, themed footprints, so they stay denser than the open-world scatter —
+// but not wall-to-wall.
 const (
-	cropRate  = 0.4  // ripe grain across a field
+	cropRate  = 0.3  // ripe grain across a field
 	stoneRate = 0.14 // cut stone littering the quarry floor
-	woodRate  = 0.85 // a felled stump nearly always yields a log
-	fishRate  = 0.5  // fish to be had off the jetty
+	woodRate  = 0.6  // most felled stumps still hold a log
+	fishRate  = 0.4  // fish to be had off the jetty
 )
+
+// rarityRate thins the forage scatter by how scarce a find is: commons stay
+// plentiful, while uncommons and rares are held back by a second roll. This both
+// makes a rare find genuinely rare and brings the overall ground clutter down.
+func rarityRate(r game.Rarity) float64 {
+	switch r {
+	case game.Rare:
+		return 0.30
+	case game.Uncommon:
+		return 0.55
+	default:
+		return 1.0
+	}
+}
 
 // itemAt returns the item scattered at (x,y), if any: a sparse, deterministic
 // roll on walkable, biome-appropriate ground (never on a portal). Like the
@@ -83,7 +102,16 @@ func itemAt(c worldgen.Cell, x, y int) (game.Item, bool) {
 		return game.Item{}, false
 	}
 	id := ids[int(hash01(x, y, itemSalt2)*float64(len(ids)))%len(ids)]
-	return game.ItemByID(id)
+	it, ok := game.ItemByID(id)
+	if !ok {
+		return game.Item{}, false
+	}
+	// A second, independent roll thins the scatter by rarity, so a rare find
+	// doesn't appear as often as a common one and the ground stays uncluttered.
+	if hash01(x, y, raritySalt) >= rarityRate(it.Rarity) {
+		return game.Item{}, false
+	}
+	return it, true
 }
 
 // hatLoot is a wearable hat scattered in the world: the accessory it grants
