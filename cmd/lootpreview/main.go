@@ -78,6 +78,41 @@ func cavern() *game.TileMap {
 	return &game.TileMap{W: W, H: H, Tiles: tiles}
 }
 
+// wideWilds is a large explored map: forest/grass with scattered glowing forage
+// (mushrooms, crystals) far beyond the player's small torch — to show how
+// luminous loot reads across the whole night map.
+func wideWilds() *game.TileMap {
+	const W, H = 40, 26
+	tiles := make([][]game.Tile, H)
+	for y := 0; y < H; y++ {
+		tiles[y] = make([]game.Tile, W)
+		for x := 0; x < W; x++ {
+			t := game.Tile{Kind: game.TileFloor, Walkable: true, Tex: game.TexGrass, Ground: "#3A7D44"}
+			if (x*7+y*13+x*y)%11 < 4 {
+				t = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexForest,
+					Ground: "#2C5E33", Prop: game.PropTree, PropHex: "#2E5E34"}
+			}
+			tiles[y][x] = t
+		}
+	}
+	for y := 1; y < H-1; y += 3 {
+		for x := 1; x < W-1; x += 3 {
+			if (x*y)%2 == 0 {
+				hex := "#C792EA" // mushroom purple
+				if (x+y)%3 == 0 {
+					hex = "#7DF0FF" // crystal teal
+				}
+				tiles[y][x] = game.Tile{Kind: game.TileObject, Walkable: true, Tex: game.TexGrass,
+					Ground: "#3A7D44", Prop: game.PropGemGlow, PropHex: hex}
+			} else {
+				tiles[y][x] = game.Tile{Kind: game.TileObject, Walkable: true, Tex: game.TexGrass,
+					Ground: "#3A7D44", Prop: game.PropGem, PropHex: "#E0604D"}
+			}
+		}
+	}
+	return &game.TileMap{W: W, H: H, Tiles: tiles}
+}
+
 func saveImg(path string, img image.Image) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -113,5 +148,12 @@ func main() {
 	cimg := game.RenderRGBA(nil, cv, cplayers, "you", frame, game.Camera{W: cv.W, H: cv.H}, lantern, 0, 0, scale, false, style)
 	saveImg("lootshots/cave-lantern.png", cimg)
 
-	fmt.Println("wrote lootshots/wilds-night-loot.png and lootshots/cave-lantern.png")
+	// Wide night map: glowing forage scattered far past the small torch.
+	ww := wideWilds()
+	wwp := []world.Player{{Name: "you", X: 20, Y: 13, Color: "#FFC861", Facing: world.DirS, LastMoved: time.Now()}}
+	wtorch := game.DayFadedLight(game.Light{X: 20 + game.PlayerW/2, Y: 13 + game.PlayerH/2, Radius: 7})
+	wwimg := game.RenderRGBA(nil, ww, wwp, "you", frame, game.Camera{W: ww.W, H: ww.H}, wtorch, 0, 0, 18, false, style)
+	saveImg("lootshots/wide-wilds-night.png", wwimg)
+
+	fmt.Println("wrote wilds-night-loot, cave-lantern, wide-wilds-night")
 }

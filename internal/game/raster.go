@@ -90,6 +90,14 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				// The emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
 				if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
 					pc = applyLight(pc, originX+x, originY+y, light)
+				} else if lootEmitter(t.Prop) {
+					// Luminous loot is self-lit, so it never fades fully dark — but a
+					// glowing find far outside your light should read as a faint point
+					// that brightens as you approach, not a full-bright marker carpeting
+					// the whole night map. Dim it with distance to a self-lit floor.
+					lvl := lightLevel(originX+x, originY+y, light)
+					eff := lootSelfLit + (1-lootSelfLit)*lvl
+					pc = pc.BlendLab(shadowColor, 1-eff).Clamped()
 				}
 				propCols[y][x] = pc
 			}
@@ -197,6 +205,12 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 						amount = mult // already day/night-weighted inside emitterGlow
 					} else if night <= 0.03 {
 						continue // ordinary emitters only bloom after dusk
+					}
+					if lootEmitter(p) {
+						// A find's halo fades with your light too, so distant loot is a
+						// faint glint and a clear glow pool only once it's near — matching
+						// the dimmed sprite above.
+						amount *= lightLevel(originX+vx, originY+vy, light)
 					}
 					drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, amount, apx)
 				}

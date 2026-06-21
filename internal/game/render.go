@@ -264,6 +264,33 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if floor >= 1 { // fully faded (e.g. midday day-fade): no darkening at all
 		return col
 	}
+	if light.Warm {
+		floor = caveFloorLight
+	}
+	f := floor + lightLevel(x, y, light)*(1-floor)
+	out := col.BlendLab(shadowColor, 1-f)
+	if light.Warm {
+		// Warm the lit core like firelight; strongest near the source, gone by the
+		// dim edge — so the held light reads warm against cool bioluminescence.
+		warm := colorful.Color{R: 1, G: 0.72, B: 0.40}
+		out = out.BlendLab(warm, 0.22*math.Max(0, f-floor))
+	}
+	return out.Clamped()
+}
+
+// lightLevel returns a tile's normalized brightness within a radial light: 1 at
+// the lit core, 0 at the dark floor, quantized into the same discrete bands as
+// applyLight (so the light reads as stepped retro rings, not a smooth gradient).
+// With no light — or a fully-faded one — everything is fully lit (1). It is the
+// shared falloff that applyLight darkens by and that loot dims its glow with.
+func lightLevel(x, y int, light Light) float64 {
+	if light.Radius <= 0 {
+		return 1
+	}
+	floor := light.floor()
+	if floor >= 1 {
+		return 1
+	}
 	dx := float64(x - light.X)
 	dy := float64(y - light.Y)
 	d := math.Sqrt(dx*dx + dy*dy)
@@ -285,19 +312,8 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if f > 1 {
 		f = 1
 	}
-	// Quantize brightness into discrete bands so the light reads as stepped
-	// retro rings (lit / dim / dark) instead of a smooth modern gradient.
 	t := (f - floor) / (1 - floor)
-	t = math.Round(t*lightBands) / lightBands
-	f = floor + t*(1-floor)
-	out := col.BlendLab(shadowColor, 1-f)
-	if light.Warm {
-		// Warm the lit core like firelight; strongest near the source, gone by the
-		// dim edge — so the held light reads warm against cool bioluminescence.
-		warm := colorful.Color{R: 1, G: 0.72, B: 0.40}
-		out = out.BlendLab(warm, 0.22*math.Max(0, f-floor))
-	}
-	return out.Clamped()
+	return math.Round(t*lightBands) / lightBands
 }
 
 // stampPlayers draws every visible player's sprite onto the grid; oldest
