@@ -262,6 +262,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		// Composite UI onto a copy so overlays never bleed into the cached terrain.
 		img := frameCopy(base)
 		game.OverlayWalkable(img, tm, hdScale) // debug: tint blocked tiles (toggle with F2)
+		game.DrawPortalLabels(img, tm, hdScale) // float each gate's destination name above it
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
 		// HD has no glyph layer, so slides are rasterized straight onto the image.
