@@ -99,10 +99,6 @@ var Gates = []Landmark{
 	{0, 18, "vault", "Sunken Gate", '◈', "#56E1FF", 2},
 }
 
-// plazaBraziers are the standing fires that light the HQ spawn plaza after dark.
-// On the clearing's diagonals so they frame the square clear of the axial trails.
-var plazaBraziers = [][2]int{{3, 3}, {-3, 3}, {3, -3}, {-3, -3}}
-
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
 func (g *Generator) At(x, y int) Cell {
 	for _, lm := range Landmarks {
@@ -118,32 +114,13 @@ func (g *Generator) At(x, y int) Cell {
 			return Cell{Biome: Grass, Glyph: gt.Glyph, Color: gt.Color, Walkable: true, Object: true}
 		}
 	}
-	// Braziers ring the HQ plaza so spawn is a warm, well-lit place after dark
-	// rather than a clearing swallowed by the night. They sit off the axial trails
-	// (the diagonals), so they light the square without ever blocking a way out.
-	for _, b := range plazaBraziers {
-		if x == b[0] && y == b[1] {
-			return Cell{Biome: Grass, Glyph: 'i', Color: "#FF7A1E"} // blocks, glows at night
-		}
-	}
-	// Forced grassy clearings around each landmark and gate keep them walkable.
-	// Round glades (not hard squares) so a door sits in a natural clearing rather
-	// than an obvious green rectangle in the surrounding biome.
-	for _, lm := range Landmarks {
-		if g.inClearing(x, y, lm.X, lm.Y, lm.Clear) {
-			return grassCell(g, x, y)
-		}
-	}
-	for _, gt := range Gates {
-		if g.inClearing(x, y, gt.X, gt.Y, gt.Clear) {
-			return grassCell(g, x, y)
-		}
-	}
-	// Forced walkable trails wire the HQ plaza to every wing. Without them a
-	// player could spawn boxed in by forest/water, since the clearings above are
-	// isolated discs and the terrain between them is otherwise pure noise.
-	if onPath(x, y) {
-		return pathCell(g, x, y)
+	// The hub town: the redesigned spawn. A cobbled square ringed by the wing
+	// buildings (whose doors are the portals above), market stalls and street
+	// lamps, wired to the gates by cobbled streets — replacing the old four
+	// grassy clearings and dirt trails. The forced street arms keep every door
+	// reachable regardless of seed, exactly as the old trails did.
+	if c, ok := g.hubCell(x, y); ok {
+		return c
 	}
 
 	// Settlements (villages, hamlets, walled towns) are derived deterministically
@@ -338,18 +315,6 @@ func swampCell(g *Generator, x, y int) Cell {
 	return c
 }
 
-// inClearing reports whether (x,y) falls inside the round glade of radius r
-// around (cx,cy). A little low-frequency noise jitters the rim so the clearing
-// meanders like a natural glade instead of forming a clean disc (or the old
-// hard square). The jitter is under a tile, so the door and the cells right
-// around it always stay inside — and connectivity is guaranteed by the forced
-// trails regardless — so reachability is never at risk.
-func (g *Generator) inClearing(x, y, cx, cy, r int) bool {
-	dx, dy := float64(x-cx), float64(y-cy)
-	edge := float64(r) + 0.9*(g.fbmAt(float64(x), float64(y), 0x6A7E, 0.35, 2)-0.5)
-	return math.Hypot(dx, dy) <= edge
-}
-
 // onPath reports whether (x,y) lies on a forced trail: a 3-wide walkable band
 // along the axes between the origin (Durst HQ) and each landmark, so the spawn
 // plaza is always connected to every wing's door regardless of seed.
@@ -361,16 +326,6 @@ func onPath(x, y int) bool {
 		return true
 	}
 	return false
-}
-
-// pathCell is the worn-dirt trail surface, with the occasional cobble for
-// texture. Always walkable.
-func pathCell(g *Generator, x, y int) Cell {
-	c := Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}
-	if g.prop(x, y) < 0.12 {
-		c.Glyph, c.Color = '∘', "#857653" // a cobble
-	}
-	return c
 }
 
 func hillCell(g *Generator, x, y int) Cell {
