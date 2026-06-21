@@ -368,7 +368,7 @@ func (a *area) Hint() string {
 			if a.Ctx.World.DeckCount() >= world.MaxDecks {
 				return fmt.Sprintf("wing full (%d/%d) — a presenter must retire a talk", world.MaxDecks, world.MaxDecks)
 			}
-			return "press e — author a presentation"
+			return "e — author a presentation"
 		}
 		if d, ok := a.Ctx.World.GetDeck(st.deckID); ok {
 			if d.Owner == a.Ctx.Name {
