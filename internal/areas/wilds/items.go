@@ -124,9 +124,9 @@ func buildHats() []hatLoot {
 	return out
 }
 
-// hatRate is how often a hat's themed biome yields it — rare, so a find is a
-// real moment.
-const hatRate = 0.004
+// hatRate is how often a hat's themed biome yields it — very rare, so stumbling
+// on one is a real moment rather than a regular sight.
+const hatRate = 0.0008
 
 const hatSalt uint64 = 0xA75EED_C0FFEE_42
 
