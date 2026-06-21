@@ -242,6 +242,8 @@ func drawCaveFauna(img *image.RGBA, props [][]TileProp, cam Camera, scale, frame
 	bat := colorful.Color{R: 0.30, G: 0.26, B: 0.34}
 	fish := colorful.Color{R: 0.55, G: 0.92, B: 1}
 	worm := colorful.Color{R: 0.5, G: 1, B: 0.74}
+	mote := colorful.Color{R: 1, G: 0.96, B: 0.82}
+	drip := colorful.Color{R: 0.72, G: 0.9, B: 1}
 	for vy := 0; vy < cam.H; vy++ {
 		for vx := 0; vx < cam.W; vx++ {
 			wx, wy := originX+vx, originY+vy
@@ -281,6 +283,22 @@ func drawCaveFauna(img *image.RGBA, props [][]TileProp, cam Camera, scale, frame
 					gy := cy0 + int(math.Cos(float64(frame)*0.07+gp)*float64(scale)*0.3) - scale/3
 					drawGlow(img, gx, gy, float64(apx)*1.4, worm, 0.45, apx)
 					dot(gx, gy, max(1, apx/2), worm)
+				}
+			case PropLightShaft:
+				// Dust drifts down the daylight beam, catching the light as it falls.
+				for m := 0; m < 3; m++ {
+					mp := ph + float64(m)*5.0
+					fall := math.Mod(float64(frame)*0.035+mp*0.13, 1)
+					mx := cx0 + int(math.Sin(float64(frame)*0.05+mp)*float64(scale)*0.22)
+					my := vy*scale + int(fall*float64(scale))
+					drawGlow(img, mx, my, float64(apx)*0.9, mote, 0.45*(1-fall), apx)
+				}
+			case PropStalagmite, PropColumn:
+				// A waterdrop falls now and then onto the formation — a cave's slow clock.
+				if d := math.Mod(float64(frame)*0.03+ph*0.11, 1); d < 0.5 {
+					dx := cx0
+					dy := vy*scale + int(d*2*float64(scale))
+					dot(dx, dy, max(1, apx/2), drip)
 				}
 			}
 		}
