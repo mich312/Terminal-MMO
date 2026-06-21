@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -134,8 +135,23 @@ func DrawTopLegend(img *image.RGBA) {
 	}
 }
 
+// splitPromptKey pulls a leading single-key action out of a prompt formatted
+// "X - rest" (e.g. "e - wear the Crown"), returning the uppercased key and the
+// remaining label. Prompts without that shape (walk-in portals, multi-key
+// lectern hints) return key="" and render as plain text.
+func splitPromptKey(text string) (key, label string) {
+	if len(text) > 3 && text[1] == ' ' && text[2] == '-' && text[3] == ' ' {
+		if unicode.IsLetter(rune(text[0])) {
+			return strings.ToUpper(text[:1]), strings.TrimSpace(text[4:])
+		}
+	}
+	return "", text
+}
+
 // DrawActionPrompt draws the contextual button near the bottom-center — what
-// you can do right where you stand. It's only drawn when an area reports an
+// you can do right where you stand. A single-key action gets a keycap badge
+// ("[E] wear the Crown"); other prompts (walk into a portal, multi-key lectern
+// controls) render as plain text. It's only drawn when an area reports an
 // action, so the bottom of the screen is empty the rest of the time.
 func DrawActionPrompt(img *image.RGBA, text string) {
 	W, H := img.Bounds().Dx(), img.Bounds().Dy()
@@ -145,15 +161,32 @@ func DrawActionPrompt(img *image.RGBA, text string) {
 	if text == "" {
 		return
 	}
-	text = truncToWidth(text, s, W-12*s)
-	tw := pixel.TextWidth(text, s)
-	padX := 5 * s
-	boxW, boxH := tw+2*padX, lh+4*s
-	x := (W - boxW) / 2
-	y := H - 3*lh
+	key, label := splitPromptKey(text)
+
+	padX, gap := 5*s, 4*s
+	chW, chH := 7*s, 13*s // one glyph cell of the 7×13 font
+	capW := 0
+	if key != "" {
+		capW = chW + 4*s + gap // chip (letter + padding) plus a gap before the label
+	}
+	label = truncToWidth(label, s, W-12*s-capW)
+
+	boxW := padX*2 + capW + pixel.TextWidth(label, s)
+	boxH := lh + 4*s
+	x, y := (W-boxW)/2, H-3*lh
 	pixel.Shade(img, x, y, boxW, boxH, 0.82)
 	pixel.Frame(img, x, y, boxW, boxH)
-	pixel.DrawText(img, x+padX, y+2*s, s, text, hudBright)
+
+	cx := x + padX
+	ty := y + (boxH-chH)/2
+	if key != "" {
+		capInner, capH := chW+4*s, chH+2*s
+		cy := y + (boxH-capH)/2
+		fillRect(img, cx, cy, capInner, capH, hudAccent)
+		pixel.DrawText(img, cx+2*s, cy+s, s, key, color.RGBA{0x10, 0x16, 0x20, 0xFF})
+		cx += capInner + gap
+	}
+	pixel.DrawText(img, cx, ty, s, label, hudBright)
 }
 
 // DrawMenuPanel draws the Tab menu hub: the panels you can open, each with its
