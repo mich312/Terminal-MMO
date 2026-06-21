@@ -308,6 +308,61 @@ func DrawMinimapPanel(img *image.RGBA, title string, rows [][]MiniCell) {
 	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)
 }
 
+// DrawPortalLabels floats each visible portal's destination name above it, so a
+// player can read where a gate leads (and where a broken/sealed gate would lead)
+// before stepping in. tm is the window tilemap — tile (vx,vy) maps to screen
+// pixel (vx*scale, vy*scale) — and scale is the pixels-per-tile the scene was
+// rasterized at. A sealed gate's label is dimmed to match its dormant look.
+func DrawPortalLabels(img *image.RGBA, tm *TileMap, scale int) {
+	W := img.Bounds().Dx()
+	s := hudScale(W)
+	apx := scale / 6 // tileArtN: portal art is 12 art-pixels (~2 tiles) tall
+	if apx < 1 {
+		apx = 1
+	}
+	lh := 13*s + 2*s
+	for vy := 0; vy < tm.H && vy < len(tm.Tiles); vy++ {
+		for vx := 0; vx < tm.W && vx < len(tm.Tiles[vy]); vx++ {
+			t := tm.Tiles[vy][vx]
+			sealed := t.Prop == PropSealed
+			if t.Prop != PropPortal && !sealed && t.Kind != TilePortal {
+				continue
+			}
+			name := t.Label
+			if name == "" && t.Portal != "" {
+				name = DisplayName(t.Portal)
+			}
+			name = asciiOnly(name)
+			if name == "" {
+				continue
+			}
+			tw := pixel.TextWidth(name, s)
+			lx := vx*scale + scale/2 - tw/2
+			// Keep the whole label (plus its shaded backing) on-screen, so a portal
+			// near a left/right edge doesn't get its name clipped.
+			if hi := W - tw - 2*s; lx > hi {
+				lx = hi
+			}
+			if lx < 2*s {
+				lx = 2 * s
+			}
+			// The portal art is bottom-aligned on the tile and overhangs ~2 tiles
+			// upward; sit the label just above that so it never covers the gate.
+			portalTop := (vy+1)*scale - 12*apx
+			ty := portalTop - lh - s
+			if ty < 2 { // too near the top edge — drop the label just below the gate
+				ty = (vy+1)*scale + s
+			}
+			pixel.Shade(img, lx-2*s, ty-s, tw+4*s, lh+s, 0.6)
+			col := hudToast
+			if sealed {
+				col = hudDim
+			}
+			pixel.DrawText(img, lx, ty, s, name, col)
+		}
+	}
+}
+
 // DrawCharPanel draws the interactive character editor onto an HD frame: a live
 // avatar preview over the cycleable Style / Color / Hat fields, the selected
 // one marked. field is the highlighted row (0..CharFields-1).

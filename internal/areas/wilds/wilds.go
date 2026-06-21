@@ -465,6 +465,9 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 				cell := a.gen.At(wx, wy)
 				t := CellTile(cell)
 				if g, ok := gateAtCell(wx, wy); ok {
+					// Both the open gate and the broken (sealed) arch carry the name of
+					// where they lead, so the renderer can float a label above them.
+					t.Label = game.DisplayName(g.Portal)
 					if !a.gateOpen(g) { // sealed: a dull, broken arch (no swirl)
 						t.Ch, t.Color = '⊘', "#8A8A98"
 						t.Prop, t.PropHex = game.PropSealed, "#7A7A88"
