@@ -39,7 +39,7 @@ var hubBldgs = []hubBldg{
 // hubGlades are the clearings carved around the outlying doors (the wing portals
 // and the two gates) so each sits in a glade on its trail rather than jammed in
 // the trees. The central green (origin) is handled separately.
-var hubGlades = [][2]int{{16, 0}, {-16, 0}, {0, 12}, {22, 0}, {0, 18}}
+var hubGlades = [][2]int{{16, 0}, {-16, 0}, {0, 12}, {22, 0}, {0, 18}, {-22, 0}}
 
 // Hub furniture, placed asymmetrically on the green and clear of both trail
 // bows (all cells have |x|>=4 and |y|>=4, so a meandering trail never runs onto
@@ -132,7 +132,7 @@ func (g *Generator) hubMeadow(x, y int, d float64, canopy bool) Cell {
 // commons, then runs dead straight out through the forest to each door — keeping
 // the 2×2 body's passage guaranteed everywhere.
 func (g *Generator) trailAt(x, y int) (on, edge bool) {
-	if x >= -16 && x <= 22 {
+	if x >= -22 && x <= 22 {
 		if dy := abs(y - g.trailOffset(float64(x), 0x7A11)); dy <= 1 {
 			on, edge = true, dy == 1
 		}

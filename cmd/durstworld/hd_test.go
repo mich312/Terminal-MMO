@@ -50,21 +50,26 @@ func TestCmdWantsClassic(t *testing.T) {
 	}
 }
 
-// A portal into a panel-only area (the Arcade) can't render in HD, so enterHD
-// falls back to the lobby rather than stranding the player on a blank screen.
-func TestEnterHDFallsBackForPanelArea(t *testing.T) {
-	w := world.New()
-	defer w.Close()
-	name, _ := w.Join("p")
-	st := store.Open(filepath.Join(t.TempDir(), "x.db"))
-	defer st.Close()
-	ctx := &game.Ctx{World: w, Store: st, Name: name}
+// The Arcade and its minigames are walkable, HD-renderable rooms, so entering
+// them in HD keeps the requested area (rather than falling back to the lobby,
+// which is what enterHD does only for an area that can't draw in pixels).
+func TestEnterHDArcadeAndGames(t *testing.T) {
+	for _, id := range []string{"arcade", "sokoban", "maze"} {
+		t.Run(id, func(t *testing.T) {
+			w := world.New()
+			defer w.Close()
+			name, _ := w.Join("p")
+			st := store.Open(filepath.Join(t.TempDir(), "x.db"))
+			defer st.Close()
+			ctx := &game.Ctx{World: w, Store: st, Name: name}
 
-	id, area, hv := enterHD(ctx, "lobby", "arcade")
-	if id != "lobby" {
-		t.Fatalf("panel area should fall back to lobby, got %q", id)
-	}
-	if area == nil || hv == nil {
-		t.Fatal("enterHD returned nil area/viewer")
+			got, area, hv := enterHD(ctx, "lobby", id)
+			if got != id {
+				t.Fatalf("entering %q in HD landed in %q", id, got)
+			}
+			if area == nil || hv == nil {
+				t.Fatal("enterHD returned nil area/viewer")
+			}
+		})
 	}
 }
