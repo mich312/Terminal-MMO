@@ -623,11 +623,180 @@ func (a *area) noteSpecies(kind string) {
 	a.ctx.Store.MarkSpecies(a.ctx.Name, kind)
 }
 
-// hunt strikes an adjacent creature. A strike decrements its HP atomically (so
-// two hunters can't both claim one kill); a non-killing hit just spooks it, and
-// the blow that drops it despawns the animal and rolls its spoils into the pack.
-// No PvP, no player damage — only wildlife can be hunted.
-func (a *area) hunt(c world.Creature) {
+// downedDuration is how long a knocked-out player stays down before reviving at
+// the hub (docs/WEAPON_PLAN.md). The world's tick loop does the actual respawn;
+// this is the game-layer policy it's told.
+const downedDuration = 5 * time.Second
+
+// strike is the single combat action behind the `f` key: it lands the best
+// weapon in the pack on whatever it can reach — a wild animal first, then a
+// player out in the open Wilds. Reach 1 is the melee ring; a ranged weapon scans
+// the tiles ahead. Ammo is spent only on a connecting shot.
+func (a *area) strike() {
+	if a.ctx.World.Downed(a.ctx.Name) {
+		return // can't act while knocked out
+	}
+	wp := game.BestWeapon(a.ctx.Inventory)
+
+	if c, ok := a.creatureTarget(wp); ok {
+		a.strikeCreature(c, wp)
+		a.spendAmmo(wp)
+		return
+	}
+	if p, ok := a.playerTarget(wp); ok {
+		if !a.pvpAllowed(p.X, p.Y) || !a.pvpAllowed(a.wx, a.wy) {
+			a.setToast("this is a peaceful place — no fighting here")
+			return
+		}
+		a.strikePlayer(p, wp)
+		a.spendAmmo(wp)
+		return
+	}
+	if wp.Reach > 1 {
+		a.setToast("nothing within range")
+	} else {
+		a.setToast("nothing within reach")
+	}
+}
+
+// pvpAllowed reports whether a player standing at (x,y) may be struck: only out
+// in the open Wilds — never in the hub's peace ward, and never on a claimed
+// homestead, which stays a sanctuary even in the wild.
+func (a *area) pvpAllowed(x, y int) bool {
+	if worldgen.HubSafe(x, y) {
+		return false
+	}
+	if _, claimed := a.ctx.World.ClaimAt(x, y); claimed {
+		return false
+	}
+	return true
+}
+
+// spendAmmo consumes one round for a ranged weapon after a connecting strike.
+func (a *area) spendAmmo(wp game.Weapon) {
+	if wp.Ammo == "" {
+		return
+	}
+	a.ctx.Inventory[wp.Ammo]--
+	if a.ctx.Inventory[wp.Ammo] <= 0 {
+		delete(a.ctx.Inventory, wp.Ammo)
+	}
+	a.ctx.Store.SpendItem(a.ctx.Name, wp.Ammo)
+}
+
+// creatureTarget finds the animal a strike would hit: the adjacent ring for a
+// melee weapon, or the nearest creature along the facing line for a ranged one.
+func (a *area) creatureTarget(wp game.Weapon) (world.Creature, bool) {
+	if wp.Reach <= 1 {
+		return a.creatureAdjacent()
+	}
+	for _, t := range a.facingLine(wp.Reach) {
+		for _, c := range a.ctx.World.CreaturesInArea("wilds") {
+			if iabs(c.X-t[0]) <= 1 && iabs(c.Y-t[1]) <= 1 {
+				return c, true
+			}
+		}
+	}
+	return world.Creature{}, false
+}
+
+// playerTarget finds another player a strike would hit, mirroring creatureTarget
+// (adjacent ring for melee, facing line for ranged). Never targets yourself.
+func (a *area) playerTarget(wp game.Weapon) (world.Player, bool) {
+	others := a.ctx.World.PlayersInArea("wilds")
+	hit := func(px, py, tx, ty int) bool {
+		// a player's 2×2 body is hit if its footprint touches the target cell
+		return tx >= px-1 && tx <= px+game.PlayerW && ty >= py-1 && ty <= py+game.PlayerH
+	}
+	if wp.Reach <= 1 {
+		for _, p := range others {
+			if p.Name == a.ctx.Name {
+				continue
+			}
+			if hit(a.wx, a.wy, p.X, p.Y) {
+				return p, true
+			}
+		}
+		return world.Player{}, false
+	}
+	for _, t := range a.facingLine(wp.Reach) {
+		for _, p := range others {
+			if p.Name == a.ctx.Name {
+				continue
+			}
+			if hit(t[0], t[1], p.X, p.Y) {
+				return p, true
+			}
+		}
+	}
+	return world.Player{}, false
+}
+
+// facingLine returns the cells straight ahead of the player, 1..reach tiles out
+// in the current facing — the path a ranged shot travels. Facing is read from
+// the world (set as the player moves).
+func (a *area) facingLine(reach int) [][2]int {
+	dir := world.DirS
+	if self, ok := a.ctx.World.Self(a.ctx.Name); ok {
+		dir = self.Facing
+	}
+	dx, dy := facingDelta(dir)
+	out := make([][2]int, 0, reach)
+	for i := 1; i <= reach; i++ {
+		out = append(out, [2]int{a.wx + dx*i, a.wy + dy*i})
+	}
+	return out
+}
+
+// facingDelta maps an 8-way facing to a unit step. South is +Y (the world's down
+// is positive), matching world.Facing8.
+func facingDelta(d world.Dir) (int, int) {
+	switch d {
+	case world.DirN:
+		return 0, -1
+	case world.DirNE:
+		return 1, -1
+	case world.DirE:
+		return 1, 0
+	case world.DirSE:
+		return 1, 1
+	case world.DirS:
+		return 0, 1
+	case world.DirSW:
+		return -1, 1
+	case world.DirW:
+		return -1, 0
+	case world.DirNW:
+		return -1, -1
+	}
+	return 0, 1
+}
+
+// strikePlayer lands a blow on another player via the world's atomic Strike: a
+// non-lethal hit just hurts, the blow that empties their HP knocks them out
+// (they revive at the hub shortly after). Events tell both clients.
+func (a *area) strikePlayer(p world.Player, wp game.Weapon) {
+	_, downed, ok := a.ctx.World.Strike(a.ctx.Name, p.Name, wp.Name, wp.Damage, downedDuration)
+	if !ok {
+		a.setToast(p.Name + " is already down")
+		return
+	}
+	with := ""
+	if wp.Item != "" {
+		with = " with the " + wp.Name
+	}
+	if downed {
+		a.setToast("you knock " + p.Name + " out" + with + "!")
+		return
+	}
+	a.setToast("you strike " + p.Name + with)
+}
+
+// strikeCreature lands a blow on a wild animal. A strike decrements its HP
+// atomically (so two hunters can't both claim one kill); a non-killing hit just
+// spooks it, and the blow that drops it despawns the animal and rolls its spoils
+// into the pack. Weapon damage scales the blow.
+func (a *area) strikeCreature(c world.Creature, wp game.Weapon) {
 	sp, ok := game.SpeciesByKind(c.Kind)
 	if !ok {
 		return
@@ -638,12 +807,16 @@ func (a *area) hunt(c world.Creature) {
 	}
 	a.noteSpecies(c.Kind)
 
+	dmg := wp.Damage
+	if dmg < 1 {
+		dmg = 1
+	}
 	killed := false
 	changed := a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
 		if cc.HP <= 0 {
 			return false // already down — someone else's catch
 		}
-		cc.HP--
+		cc.HP -= dmg
 		cc.State = "flee"
 		if cc.HP <= 0 {
 			killed = true
@@ -929,10 +1102,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			return a, nil
 		}
-		if ks == "f" { // hunt an adjacent animal
-			if c, ok := a.creatureAdjacent(); ok {
-				a.hunt(c)
-			}
+		if ks == "f" { // strike what you face — hunt an animal or, in the wild, a player
+			a.strike()
 			return a, nil
 		}
 		if ks == "t" { // tame an adjacent animal with bait
@@ -950,6 +1121,9 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		dx, dy, steps, ok := game.MoveKey(ks)
 		if !ok {
 			return a, nil
+		}
+		if a.ctx.World.Downed(a.ctx.Name) {
+			return a, nil // knocked out: no walking until you revive at the hub
 		}
 		sx, sy := a.wx, a.wy
 		for i := 0; i < steps; i++ {
@@ -980,7 +1154,29 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	return a, nil
 }
 
+// healthHint surfaces a little HP bar while you're hurt, so the bottom line
+// stays quiet during peaceful play but tells you where you stand mid-fight.
+func (a *area) healthHint() (string, bool) {
+	self, ok := a.ctx.World.Self(a.ctx.Name)
+	if !ok || self.MaxHP <= 0 || self.HP >= self.MaxHP {
+		return "", false
+	}
+	const w = 10
+	filled := self.HP * w / self.MaxHP
+	if filled < 0 {
+		filled = 0
+	}
+	bar := strings.Repeat("▰", filled) + strings.Repeat("▱", w-filled)
+	return fmt.Sprintf("HP %s %d/%d", bar, self.HP, self.MaxHP), true
+}
+
 func (a *area) Hint() string {
+	if a.ctx.World.Downed(a.ctx.Name) {
+		return "✖ knocked out — reviving at Durst HQ…"
+	}
+	if s, ok := a.healthHint(); ok {
+		return s
+	}
 	if a.building {
 		if s, ok := a.ghostClaimPrompt(); ok {
 			return s + " · b done"

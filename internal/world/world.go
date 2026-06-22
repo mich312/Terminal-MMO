@@ -130,6 +130,13 @@ type World struct {
 	// Wildlife: live, server-owned creatures keyed by instance id. The wildlife
 	// stepper is the only writer; renderers read snapshots via CreaturesInArea.
 	creatures map[string]*Creature
+
+	// Combat: where a knocked-out player comes back (docs/WEAPON_PLAN.md). The
+	// world doesn't know any area's geography, so the game layer supplies the
+	// hub spawn; the tick loop revives downed players there when their timer
+	// lapses. nil ⇒ no auto-respawn (tests that don't set it just leave players
+	// down).
+	respawnAt func() (area string, x, y int)
 }
 
 // Placement is one player-built structure in the shared world.
@@ -359,8 +366,50 @@ func (w *World) tickLoop() {
 				deliver(ch, ev)
 			}
 			w.mu.Unlock()
+			w.processRespawns()
 		}
 	}
+}
+
+// SetRespawn registers where downed players come back to life (the game layer
+// owns this; the world doesn't know any hub's coordinates). Set once at startup.
+func (w *World) SetRespawn(fn func() (area string, x, y int)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.respawnAt = fn
+}
+
+// processRespawns revives every player whose knock-out timer has lapsed, at the
+// registered hub spawn with full HP, and tells their new area. Runs each tick
+// (server-authoritative, so it works regardless of client type). No-op until a
+// respawn point is set.
+func (w *World) processRespawns() {
+	w.mu.Lock()
+	if w.respawnAt == nil {
+		w.mu.Unlock()
+		return
+	}
+	now := time.Now()
+	var revived []*Player
+	for _, p := range w.players {
+		if p.HP <= 0 && !p.DownedUntil.IsZero() && p.DownedUntil.Before(now) {
+			revived = append(revived, p)
+		}
+	}
+	if len(revived) == 0 {
+		w.mu.Unlock()
+		return
+	}
+	area, x, y := w.respawnAt()
+	for _, p := range revived {
+		p.HP = p.MaxHP
+		p.DownedUntil = time.Time{}
+		p.Area = area
+		p.X, p.Y = x, y
+		p.LastMoved = now
+		w.broadcastToArea(area, Event{Type: EventPlayerRespawn, Player: p.Name, Target: p.Name, Area: area, X: x, Y: y})
+	}
+	w.mu.Unlock()
 }
 
 func (w *World) Close() {

@@ -1,12 +1,18 @@
 # Weapon Plan — Arms, the Hunt, and Honourable Combat
 
-> **Status:** 📐 Design only. This plan is **blocked on the wildlife branch
-> landing in `main`** (`claude/wildlife-game-plan-1qbybr` → `main`). Weapons
-> unify two things — hunting wild animals and dueling other players — and the
-> live-creature registry, the per-creature `HP`/`MutateCreature` primitive, and
-> the `hunt()` action all live on that branch today. Building before the merge
-> would fork the combat code. Once wildlife is in `main` (and reconciled with
-> Phase 9 trade/claims/build), start at Phase 1 below.
+> **Status:** ✅ Phases 1–3 shipped (wildlife having landed in `main`, #26).
+> Players now have HP and an atomic damage path (`MutatePlayer`/`Strike`/
+> `Respawn` + auto-respawn on the tick); a craftable weapon catalog
+> (knife/spear/bow + arrows) wielded by ownership; and one unified `f` strike
+> that hunts animals anywhere and, **only out in the open Wilds** (the hub and
+> claimed homesteads stay sanctuaries), turns on other players — a cozy
+> knock-out with no item loss, reviving at Durst HQ. A bottom-line HP bar and
+> downed banner show in both clients via the shared `Hint`.
+>
+> **Follow-ups (Phase 4):** bespoke HD pixel HP pips + a hit-spark FX (today
+> weapons fall back to gem icons and feedback is a toast), `/wield` + `/pvp`
+> commands, weapon cooldowns + respawn-immunity tuning, a compendium "Arms"
+> section, and the optional "companion defends you" stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

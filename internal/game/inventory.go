@@ -197,6 +197,29 @@ var Items = []Item{
 		About: "A hafted pickaxe. Breaks rock; does not break ground policy.",
 		Found: "Crafted from an Iron Pick-head and Timber.",
 		Use:   "In build mode, break a hill boulder to clear it and yield Cut Stone."},
+	// Arms — crafted weapons (docs/WEAPON_PLAN.md). Wielded by owning them; the
+	// best one in the pack lands your strike. They hunt wildlife anywhere and,
+	// out in the open Wilds, can be turned on other players.
+	{ID: "knife", Name: "Flint Knife", Glyph: '†', Hex: "#D9C7A3",
+		Source: Crafted, Rarity: Uncommon,
+		About: "A knapped flint blade on a short haft. Quick and close.",
+		Found: "Crafted from Cut Stone and Timber.",
+		Use:   "f — strike what you face. A keener blow than bare hands."},
+	{ID: "spear", Name: "Spear", Glyph: '↑', Hex: "#C8A86A",
+		Source: Crafted, Rarity: Uncommon,
+		About: "A fire-hardened haft tipped with stone. Hits hard up close.",
+		Found: "Crafted from Cut Stone and Timber.",
+		Use:   "f — strike what you face. Heavier than a knife."},
+	{ID: "bow", Name: "Hunter's Bow", Glyph: ')', Hex: "#A6753F",
+		Source: Crafted, Rarity: Uncommon,
+		About: "A supple bow of yew and cured leather. Strikes at range.",
+		Found: "Crafted from Timber, Cured Leather and a Feather.",
+		Use:   "f — loose an Arrow at what you face, several tiles off."},
+	{ID: "arrow", Name: "Arrows", Glyph: '»', Hex: "#9C8D67",
+		Source: Crafted, Rarity: Common,
+		About: "Flint-tipped, feather-fletched shafts. Spent when loosed.",
+		Found: "Crafted from Timber and a Feather.",
+		Use:   "Ammunition for the Hunter's Bow — one per shot."},
 }
 
 var itemIndex = func() map[string]Item {
