@@ -563,6 +563,47 @@ func blitCreature(img *image.RGBA, c world.Creature, frame, scale, fc, fr, origi
 	}
 }
 
+// drawCreatureIcon draws a species' front-facing portrait scaled to fit box,
+// for the wildlife codex — the same sprite the world uses, tinted by the species
+// hue. Mirrors drawItemIcon: trim to the art's bounding box, integer-scale, and
+// center.
+func drawCreatureIcon(img *image.RGBA, x, y, box int, kind string) {
+	bmp, ok := CreatureBitmap(kind, world.DirS, 0)
+	if !ok {
+		return
+	}
+	sp, _ := SpeciesByKind(kind)
+	body := mustHex(sp.Hex)
+
+	minX, minY, maxX, maxY := 1<<30, 1<<30, -1, -1
+	for r, row := range bmp {
+		for c, ch := range row {
+			if ch != ' ' && ch != '.' {
+				minX, maxX = min(minX, c), max(maxX, c)
+				minY, maxY = min(minY, r), max(maxY, r)
+			}
+		}
+	}
+	if maxX < 0 {
+		return
+	}
+	bw, bh := maxX-minX+1, maxY-minY+1
+	sc := min(box/bw, box/bh)
+	if sc < 1 {
+		sc = 1
+	}
+	offX := x + (box-bw*sc)/2
+	offY := y + (box-bh*sc)/2
+	for r := minY; r <= maxY; r++ {
+		row := []rune(bmp[r])
+		for c := minX; c <= maxX && c < len(row); c++ {
+			if col, opaque := creaturePixel(row[c], body); opaque {
+				fillRect(img, offX+(c-minX)*sc, offY+(r-minY)*sc, sc, sc, colorfulToRGBA(col))
+			}
+		}
+	}
+}
+
 // creaturePixel resolves an animal sprite code to a color, shaded from the
 // species body colour. Codes: P body, p shade, D dark, o outline, L light, W
 // highlight, e eye, n nose/muzzle, '.' transparent.

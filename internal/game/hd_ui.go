@@ -851,10 +851,11 @@ func DrawCraftPanel(img *image.RGBA, ctx *Ctx, sel int) {
 type compLine struct {
 	text   string
 	col    color.RGBA
-	indent int   // 0 flush, 1 indented under an entry
-	item   *Item // draw this item's portrait before the text
-	dim    bool  // render the portrait dimmed (not yet found)
-	acc    int   // >0: draw this accessory's icon before the text
+	indent int    // 0 flush, 1 indented under an entry
+	item   *Item  // draw this item's portrait before the text
+	dim    bool   // render the portrait dimmed (not yet found / sighted)
+	acc    int    // >0: draw this accessory's icon before the text
+	crit   string // non-empty: draw this species' portrait before the text
 }
 
 // hdInline makes a glyph-client string safe for the HD bitmap font (ASCII only),
@@ -926,13 +927,13 @@ func compendiumLinesHD(ctx *Ctx) []compLine {
 	ls = append(ls, compLine{text: fmt.Sprintf("WILDLIFE  %d/%d SIGHTED", sighted, total), col: hudAccent})
 	for _, b := range Bestiary(ctx.Compendium) {
 		if b.Seen {
-			ls = append(ls, compLine{text: hdInline(b.Name + "   " + b.Habitat), col: hudWhite})
+			ls = append(ls, compLine{text: hdInline(b.Name + "   " + b.Habitat), col: hudWhite, crit: b.Kind})
 			ls = append(ls, compLine{text: hdInline("drops " + b.Drops), col: hudDim, indent: 1})
 			if b.Tame != "" {
 				ls = append(ls, compLine{text: hdInline("tame with a " + b.Tame), col: hudDim, indent: 1})
 			}
 		} else {
-			ls = append(ls, compLine{text: "? ? ?", col: hudDim, dim: true})
+			ls = append(ls, compLine{text: "? ? ?", col: hudDim, crit: b.Kind, dim: true})
 			ls = append(ls, compLine{text: "not yet sighted", col: hudDim, indent: 1})
 		}
 	}
@@ -985,7 +986,7 @@ func DrawCompendiumPanel(img *image.RGBA, ctx *Ctx, scroll *int) {
 	for _, l := range lines {
 		lead := l.indent * indentPx
 		switch {
-		case l.item != nil:
+		case l.item != nil, l.crit != "":
 			lead = itemGutter
 		case l.acc > 0:
 			lead = accGutter
@@ -1019,6 +1020,16 @@ func DrawCompendiumPanel(img *image.RGBA, ctx *Ctx, scroll *int) {
 			drawItemIcon(img, ox+pad, iy, itemBox, *l.item)
 			if l.dim { // not yet found — show the silhouette, darkened
 				pixel.Shade(img, ox+pad, iy, itemBox, itemBox, 0.55)
+			}
+			x = ox + pad + itemGutter
+		case l.crit != "":
+			iy := y - (itemBox-lh)/2 // center the portrait across the entry's lines
+			if iy < bodyTop {
+				iy = bodyTop
+			}
+			drawCreatureIcon(img, ox+pad, iy, itemBox, l.crit)
+			if l.dim { // not yet sighted — a darkened silhouette
+				pixel.Shade(img, ox+pad, iy, itemBox, itemBox, 0.6)
 			}
 			x = ox + pad + itemGutter
 		case l.acc > 0:
