@@ -61,6 +61,7 @@ type Player struct {
 	Facing    Dir
 	Style     int // avatar sprite style index
 	Accessory int // avatar accessory index (0 = none)
+	Weapon    string // wielded weapon item id ("" = unarmed); drawn in-hand in HD
 	LastMoved time.Time
 
 	// Combat (docs/WEAPON_PLAN.md). Live session state, never persisted — you
@@ -603,6 +604,17 @@ func (w *World) SetColor(name string, c lipgloss.Color) bool {
 	}
 	p.Color = c
 	return true
+}
+
+// SetWeapon records the weapon a player has in hand (item id, "" = unarmed) so
+// it draws on every client's view of them. A no-op (no lock churn) when it
+// hasn't changed, since the renderer syncs this every frame.
+func (w *World) SetWeapon(name, item string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if p, ok := w.players[name]; ok {
+		p.Weapon = item
+	}
 }
 
 // SetAvatar changes a player's sprite style and accessory. Returns false if the

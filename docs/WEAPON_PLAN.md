@@ -34,8 +34,19 @@
 > Adds a `Legendary` rarity tag. Tests cover the registry race, persistence,
 > placement standability, and the once-per-world claim.
 >
-> **Still open:** a dedicated compendium "Arms" section (weapons list under
-> their gather source today) and the optional "companion defends you" stretch.
+> **Weapon-in-hand sprites shipped:** your wielded arm now draws on the HD
+> avatar — `world.Player.Weapon` carries it (synced each frame from the
+> renderer, broadcast like style/accessory), `AvatarBitmap` overlays a per-shape
+> weapon sprite (blade / short blade / polearm / bow / sling, with glowing
+> variants for the two legends) the same way a hat overlays, and `spritePixel`
+> gained steel/haft/glow codes. As with hats, this is HD-only — the glyph client
+> draws each player as a single name token, so there's no sprite to hang a
+> weapon on there.
+>
+> **Still open:** per-weapon *special abilities* (knockback / bleed / pierce /
+> cleave — today weapons differ by damage, reach, cooldown and ammo only), a
+> dedicated compendium "Arms" section, and the optional "companion defends you"
+> stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

@@ -66,6 +66,7 @@ type area struct {
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
 	lastStrike time.Time         // when this session last landed a blow (weapon cooldown)
 	hurtUntil  time.Time         // brief on-hit flash window after taking damage
+	wieldSync  string            // last wielded weapon pushed to the world (avoids per-frame churn)
 
 	// Hidden legends: the deterministic cell each unique weapon lies in, resolved
 	// once in Init (docs/WEAPON_PLAN.md). Whether one still shows is the world's
@@ -1427,6 +1428,13 @@ func (a *area) collectItem() bool {
 // returns it with its absolute top-left origin. Shared by the glyph View and
 // the HD pixel renderer.
 func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
+	// Keep our wielded weapon current on the shared player record so it draws
+	// in-hand on every client's view of us — synced here (the one place both
+	// clients run each frame) but only on a change, to avoid lock churn.
+	if wid := game.WieldedWeapon(a.ctx).Item; wid != a.wieldSync {
+		a.ctx.World.SetWeapon(a.ctx.Name, wid)
+		a.wieldSync = wid
+	}
 	// Center the 2×2 body (not its top-left corner) in the window, so the avatar
 	// sits dead center in both the glyph and HD views.
 	ox, oy := a.wx-(vw-game.PlayerW)/2, a.wy-(vh-game.PlayerH)/2

@@ -405,7 +405,7 @@ func DrawCharPanel(img *image.RGBA, ctx *Ctx, field int) {
 	s := hudScale(W)
 	lh := 16 * s
 	aScale := s * 3
-	bmp := AvatarBitmap(cur.Style, cur.Accessory, world.DirS, 0)
+	bmp := AvatarBitmap(cur.Style, cur.Accessory, "", world.DirS, 0)
 	avW, avH := len([]rune(bmp[0]))*aScale, len(bmp)*aScale
 
 	hatVal := AccessoryName(cur.Accessory)
@@ -1601,7 +1601,7 @@ func lipToRGBA(c lipgloss.Color) color.RGBA { return colorfulToRGBA(playerColor(
 func drawAvatarInto(img *image.RGBA, x, y, scale, style, accessory int, col lipgloss.Color) {
 	body := playerColor(col)
 	accMain, accShade := accessoryColors(accessory)
-	bmp := AvatarBitmap(style, accessory, world.DirS, 0)
+	bmp := AvatarBitmap(style, accessory, "", world.DirS, 0)
 	for r := 0; r < len(bmp); r++ {
 		row := []rune(bmp[r])
 		for c := 0; c < len(row); c++ {
