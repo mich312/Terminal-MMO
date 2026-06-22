@@ -1,9 +1,11 @@
 # Wildlife Plan — Living Things in the Wilds
 
-> **Status:** ⬜ Not started. This plan introduces the **first autonomous,
-> server-authoritative entities** in Durst World. Phase 1 (the live-creature
-> spine + an MVP slice of biome fauna) is the shippable target; Phases 2–3
-> (hunting and taming/companions) build on that spine.
+> **Status:** ✅ Phase 1 shipped — the live-creature registry + the wildlife
+> stepper, an MVP slice of biome fauna rendered in both clients, and the
+> observe/compendium loop. ✅ Phase 2 shipped — hunting: species HP + drop
+> tables feeding the inventory, an `f`-to-strike action settled atomically so
+> two hunters can't double-loot one kill (no PvP, no player damage). ⬜ Phase 3
+> (taming / companions) remains, building on the same `Owner` field + registry.
 
 > How wildlife lands on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),
@@ -186,21 +188,25 @@ persist, in `internal/store`:
 
 ---
 
-## Phase 2 — Hunting (the first combat in the game)
+## Phase 2 — Hunting (the first combat in the game) ✅ shipped
 
-This is a genuine new system, so it's its own phase. Kept minimal and
-non-griefy (it's a cozy world):
+A genuine new system, kept minimal and non-griefy (it's a cozy world). As built:
 
-- Give species `MaxHP` and a `Drops []ItemDrop` table feeding existing
-  `inventory.go` items (Deer → Hide/Meat, etc.), and add those item ids.
-- A **catch/strike action**: `e` (or a tool item) on an adjacent creature calls
-  `World.MutateCreature` to decrement `HP` atomically; at 0 it despawns and rolls
-  drops into the actor's inventory. Atomic mutation is what stops two players
-  double-killing one animal.
-- Add `EventCreatureHurt` (or fold into `EventCreatureMoved`) for hit feedback.
-- Flee behavior already exists, so struck animals bolt — the chase is the game.
-- **No PvP, no player damage, no aggressive mobs in MVP.** Predators that fight
-  back are a later flag on `Species`.
+- Species carry `MaxHP` and a `Drops []Drop` table (item id + count range +
+  optional chance) feeding the existing `inventory.go` catalog — new hunting
+  spoils `meat`/`hide`/`pelt`/`feather` (fish drop the existing `fish`),
+  grouped under a new "Hunting spoils" compendium section with their own icons.
+- A **strike action on `f`** (kept separate from `e`-observe, so peaceful play
+  stays the default and hunting is deliberate; `f` is wired through both the
+  glyph and HD clients). It calls `World.MutateCreature` to decrement `HP`
+  **atomically**: the blow that brings HP to 0 is the one that despawns the
+  animal and rolls `RollDrops` into the hunter's pack — so two hunters striking
+  one creature can never both claim the kill (`TestMutateCreatureAtomicKill`).
+- **No new events.** A struck animal flips to `flee` state and the existing
+  poll/tick redraw shows it bolt or vanish — consistent with Phase 1's
+  no-fan-out rendering. Discrete hit events can come later if needed.
+- **No PvP, no player damage, no aggressive mobs.** Predators that fight back
+  are a later flag on `Species`.
 
 ## Phase 3 — Taming & companions
 

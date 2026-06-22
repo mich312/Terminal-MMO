@@ -8,6 +8,8 @@ package wilds
 
 import (
 	"fmt"
+	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,6 +62,7 @@ type area struct {
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
 	compendium map[string]bool   // wildlife species this player has observed
+	rng        *rand.Rand        // per-session stream for hunting drop rolls
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
 
@@ -98,6 +101,7 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	if a.compendium == nil {
 		a.compendium = map[string]bool{}
 	}
+	a.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	if a.ctx.Inventory == nil {
 		a.ctx.Inventory = map[string]int{}
 	}
@@ -304,6 +308,67 @@ func (a *area) observe(c world.Creature) {
 	a.setToast("you spot a " + name + " — added to your field notes")
 }
 
+// noteSpecies records a species in the compendium (and persists it) the first
+// time the player encounters it — shared by observing and hunting, since you
+// learn an animal by catching it too.
+func (a *area) noteSpecies(kind string) {
+	if a.compendium[kind] {
+		return
+	}
+	a.compendium[kind] = true
+	a.ctx.Store.MarkSpecies(a.ctx.Name, kind)
+}
+
+// hunt strikes an adjacent creature. A strike decrements its HP atomically (so
+// two hunters can't both claim one kill); a non-killing hit just spooks it, and
+// the blow that drops it despawns the animal and rolls its spoils into the pack.
+// No PvP, no player damage — only wildlife can be hunted.
+func (a *area) hunt(c world.Creature) {
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if !ok {
+		return
+	}
+	a.noteSpecies(c.Kind)
+
+	killed := false
+	changed := a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		if cc.HP <= 0 {
+			return false // already down — someone else's catch
+		}
+		cc.HP--
+		cc.State = "flee"
+		if cc.HP <= 0 {
+			killed = true
+		}
+		return true
+	})
+	if !changed {
+		a.setToast("the " + sp.Name + " is already gone")
+		return
+	}
+	if !killed {
+		a.setToast("you strike the " + sp.Name + " — it bolts")
+		return
+	}
+
+	a.ctx.World.DespawnCreature(c.ID)
+	drops := game.RollDrops(sp, a.rng)
+	if len(drops) == 0 {
+		a.setToast("you catch the " + sp.Name)
+		return
+	}
+	parts := make([]string, 0, len(drops))
+	for id, n := range drops {
+		a.ctx.Inventory[id] += n
+		for i := 0; i < n; i++ {
+			a.ctx.Store.AddItem(a.ctx.Name, id)
+		}
+		parts = append(parts, fmt.Sprintf("+%d %s", n, itemName(id)))
+	}
+	sort.Strings(parts) // stable, readable toast
+	a.setToast("you catch the " + sp.Name + " — " + strings.Join(parts, ", "))
+}
+
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
@@ -467,6 +532,12 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			return a, nil
 		}
+		if ks == "f" { // hunt an adjacent animal
+			if c, ok := a.creatureAdjacent(); ok {
+				a.hunt(c)
+			}
+			return a, nil
+		}
 		if a.showMap {
 			a.showMap = false // any other key closes the map
 		}
@@ -518,6 +589,13 @@ func (a *area) Hint() string {
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name
 	}
+	if c, ok := a.creatureAdjacent(); ok {
+		name := c.Kind
+		if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
+			name = sp.Name
+		}
+		return "e observe · f hunt the " + name
+	}
 	if a.boardAdjacent() {
 		return "e — read the notice board"
 	}
@@ -550,7 +628,7 @@ func (a *area) Prompt() (string, bool) {
 		if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
 			name = sp.Name
 		}
-		return "e — observe the " + name, true
+		return "e observe · f hunt the " + name, true
 	}
 	if mx, my, ok := a.stationAdjacent(); ok {
 		if pl, ok := a.ctx.World.PlacementAt(mx, my); ok {

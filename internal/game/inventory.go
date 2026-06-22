@@ -31,6 +31,7 @@ const (
 	Worksite               // harvested at a settlement worksite (field, quarry, lumber, jetty)
 	CaveFind               // mined or gathered down in the caves
 	Crafted                // made at a workbench or a machine, not gathered
+	Hunt                   // taken from wild animals (the hunting loop)
 )
 
 func (s Source) String() string {
@@ -41,6 +42,8 @@ func (s Source) String() string {
 		return "Cave"
 	case Crafted:
 		return "Crafted"
+	case Hunt:
+		return "Hunt"
 	default:
 		return "Forage"
 	}
@@ -147,6 +150,23 @@ var Items = []Item{
 		Source: Crafted, Rarity: Common,
 		About: "An amber-lit lamp that casts a warm, compliant glow.",
 		Found: "Crafted from a Gold Nugget and Cave Amber; powers a Lamppost."},
+	// Hunting spoils — taken from wild animals (creature.go's drop tables).
+	{ID: "meat", Name: "Game Meat", Glyph: '◖', Hex: "#C65B5B",
+		Source: Hunt, Rarity: Common,
+		About: "A fresh cut of wild game.",
+		Found: "Caught from rabbits, deer and other animals in the Wilds."},
+	{ID: "hide", Name: "Raw Hide", Glyph: '▱', Hex: "#A6764A",
+		Source: Hunt, Rarity: Common,
+		About: "A rough hide, ready for curing.",
+		Found: "Taken from deer in the Wilds."},
+	{ID: "pelt", Name: "Fox Pelt", Glyph: '▰', Hex: "#E0772E",
+		Source: Hunt, Rarity: Uncommon,
+		About: "A soft russet pelt.",
+		Found: "Taken from foxes in the forest and hills."},
+	{ID: "feather", Name: "Feather", Glyph: '✦', Hex: "#6FB7D8",
+		Source: Hunt, Rarity: Common,
+		About: "A light, banded flight feather.",
+		Found: "Gathered from birds in the Wilds."},
 }
 
 var itemIndex = func() map[string]Item {

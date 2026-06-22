@@ -62,3 +62,33 @@ func TestMutateCreature(t *testing.T) {
 		t.Fatalf("mutation not applied: got (%d,%d), want (5,6)", got.X, got.Y)
 	}
 }
+
+// TestMutateCreatureAtomicKill is the hunting race the atomic primitive exists
+// to settle: two hunters strike a 1-HP animal; exactly one lands the kill, and
+// the second strike is a clean no-op (so loot can't be rolled twice).
+func TestMutateCreatureAtomicKill(t *testing.T) {
+	w := New()
+	defer w.Close()
+	w.SpawnCreature(Creature{ID: "deer-1", Kind: "deer", Area: "wilds", HP: 1})
+
+	strike := func() (changed, killed bool) {
+		changed = w.MutateCreature("deer-1", func(c *Creature) bool {
+			if c.HP <= 0 {
+				return false // already down — not our kill
+			}
+			c.HP--
+			killed = c.HP <= 0
+			return true
+		})
+		return
+	}
+
+	c1, k1 := strike()
+	if !c1 || !k1 {
+		t.Fatalf("first strike: changed=%v killed=%v, want both true", c1, k1)
+	}
+	c2, k2 := strike()
+	if c2 || k2 {
+		t.Fatalf("second strike on a downed creature: changed=%v killed=%v, want both false", c2, k2)
+	}
+}

@@ -806,6 +806,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			// under the ghost (the area reinterprets movement as ghost movement).
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 			draw()
+		} else if key == "f" { // hunt an adjacent animal
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+			draw()
 		} else if key == "m" { // toggle the area overview map
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 			draw()
