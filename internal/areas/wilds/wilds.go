@@ -829,7 +829,7 @@ func (a *area) minimap() string {
 // boardEntries is the notice board's text: a welcome and a directory of the
 // doors and gates around the green. Shared by the glyph panel and the HD slide.
 func boardEntries() (title string, lines []string) {
-	return "The Hamlet Notice Board", []string{
+	return "Notice Board", []string{
 		"Welcome, traveller. The doors around the green:",
 		"",
 		"  ⌂  Durst HQ — the keep at the heart",
@@ -837,7 +837,7 @@ func boardEntries() (title string, lines []string) {
 		"  K  Kraftwerk — west, by the smithy",
 		"  D  Demo Center — north, by the chapel",
 		"",
-		"Two old gates stand beyond the hamlet:",
+		"Two old gates stand beyond:",
 		"  ◈  Whispering Gate (east) — answer its riddle,",
 		"     or offer an Ice Crystal",
 		"  ◈  Sunken Gate (north) — the village pools",

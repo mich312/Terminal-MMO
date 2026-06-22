@@ -2,13 +2,13 @@ package worldgen
 
 import "math"
 
-// The hub town is the redesigned Wilds spawn — a forest hamlet rather than a
-// stamped square. A central green commons (the HQ keep, a well, a little market
-// and street lamps, the HQ portal at its heart) sits in an irregular clearing
-// with a noise-ragged tree line; worn dirt trails radiate out to the outlying
-// buildings — smithy, market hall, chapel — each tucked in its own small glade,
-// and on to the gates. The portal/gate coordinates (see Landmarks and Gates)
-// are unchanged, and the trails keep every door reachable just as before.
+// The hub town is the redesigned Wilds spawn — a forest settlement rather than
+// a stamped square. A central green commons (the HQ keep, a well, a little
+// market and street lamps, the HQ portal at its heart) sits in an irregular
+// clearing with a noise-ragged tree line; worn dirt trails radiate out to the
+// outlying buildings — smithy, market hall, chapel — each tucked in its own
+// small glade, and on to the gates. The portal/gate coordinates (see Landmarks
+// and Gates) are unchanged, and the trails keep every door reachable as before.
 //
 // Everything renders through the existing settlement palette (meadow, dirt
 // trail, well, stall, brazier, building anchor/body), so both the glyph and HD
@@ -41,7 +41,7 @@ var hubBldgs = []hubBldg{
 // the trees. The central green (origin) is handled separately.
 var hubGlades = [][2]int{{16, 0}, {-16, 0}, {0, 12}, {22, 0}, {0, 18}}
 
-// Hamlet furniture, placed asymmetrically on the green and clear of both trail
+// Hub furniture, placed asymmetrically on the green and clear of both trail
 // bows (all cells have |x|>=4 and |y|>=4, so a meandering trail never runs onto
 // them): a fountain centrepiece, a readable notice board by a little west-side
 // market, and a pair of street lamps.
@@ -56,15 +56,15 @@ var (
 // player stands beside it (to offer the "read" action).
 func HubBoard() (int, int) { return hubBoard[0], hubBoard[1] }
 
-// hubCell returns the redressed cell for the hub hamlet, or ok=false for cells
-// the hamlet does not cover (so generation falls through to settlements/biome).
+// hubCell returns the redressed cell for the hub town, or ok=false for cells
+// the hub does not cover (so generation falls through to settlements/biome).
 // It is consulted after the portal/gate overrides in At, so those cells win.
 func (g *Generator) hubCell(x, y int) (Cell, bool) {
 	// Buildings first — their footprints sit out on the trails, in their glades.
 	if c, ok := hubBuilding(x, y); ok {
 		return c, true
 	}
-	// Hamlet furniture always wins its cell, regardless of where the ragged
+	// Hub furniture always wins its cell, regardless of where the ragged
 	// clearing rim falls, so a fountain/board/lamp/stall never goes missing.
 	if x == hubFountain[0] && y == hubFountain[1] {
 		return Cell{Biome: Water, Glyph: '◉', Color: "#7DF0FF",
@@ -106,7 +106,7 @@ func (g *Generator) hubCell(x, y int) (Cell, bool) {
 	return g.hubMeadow(x, y, d, true), true
 }
 
-// hubMeadow is the hamlet's grassy ground: natural meadow scatter (flowers,
+// hubMeadow is the green's grassy ground: natural meadow scatter (flowers,
 // tufts, the odd bush) plus, when canopy is set, the occasional shade tree or
 // old stump so the commons isn't a bare lawn. The ground is kept clear of
 // blocking props right around the spawn heart so a body can always step out.
