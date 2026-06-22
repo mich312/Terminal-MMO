@@ -54,7 +54,7 @@ func TestCmdWantsClassic(t *testing.T) {
 // them in HD keeps the requested area (rather than falling back to the lobby,
 // which is what enterHD does only for an area that can't draw in pixels).
 func TestEnterHDArcadeAndGames(t *testing.T) {
-	for _, id := range []string{"arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout"} {
+	for _, id := range []string{"arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout", "bomberman", "2048"} {
 		t.Run(id, func(t *testing.T) {
 			w := world.New()
 			defer w.Close()

@@ -4,8 +4,8 @@ A small multiplayer terminal world for Durst Group employees, played over
 SSH. Walk around the ASCII lobby of Durst HQ, bump into colleagues in real
 time, chat (proximity-based — gossip stays local), sign the guestbook, and
 step through portals into the Presentation Wing, Kraftwerk, Demo Center and
-the Arcade — a hall of cabinets, each a minigame (Sokoban, Maze, Snake, Tetris,
-Pong, Breakout).
+the Arcade — a hall of cabinets, each a minigame (Sokoban, Maze, Snake,
+Tetris, Pong, Breakout, Bomberman, 2048).
 
 ```
 ssh -p 2222 yourname@durstworld.example.com
@@ -215,6 +215,10 @@ from the lobby) — a neon hall of cabinets, each a portal into a self-contained
 - **Pong** (`◊`) — you vs. the house AI, first to 7 (W/S move). `r` rematch.
 - **Breakout** (`◊`) — bounce the ball off your paddle to clear the bricks
   (A/D move). `r` restarts.
+- **Bomberman** (`◊`) — drop bombs (`e`) to blow up blocks and the roaming
+  foes; mind the blast. `r` restarts.
+- **2048** (`◊`) — slide and merge the numbered tiles to reach 2048
+  (arrows/WASD). `r` restarts.
 
 Most minigames are **keypress-driven** (the HD client only forwards key events to
 an area, never a clock), so they play identically in both clients. Real-time

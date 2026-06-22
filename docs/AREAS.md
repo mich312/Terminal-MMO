@@ -25,12 +25,13 @@ destination (building it from the registry with `game.NewArea`).
    │ LOBBY  │ │ PRES│ │KRAFT│ │DEMO│ │           ARCADE           │
    │  (HQ)  │ │ WING│ │WERK │ │CTR │ │     neon hall, cabinets     │
    └─┬──────┘ └──┬──┘ └──┬──┘ └─┬──┘ └─┬──┬──┬──┬──┬──┬──┬─────────┘
- '4' │ guestbook │'0'    │'0'   │'0'   │S │M │N │T │P │B │ c (spare)
-     │           │       │      │      ▼  ▼  ▼  ▼  ▼  ▼
+ '4' │ guestbook │'0'    │'0'   │'0'   │S M N T P / B Z G (cabinets)
+     │           │       │      │      ▼ ▼ ▼ ▼ ▼   ▼ ▼ ▼
      └───────────┴───────┴──────┘   each cabinet is a portal into a game:
-        every hall's '0' door        Sokoban Maze Snake Tetris Pong Breakout
-        → "wilds" (return to hub)     — each has a door/key back to the Arcade,
-                                        and the Arcade's ◈ door → the Wilds.
+        every hall's '0' door        Sokoban Maze Snake Tetris Pong
+        → "wilds" (return to hub)     Breakout Bomberman 2048 — each has a
+                                      door/key back to the Arcade, and the
+                                      Arcade's ◈ door → the Wilds.
 ```
 
 Games split two ways: **keypress** (Sokoban, Maze) advance only on input;
