@@ -1078,7 +1078,9 @@ func (a *area) View(width, height int) string {
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
 	} else if a.building {
-		view = ui.Overlay(view, a.buildPanel(), 2, 1) // left-anchored palette
+		panel := a.buildPanel()
+		pw := lipgloss.Width(panel)
+		view = ui.Overlay(view, panel, (width-pw)/2, 1) // centered, like the other panels
 		if msg, show := a.Toast(); show {
 			th := a.theme()
 			view = ui.Overlay(view, th.Toast.Render(msg), (width-lipgloss.Width(th.Toast.Render(msg)))/2, height-2)

@@ -869,21 +869,11 @@ func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool
 			contentW = w
 		}
 	}
-	pw := contentW + pad*2
-	if pw > W-4 {
-		pw = W - 4
-	}
 	ph := pad*2 + lh + lh/2 + rows*lh + lh/2 + lh + lh
-	// Left-anchored, below the area title / claim banner.
-	ox, oy := pad, 3*lh
-	if oy+ph > H-2 {
-		oy = H - 2 - ph
-	}
-	if oy < 2 {
-		oy = 2
-	}
-	// Translucent backing (not an opaque card) so the ghost and player stay visible
-	// through the palette while you aim — build mode keeps the world live.
+	// Centered like the other panels (panelBox), on a translucent shade + frame
+	// rather than an opaque card, so the player and the ghost stay visible through
+	// the palette while build mode keeps the world live.
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
 	pixel.Shade(img, ox, oy, pw, ph, 0.7)
 	pixel.Frame(img, ox, oy, pw, ph)
 	x := ox + pad
