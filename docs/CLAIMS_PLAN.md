@@ -46,24 +46,35 @@ next builder — they step a few tiles over).
 
 ## Architecture
 
-### Claims are placements
+### Claims are shared world state (like the gate pool)
 
-A claim is a `world.Placement` with `Kind == "charter"`, owned by the claimant's
-username, persisted and broadcast like any structure. Its opaque `State` is:
+> **Refined during step 2.** The plan first modelled a claim as a `placements`
+> row. In practice a claim is a *right over a region*, not a tile object — storing
+> it in the placements map pollutes the terrain overlay and collision (a charter
+> would sit on a solid building cell and fight the renderer). So claims live in
+> `world` as their own set, persisted via a callback exactly like the co-op gate
+> pool (`gatePool`/`gatePersist`) — an established pattern here, not new
+> architecture. The **wilds proximity buffer still derives from the placements
+> map** (a foreign-owned structure nearby), so only the deeds moved.
+
+A claim is keyed by worldgen plot id and carries its own parcel box + lease clock:
 
 ```go
 type Claim struct {
-    PlotID        string  // worldgen plot id this charter deeds (town claims)
-    MinX, MinY    int     // parcel bbox, snapshotted at claim time …
-    MaxX, MaxY    int     // … so the claim stays self-describing if worldgen shifts
-    LastTouchUnix int64   // refreshed while the owner is present; drives lapse
+    PlotID                 string // worldgen plot id this deed covers
+    Owner                  string // username of the holder
+    MinX, MinY, MaxX, MaxY int    // parcel bbox, snapshotted at claim time …
+    LastTouch              int64  // … and refreshed while the owner is present
 }
 ```
 
-Snapshotting the parcel bbox into the charter (rather than recomputing from
+Snapshotting the parcel bbox into the claim (rather than recomputing from
 worldgen every time) mirrors how fog-of-war stores chunk bitmasks: the generator
 is the *source* of plots, but a stored claim carries its own bounds so a later
-worldgen tweak can't silently move someone's deed.
+worldgen tweak can't silently move someone's deed. `world.ClaimPlot` arbitrates
+atomically under the world mutex (so two simultaneous claimants can't both win),
+taking a lease cutoff from the game so the *lapse policy* stays in the game layer
+while the world stays policy-free.
 
 ### Plots come from worldgen (step 1)
 
@@ -95,11 +106,17 @@ the game decides build rules).
 No background simulation — the same pattern as `Machine.Settle`. A charter's
 `LastTouchUnix` is refreshed whenever the owner stands in or builds on the plot.
 On any access (someone walking in, another player trying to claim, the HUD naming
-it) a pure check `now - LastTouchUnix > leasePeriod` decides if the claim has
-lapsed; a lapsed claim is treated as released and the plot becomes re-deedable.
+it) a pure check `now - LastTouch > leasePeriod` decides if the claim has lapsed;
+a lapsed claim is treated as released and the plot becomes re-deedable.
 Deterministic, costs nothing while nobody looks, no per-tick RNG. `leasePeriod`
-starts at ~7 real days, one tunable constant. The wilds buffer lapses the same
-way off its structures' owner activity.
+starts at ~7 real days, one tunable constant.
+
+> **Wilds-buffer lapse is deferred.** A town claim carries its own `LastTouch`, so
+> its lapse is self-contained. The diffuse wilds buffer has no single record to
+> age — fairly decaying it needs a per-owner presence signal, which folds in with
+> the broader *abandoned-structure cleanup* (a later step). For now a wilds buffer
+> is live as long as its structure stands (and a structure is already
+> owner-demolishable), which delivers the anti-grief protection without the timer.
 
 ### The claim index
 
@@ -123,13 +140,15 @@ extra storage.
 
 ## Sequencing
 
-1. **`worldgen.PlotAt`** + tests — pure, self-contained, no game changes (safest
-   to land first). Determinism, footprint coverage, anchor recovery from any body
-   cell, `ok=false` off-building.
-2. **Claim model + Workspace Charter placeable + the `world` claim index +
-   `BuildRight` + `settle` (lapse).** Tests: a claim reserves its plot, a second
-   claimant fails, a lapsed claim is re-deedable, the owner's presence refreshes
-   the lease, and the wilds buffer rejects a foreign builder but not the owner.
+1. ✅ **`worldgen.PlotAt`** + tests — pure, self-contained, no game changes.
+   Determinism, footprint coverage, anchor recovery from any body cell,
+   `ok=false` off-building.
+2. ✅ **Claim model (`world` claims set + `game` policy) + `BuildRight` + lapse.**
+   `world.{ClaimPlot,ReleaseClaim,TouchClaim,ClaimAt,PlacementsNear}`;
+   `game.{BuildRight,ClaimWorkspace,ReleaseWorkspace,TouchWorkspace,ParcelBox,
+   ClaimActive,WorkspaceAt}`. Tested: a claim reserves its plot, a second claimant
+   fails, a lapsed claim is re-deedable, the owner's presence refreshes the lease,
+   and the wilds buffer rejects a foreign builder but not the owner. (No UI yet.)
 3. **Wire `BuildRight` into `canBuildAt` / `Demolish`**, claim & release in the
    build flow, and the HUD "Anna's Workspace, Brixen" line (both clients).
 4. **Docs** — fold the shipped result into `ROADMAP.md` Phase 9.
