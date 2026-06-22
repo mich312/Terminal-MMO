@@ -90,11 +90,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 				// The emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
 				if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
 					pc = applyLight(pc, originX+x, originY+y, light)
-				} else if lootEmitter(t.Prop) {
-					// Luminous loot is self-lit, so it never fades fully dark — but a
-					// glowing find far outside your light should read as a faint point
-					// that brightens as you approach, not a full-bright marker carpeting
-					// the whole night map. Dim it with distance to a self-lit floor.
+				} else if lootEmitter(t.Prop) && !light.Warm {
+					// Luminous loot is self-lit, so it never fades fully dark — but under
+					// the Wilds' torch a glowing find far outside your light should read
+					// as a faint point that brightens as you approach, not a full-bright
+					// marker carpeting the whole night map. Dim it with distance to a
+					// self-lit floor. (Caves keep their loot/bioluminescence as beacons:
+					// the lantern is warm, so this skips it.)
 					lvl := lightLevel(originX+x, originY+y, light)
 					eff := lootSelfLit + (1-lootSelfLit)*lvl
 					pc = pc.BlendLab(shadowColor, 1-eff).Clamped()
@@ -206,10 +208,11 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					} else if night <= 0.03 {
 						continue // ordinary emitters only bloom after dusk
 					}
-					if lootEmitter(p) {
-						// A find's halo fades with your light too, so distant loot is a
-						// faint glint and a clear glow pool only once it's near — matching
-						// the dimmed sprite above.
+					if lootEmitter(p) && !light.Warm {
+						// Under the Wilds' torch a find's halo fades with distance too, so
+						// distant loot is a faint glint and a clear glow pool only once it's
+						// near — matching the dimmed sprite above. (Skipped in caves, where
+						// the lantern is warm and loot stays a beacon.)
 						amount *= lightLevel(originX+vx, originY+vy, light)
 					}
 					drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, amount, apx)
