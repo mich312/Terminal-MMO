@@ -670,16 +670,19 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				}
 			}
 		case "goto", "go":
-			if len(f) > 1 {
-				if dest := strings.ToLower(f[1]); dest != areaID && game.AreaRegistered(dest) {
-					fw.Reset()
-					inc.Reset() // new area → discard the cached terrain
-					ctrl("\x1b[2J")
-					areaID, area, hv = enterHD(ctx, areaID, dest)
-					enteredAt, lastGameTick = time.Now(), time.Now()
-				} else {
-					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
+			if len(f) <= 1 { // no argument → show the list of places
+				appendChat(game.HDLine{Text: "go to — /goto <name>:", Col: hudAccent})
+				for _, ln := range game.GotoListLines() {
+					appendChat(game.HDLine{Text: ln, Col: hudDim})
 				}
+			} else if dest := strings.ToLower(f[1]); dest != areaID && game.AreaRegistered(dest) {
+				fw.Reset()
+				inc.Reset() // new area → discard the cached terrain
+				ctrl("\x1b[2J")
+				areaID, area, hv = enterHD(ctx, areaID, dest)
+				enteredAt, lastGameTick = time.Now(), time.Now()
+			} else {
+				appendChat(game.HDLine{Text: "no such area: " + f[1] + " — /goto for the list", Col: hudDim})
 			}
 		case "trade", "tr":
 			if len(f) < 2 {

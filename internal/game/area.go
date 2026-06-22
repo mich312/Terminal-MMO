@@ -5,6 +5,7 @@ package game
 import (
 	"image"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -235,6 +236,24 @@ func RegisteredAreas() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// GotoListLines renders the registered areas as a tidy, wrapped list — one
+// "Display Name (id)" entry per area, a few per line — for the /goto menu both
+// clients show when called with no argument. Derived from the registry, so a new
+// area appears automatically.
+func GotoListLines() []string {
+	ids := RegisteredAreas()
+	const perLine = 3
+	var lines []string
+	for i := 0; i < len(ids); i += perLine {
+		var parts []string
+		for _, id := range ids[i:min(i+perLine, len(ids))] {
+			parts = append(parts, DisplayName(id)+" ("+id+")")
+		}
+		lines = append(lines, "  "+strings.Join(parts, " · "))
+	}
+	return lines
 }
 
 // DisplayName resolves an area id to its human name.

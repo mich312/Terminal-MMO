@@ -73,8 +73,8 @@ func init() {
 			run:     cmdAvatar,
 		},
 		{
-			name: "goto", aliases: []string{"go"}, usage: "/goto <area>",
-			summary: "teleport to an area",
+			name: "goto", aliases: []string{"go"}, usage: "/goto [area]",
+			summary: "teleport to an area (no name lists them)",
 			run:     cmdGoto,
 		},
 		{
@@ -357,7 +357,7 @@ func resolveIndex(arg string, fallback, n int, name func(int) string) int {
 
 func cmdGoto(m *Model, args []string) tea.Cmd {
 	if len(args) == 0 {
-		m.addSystemLine("usage: /goto <area> — try one of: " + strings.Join(RegisteredAreas(), ", "))
+		m.showInfoPanel("Go to — /goto <name>", GotoListLines())
 		return nil
 	}
 	dest := strings.ToLower(args[0])
@@ -366,7 +366,7 @@ func cmdGoto(m *Model, args []string) tea.Cmd {
 		return nil
 	}
 	if !AreaRegistered(dest) {
-		m.addSystemLine("no such area: " + dest + " — try: " + strings.Join(RegisteredAreas(), ", "))
+		m.addSystemLine("no such area: " + dest + " — type /goto for the list")
 		return nil
 	}
 	if m.area != nil {
