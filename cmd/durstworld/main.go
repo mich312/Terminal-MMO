@@ -34,6 +34,7 @@ import (
 	_ "github.com/durst-group/durstworld/internal/areas/bomberman"
 	_ "github.com/durst-group/durstworld/internal/areas/breakout"
 	_ "github.com/durst-group/durstworld/internal/areas/cave"
+	_ "github.com/durst-group/durstworld/internal/areas/chess"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
 	_ "github.com/durst-group/durstworld/internal/areas/grove"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"

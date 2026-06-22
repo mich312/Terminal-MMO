@@ -13,6 +13,7 @@ import (
 	_ "github.com/durst-group/durstworld/internal/areas/arcade"
 	_ "github.com/durst-group/durstworld/internal/areas/bomberman"
 	_ "github.com/durst-group/durstworld/internal/areas/breakout"
+	_ "github.com/durst-group/durstworld/internal/areas/chess"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
@@ -28,7 +29,7 @@ import (
 // TestAreasConstructAndSpawn instantiates every registered area and runs
 // its Init, which places the player on a spawn tile.
 func TestAreasConstructAndSpawn(t *testing.T) {
-	for _, id := range []string{"lobby", "presentation", "kraftwerk", "democenter", "arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout", "bomberman", "2048"} {
+	for _, id := range []string{"lobby", "presentation", "kraftwerk", "democenter", "arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout", "bomberman", "2048", "chess"} {
 		t.Run(id, func(t *testing.T) {
 			w := world.New()
 			defer w.Close()
