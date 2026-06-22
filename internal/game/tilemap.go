@@ -130,6 +130,7 @@ const (
 	PropMill      // a windmill: grain → flour (runs offline)
 	PropFurnace   // a forge with a glowing mouth: nuggets → ingots (glows, offline)
 	PropChest     // a storage chest — "Cold Storage" input/output buffer
+	PropBedroll   // a rolled hide bedroll on the ground (walkable, from hunting spoils)
 
 	// Wildlife: live creatures, drawn over the biome ground like other props.
 	// Their color comes from the species (PropHex), so one silhouette reads in

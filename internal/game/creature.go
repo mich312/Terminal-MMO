@@ -2,6 +2,7 @@ package game
 
 import (
 	"math/rand"
+	"strings"
 
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -96,4 +97,94 @@ func SpeciesList() []Species { return speciesList }
 func SpeciesByKind(kind string) (Species, bool) {
 	s, ok := speciesByKind[kind]
 	return s, ok
+}
+
+// BestiaryEntry is one creature's codex row: what it is, whether the player has
+// sighted it, where it lives, what it drops when hunted, and how it's tamed.
+type BestiaryEntry struct {
+	Kind    string
+	Name    string
+	Seen    bool
+	Habitat string // biomes it spawns in, comma-joined
+	Drops   string // hunting spoils, comma-joined ("" if none)
+	Tame    string // bait item name ("" if not tameable)
+}
+
+// Bestiary builds the wildlife codex, annotated with which species the player
+// has sighted (seen may be nil → none sighted yet).
+func Bestiary(seen map[string]bool) []BestiaryEntry {
+	out := make([]BestiaryEntry, 0, len(speciesList))
+	for _, sp := range speciesList {
+		e := BestiaryEntry{
+			Kind: sp.Kind, Name: sp.Name, Seen: seen[sp.Kind],
+			Habitat: biomeNames(sp.Biomes), Drops: dropNames(sp.Drops),
+		}
+		if sp.Tameable {
+			e.Tame = itemDisplayName(sp.Bait)
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// BestiaryStats counts how many species the player has sighted, of the total.
+func BestiaryStats(seen map[string]bool) (sighted, total int) {
+	for _, sp := range speciesList {
+		total++
+		if seen[sp.Kind] {
+			sighted++
+		}
+	}
+	return sighted, total
+}
+
+func itemDisplayName(id string) string {
+	if it, ok := ItemByID(id); ok {
+		return it.Name
+	}
+	return id
+}
+
+func dropNames(drops []Drop) string {
+	if len(drops) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(drops))
+	for _, d := range drops {
+		parts = append(parts, itemDisplayName(d.Item))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func biomeNames(bs []worldgen.Biome) string {
+	parts := make([]string, 0, len(bs))
+	for _, b := range bs {
+		parts = append(parts, biomeName(b))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func biomeName(b worldgen.Biome) string {
+	switch b {
+	case worldgen.Grass:
+		return "meadow"
+	case worldgen.Forest:
+		return "forest"
+	case worldgen.Hill:
+		return "hills"
+	case worldgen.Savanna:
+		return "savanna"
+	case worldgen.Sand:
+		return "shore"
+	case worldgen.Snow:
+		return "snow"
+	case worldgen.Swamp:
+		return "swamp"
+	case worldgen.Mountain:
+		return "mountain"
+	case worldgen.Water, worldgen.Deep:
+		return "water"
+	default:
+		return "wilds"
+	}
 }

@@ -920,6 +920,22 @@ func compendiumLinesHD(ctx *Ctx) []compLine {
 		}
 		ls = append(ls, compLine{text: hdInline(text), col: col, acc: w.Index})
 	}
+
+	ls = append(ls, compLine{})
+	sighted, total := BestiaryStats(ctx.Compendium)
+	ls = append(ls, compLine{text: fmt.Sprintf("WILDLIFE  %d/%d SIGHTED", sighted, total), col: hudAccent})
+	for _, b := range Bestiary(ctx.Compendium) {
+		if b.Seen {
+			ls = append(ls, compLine{text: hdInline(b.Name + "   " + b.Habitat), col: hudWhite})
+			ls = append(ls, compLine{text: hdInline("drops " + b.Drops), col: hudDim, indent: 1})
+			if b.Tame != "" {
+				ls = append(ls, compLine{text: hdInline("tame with a " + b.Tame), col: hudDim, indent: 1})
+			}
+		} else {
+			ls = append(ls, compLine{text: "? ? ?", col: hudDim, dim: true})
+			ls = append(ls, compLine{text: "not yet sighted", col: hudDim, indent: 1})
+		}
+	}
 	return ls
 }
 

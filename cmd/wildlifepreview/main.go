@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -147,5 +148,27 @@ func main() {
 	saveImg("wildlifeshots/wilds-fauna-night.png",
 		game.RenderRGBA(nil, cl, pl, "you", 6, game.Camera{W: cl.W, H: cl.H}, torch, 0, 0, 30, false, style, clCrits...))
 
-	fmt.Println("wrote wilds-fauna-day, companion, direction-chart, frame-compare, wilds-fauna-night")
+	// 6) The codex panel scrolled to the new Wildlife section (some species
+	//    sighted, some still ???), plus the hunting-spoils items.
+	ui.Now = func() time.Time { return noon }
+	w := world.New()
+	defer w.Close()
+	cxName, _ := w.Join("you")
+	codexCtx := &game.Ctx{
+		World: w, Store: store.Open(""), Name: cxName,
+		Inventory:  map[string]int{"meat": 3, "hide": 2, "pelt": 1, "feather": 4, "leather": 1, "ration": 2},
+		Compendium: map[string]bool{"fox": true, "deer": true, "rabbit": true},
+	}
+	codex := image.NewRGBA(image.Rect(0, 0, 560, 680))
+	for i := range codex.Pix {
+		codex.Pix[i] = 0
+	}
+	for p := 3; p < len(codex.Pix); p += 4 {
+		codex.Pix[p] = 255 // opaque background
+	}
+	scroll := 1 << 20 // clamp to the bottom: the Wildlife section
+	game.DrawCompendiumPanel(codex, codexCtx, &scroll)
+	saveImg("wildlifeshots/codex-wildlife.png", codex)
+
+	fmt.Println("wrote wilds-fauna-day, companion, direction-chart, frame-compare, wilds-fauna-night, codex-wildlife")
 }

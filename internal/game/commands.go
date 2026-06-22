@@ -450,6 +450,25 @@ func (m *Model) compendiumLines(groups []CompendiumGroup) []string {
 			addDetail(power+" — "+w.Source, m.theme.Dim)
 		}
 	}
+
+	sighted, total := BestiaryStats(m.ctx.Compendium)
+	lines = append(lines, "", m.theme.PanelTitle.Render(fmt.Sprintf("Wildlife — %d/%d sighted", sighted, total)))
+	for _, b := range Bestiary(m.ctx.Compendium) {
+		if b.Seen {
+			lines = append(lines, fmt.Sprintf("%s %s %s",
+				m.theme.Accent.Render("✓"), m.theme.Bright.Render(padRight(b.Name, 10)),
+				m.theme.Dim.Render(b.Habitat)))
+			detail := "drops " + b.Drops
+			if b.Tame != "" {
+				detail += " · tame with a " + b.Tame
+			}
+			addDetail(detail, m.theme.ChatText)
+		} else {
+			lines = append(lines, fmt.Sprintf("%s %s", m.theme.Dim.Render("·"),
+				m.theme.Dim.Render(padRight("? ? ?", 10))))
+			addDetail("not yet sighted", m.theme.Dim)
+		}
+	}
 	return lines
 }
 

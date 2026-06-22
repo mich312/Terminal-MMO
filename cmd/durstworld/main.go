@@ -156,6 +156,7 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			Theme:      ui.NewTheme(bm.MakeRenderer(s)),
 			Inventory:  st.LoadInventory(name),
 			Hats:       st.LoadHats(name),
+			Compendium: st.LoadCompendium(name),
 			FixedGates: st.LoadPersonalGates(name),
 		}
 		m := game.NewModel(ctx, events, visit)

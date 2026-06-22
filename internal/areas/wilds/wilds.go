@@ -61,7 +61,6 @@ type area struct {
 	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
-	compendium map[string]bool   // wildlife species this player has observed
 	rng        *rand.Rand        // per-session stream for hunting drop rolls
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
@@ -97,9 +96,11 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	if a.collected == nil {
 		a.collected = map[[2]int]bool{}
 	}
-	a.compendium = a.ctx.Store.LoadCompendium(a.ctx.Name)
-	if a.compendium == nil {
-		a.compendium = map[string]bool{}
+	if a.ctx.Compendium == nil {
+		a.ctx.Compendium = a.ctx.Store.LoadCompendium(a.ctx.Name)
+		if a.ctx.Compendium == nil {
+			a.ctx.Compendium = map[string]bool{}
+		}
 	}
 	a.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	if a.ctx.Inventory == nil {
@@ -318,11 +319,11 @@ func (a *area) observe(c world.Creature) {
 	if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
 		name = sp.Name
 	}
-	if a.compendium[c.Kind] {
+	if a.ctx.Compendium[c.Kind] {
 		a.setToast("a " + name + " eyes you, then looks away")
 		return
 	}
-	a.compendium[c.Kind] = true
+	a.ctx.Compendium[c.Kind] = true
 	a.ctx.Store.MarkSpecies(a.ctx.Name, c.Kind)
 	a.setToast("you spot a " + name + " — added to your field notes")
 }
@@ -331,10 +332,10 @@ func (a *area) observe(c world.Creature) {
 // time the player encounters it — shared by observing and hunting, since you
 // learn an animal by catching it too.
 func (a *area) noteSpecies(kind string) {
-	if a.compendium[kind] {
+	if a.ctx.Compendium[kind] {
 		return
 	}
-	a.compendium[kind] = true
+	a.ctx.Compendium[kind] = true
 	a.ctx.Store.MarkSpecies(a.ctx.Name, kind)
 }
 

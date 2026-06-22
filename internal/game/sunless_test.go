@@ -32,8 +32,8 @@ func TestSunlessIgnoresSurfaceClock(t *testing.T) {
 	players := []world.Player{{Name: "me", X: 6, Y: 4, Color: "#FFC861", Facing: world.DirS, LastMoved: time.Now().Add(-time.Hour)}}
 	style := DefaultStyle()
 
-	noon := time.Date(2026, 6, 16, 10, 30, 0, 0, time.UTC)     // surface midday
-	midnight := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)  // surface deep night
+	noon := time.Date(2026, 6, 16, 10, 30, 0, 0, time.UTC)    // surface midday
+	midnight := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC) // surface deep night
 	render := func(at time.Time, light Light) []byte {
 		ui.Now = func() time.Time { return at }
 		return RenderRGBA(nil, tm, players, "me", 7, Camera{W: vw, H: vh}, light, 0, 0, scale, false, style).Pix

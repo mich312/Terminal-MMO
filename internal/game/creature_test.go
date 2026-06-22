@@ -102,3 +102,38 @@ func TestCreatureBitmapAllFacings(t *testing.T) {
 		}
 	}
 }
+
+// The bestiary covers every species, with habitat + drops filled in, and the
+// sighted count reflects the seen set.
+func TestBestiary(t *testing.T) {
+	all := Bestiary(nil)
+	if len(all) != len(SpeciesList()) {
+		t.Fatalf("bestiary has %d entries, want %d", len(all), len(SpeciesList()))
+	}
+	for _, b := range all {
+		if b.Seen {
+			t.Errorf("%s: Seen should be false with a nil set", b.Kind)
+		}
+		if b.Habitat == "" {
+			t.Errorf("%s: empty habitat", b.Kind)
+		}
+		if b.Drops == "" {
+			t.Errorf("%s: empty drops", b.Kind)
+		}
+	}
+	seen := map[string]bool{"fox": true, "deer": true}
+	if s, total := BestiaryStats(seen); s != 2 || total != len(SpeciesList()) {
+		t.Fatalf("BestiaryStats = (%d,%d), want (2,%d)", s, total, len(SpeciesList()))
+	}
+	// A tameable species names its bait; a non-tameable one doesn't.
+	byKind := map[string]BestiaryEntry{}
+	for _, b := range Bestiary(nil) {
+		byKind[b.Kind] = b
+	}
+	if byKind["fox"].Tame == "" {
+		t.Error("fox should list a taming bait")
+	}
+	if byKind["bird"].Tame != "" {
+		t.Error("bird is not tameable; Tame should be empty")
+	}
+}
