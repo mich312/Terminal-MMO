@@ -220,6 +220,19 @@ func waterGlint(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, ori
 // repaint every night frame — so it is deliberately left out for now.)
 func mistTex(t TileTex) bool { return t == TexWater || t == TexSwamp }
 
+// fireflyHost reports whether a forest/swamp cell carries a drifting firefly mote
+// — the sparse (~5%) set drawFireflies lights after dusk. It is the single source
+// of truth for "which cells animate at night", shared by the firefly draw pass and
+// the incremental renderer's tileAnimated, so a fully-explored wood marks only its
+// lit cells dirty each night frame instead of every tile.
+func fireflyHost(wx, wy int) bool { return hashNoise(wx, wy, 0x1357) <= 0.05 }
+
+// mistHost reports whether a wet (swamp) cell carries a drifting mist wisp at
+// night — the ~40% set drawMist lays banks over. Shared with tileAnimated for the
+// same reason as fireflyHost. (Water already animates every frame, so this only
+// matters for swamp.)
+func mistHost(wx, wy int) bool { return hashNoise(wx, wy, 0x2BCD) <= 0.6 }
+
 // drawMist lays drifting low fog over the wet lowland after dusk: sparse, soft,
 // horizontally-stretched pale banks anchored to a deterministic set of water and
 // swamp tiles and edging sideways on the frame, so the ground breathes a thin
@@ -242,7 +255,7 @@ func drawMist(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, origi
 				continue
 			}
 			wx, wy := originX+vx, originY+vy
-			if hashNoise(wx, wy, 0x2BCD) > 0.6 { // most wet tiles carry a wisp
+			if !mistHost(wx, wy) { // only the wisp-bearing wet tiles
 				continue
 			}
 			ph := float64(wx*5 + wy*11)
@@ -304,7 +317,7 @@ func drawFireflies(img *image.RGBA, texs [][]TileTex, cam Camera, scale, frame, 
 				continue
 			}
 			wx, wy := originX+vx, originY+vy
-			if hashNoise(wx, wy, 0x1357) > 0.05 { // ~5% of tiles host a mote
+			if !fireflyHost(wx, wy) { // ~5% of tiles host a mote
 				continue
 			}
 			ph := float64(wx*13 + wy*7)
