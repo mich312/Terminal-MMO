@@ -59,6 +59,8 @@ var Recipes = []Recipe{
 		In: []Ingredient{{"wood", 2}, {"leather", 1}, {"feather", 1}}, Out: "bow", OutN: 1},
 	{ID: "arrow", Name: "Arrows", Blurb: "Fletched in batches. Consumables, per policy.",
 		In: []Ingredient{{"wood", 1}, {"feather", 1}}, Out: "arrow", OutN: 4},
+	{ID: "sword", Name: "Cast Blade", Blurb: "Poured from ingots. Asset, depreciating.",
+		In: []Ingredient{{"ingot", 2}, {"wood", 1}}, Out: "sword", OutN: 1},
 }
 
 // Craftable reports how many times the recipe can be made from inv — the min,

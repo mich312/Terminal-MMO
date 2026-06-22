@@ -17,8 +17,25 @@
 > **`/wield`** (choose your arm, incl. `auto`/`fists`) and **`/pvp`** (am I safe
 > here?) commands, sharing one `PvPAllowedAt` truth with the strike action.
 >
+> **Arsenal expansion shipped:** the roster now spans three classes
+> (`Weapon.Found`/`Weapon.Unique`):
+> - **Craftable:** Flint Knife, Spear, Hunter's Bow (+Arrows), and the new
+>   **Cast Blade** (from ingots).
+> - **Found (hidden):** the **Sling** (flings gathered stones, ranged) and the
+>   **Bone Dagger** — turned up by exploring the biome scatter, no recipe.
+> - **Legends (unique, one per world):** **Durstbane** (a 6-damage blade) and
+>   **Skypiercer** (a long-range legendary bow). Each hides at a deterministic,
+>   biome-themed spot far from the hub, glows so a distant shimmer draws you in,
+>   and is claimed **once** — the world's `artifact` registry settles a finders'
+>   race atomically (first-write-wins, persisted in the `artifacts` table). Once
+>   claimed it never reappears; it's obtainable only by trade thereafter (it's a
+>   normal pack item, so the stall composer and direct trade already move it).
+>   `/legends` lists who holds each one, or rumors where an unclaimed one lies.
+> Adds a `Legendary` rarity tag. Tests cover the registry race, persistence,
+> placement standability, and the once-per-world claim.
+>
 > **Still open:** a dedicated compendium "Arms" section (weapons list under
-> "Crafted" today) and the optional "companion defends you" stretch.
+> their gather source today) and the optional "companion defends you" stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

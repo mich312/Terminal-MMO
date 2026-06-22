@@ -93,8 +93,15 @@ func TestWeaponRecipesResolveToRealItems(t *testing.T) {
 				break
 			}
 		}
+		if wp.Found || wp.Unique {
+			// Hidden finds and legends are turned up in the world, not crafted.
+			if rec != nil {
+				t.Errorf("found/unique weapon %q should not have a recipe", wp.Item)
+			}
+			continue
+		}
 		if rec == nil {
-			t.Errorf("weapon %q has no recipe", wp.Item)
+			t.Errorf("craftable weapon %q has no recipe", wp.Item)
 			continue
 		}
 		for _, in := range rec.In {

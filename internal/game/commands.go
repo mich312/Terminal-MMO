@@ -103,6 +103,11 @@ func init() {
 			run:     cmdPvP,
 		},
 		{
+			name: "legends", usage: "/legends",
+			summary: "the unique weapons: who holds them, or where they're rumored to lie",
+			run:     cmdLegends,
+		},
+		{
 			name: "sell", usage: "/sell <n> <item> for <m> <item>",
 			summary: "post an offer at your Concession (stocks it from your pack)",
 			run:     cmdSell,
@@ -265,6 +270,25 @@ func cmdPvP(m *Model, args []string) tea.Cmd {
 		m.addSystemLine("open ground — you can be struck here. Watch yourself.")
 	} else {
 		m.addSystemLine("safe ground — no fighting reaches you here.")
+	}
+	return nil
+}
+
+// cmdLegends rounds up the unique weapons: a claimed one names its discoverer,
+// an unclaimed one gives the rumor of where it lies — the thread that turns a
+// hidden artifact into a quest.
+func cmdLegends(m *Model, args []string) tea.Cmd {
+	held := map[string]string{}
+	if m.ctx.World != nil {
+		held = m.ctx.World.ArtifactHolders()
+	}
+	m.addSystemLine("Legends of the realm:")
+	for _, wp := range Artifacts() {
+		if who, ok := held[wp.Item]; ok {
+			m.addSystemLine("  " + wp.Name + " — claimed by " + who)
+		} else {
+			m.addSystemLine("  " + wp.Name + " — " + wp.Hint)
+		}
 	}
 	return nil
 }

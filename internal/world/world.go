@@ -142,6 +142,13 @@ type World struct {
 	// lapses. nil ⇒ no auto-respawn (tests that don't set it just leave players
 	// down).
 	respawnAt func() (area string, x, y int)
+
+	// Legends: the shared registry of unique weapons, id → discoverer. A claimed
+	// artifact never appears in the world again (it's trade-only thereafter), so
+	// this is small, shared, first-write-wins state persisted via a callback —
+	// the same discipline as claims.
+	artifacts       map[string]string
+	artifactPersist func(id, owner string)
 }
 
 // Placement is one player-built structure in the shared world.
@@ -167,6 +174,7 @@ func New() *World {
 		pending:    make(map[string]string),
 		completed:  make(map[string]CompletedTrade),
 		creatures:  make(map[string]*Creature),
+		artifacts:  make(map[string]string),
 	}
 	go w.tickLoop()
 	return w

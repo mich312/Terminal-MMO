@@ -23,19 +23,44 @@ type Weapon struct {
 	Reach    int    // 1 = melee (adjacent ring); >1 = ranged (tiles along facing)
 	Cooldown int    // ticks between strikes (reserved; throttles spam in a later pass)
 	Ammo     string // "" for melee; an item id consumed per shot (e.g. "arrow")
+
+	// How you come by it (docs/WEAPON_PLAN.md). A weapon is one of:
+	//   - craftable (the default): built at the bench from a recipe;
+	//   - Found: hidden in the world, turned up by exploring (no recipe);
+	//   - Unique: a one-per-world legend — it spawns in a single hidden spot, and
+	//     once claimed it's gone for everyone, obtainable only by trade thereafter.
+	Found  bool
+	Unique bool
+	Lore   string // a line of flavor for finds and legends (compendium / discovery)
+	Hint   string // where a legend is rumored to lie (for /legends); Unique only
 }
 
 // Fists is the implicit weapon everyone always has: a light, melee, no-cost
 // strike. BestWeapon falls back to it when the pack holds nothing better.
 var Fists = Weapon{Item: "", Name: "bare hands", Damage: 1, Reach: 1}
 
-// weapons is the craftable roster, in ascending order of clout. All inputs are
-// existing inventory items (stone, wood, leather, feather), so weapons slot onto
-// the recipe bench with no new forage plumbing.
+// weapons is the full roster the combat code resolves against — craftable arms,
+// hidden finds, and the unique legends. Craftable inputs are existing items, so
+// they slot onto the recipe bench with no new forage plumbing; finds and legends
+// have no recipe and are turned up in the world instead.
 var weapons = []Weapon{
+	// Craftable — built at the bench.
 	{Item: "knife", Name: "Flint Knife", Damage: 2, Reach: 1, Cooldown: 1},
 	{Item: "spear", Name: "Spear", Damage: 3, Reach: 1, Cooldown: 2},
 	{Item: "bow", Name: "Hunter's Bow", Damage: 2, Reach: 4, Cooldown: 2, Ammo: "arrow"},
+	{Item: "sword", Name: "Cast Blade", Damage: 4, Reach: 1, Cooldown: 2},
+	// Found — hidden in the world, no recipe.
+	{Item: "sling", Name: "Sling", Damage: 2, Reach: 3, Cooldown: 1, Ammo: "stone", Found: true,
+		Lore: "A worn leather sling. Flings a gathered stone a fair way."},
+	{Item: "dagger", Name: "Bone Dagger", Damage: 3, Reach: 1, Cooldown: 1, Found: true,
+		Lore: "A wicked blade ground from old bone. Quick in the hand."},
+	// Unique — one per world, hidden; trade-only once claimed.
+	{Item: "durstbane", Name: "Durstbane", Damage: 6, Reach: 1, Cooldown: 2, Unique: true,
+		Lore: "The blade that ended the long audit. There is only one.",
+		Hint: "said to rest in the frozen heights, far to the cold north"},
+	{Item: "skypiercer", Name: "Skypiercer", Damage: 4, Reach: 6, Cooldown: 2, Ammo: "arrow", Unique: true,
+		Lore: "A bow strung with storm-sinew; its arrows never wander. The only one.",
+		Hint: "lost deep in the old forest, where the canopy swallows the light"},
 }
 
 var weaponByItem = func() map[string]Weapon {
@@ -52,8 +77,26 @@ func WeaponByItem(item string) (Weapon, bool) {
 	return wp, ok
 }
 
-// Weapons returns the craftable weapon roster (for listing in /wield etc.).
+// Weapons returns the full weapon roster (for /wield listing, ownership-filtered
+// by the caller).
 func Weapons() []Weapon { return weapons }
+
+// Artifacts returns the unique, one-per-world legendary weapons.
+func Artifacts() []Weapon {
+	var out []Weapon
+	for _, wp := range weapons {
+		if wp.Unique {
+			out = append(out, wp)
+		}
+	}
+	return out
+}
+
+// IsArtifact reports whether an item id names a unique legendary weapon.
+func IsArtifact(item string) bool {
+	wp, ok := weaponByItem[item]
+	return ok && wp.Unique
+}
 
 // MatchWeapon resolves a user-typed token to a weapon by item id or by a
 // case-insensitive prefix of its name ("flint" or "knife" → Flint Knife).

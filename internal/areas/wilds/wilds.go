@@ -67,6 +67,12 @@ type area struct {
 	lastStrike time.Time         // when this session last landed a blow (weapon cooldown)
 	hurtUntil  time.Time         // brief on-hit flash window after taking damage
 
+	// Hidden legends: the deterministic cell each unique weapon lies in, resolved
+	// once in Init (docs/WEAPON_PLAN.md). Whether one still shows is the world's
+	// shared artifact registry, checked live.
+	artifactCell   map[string][2]int // weapon id → its hidden cell
+	artifactAtCell map[[2]int]string // hidden cell → weapon id
+
 	// build mode (the shared placements layer)
 	building bool // placing a structure: movement drives the ghost, not the body
 	buildSel int  // selected placeable in game.Placeables
@@ -116,6 +122,7 @@ func (a *area) Init(*world.Player) tea.Cmd {
 			a.ctx.FixedGates = map[string]bool{}
 		}
 	}
+	a.computeArtifactCells()
 	a.wx, a.wy = a.resume()
 	a.reveal()
 	a.persist()
@@ -1246,6 +1253,9 @@ func (a *area) Hint() string {
 	if g, ok := a.sealedGateUnderBody(); ok {
 		return a.gatePrompt(g)
 	}
+	if wp, _, _, ok := a.artifactUnderBody(); ok {
+		return "✦ e — claim " + wp.Name + ", a legend!"
+	}
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name
 	}
@@ -1285,6 +1295,9 @@ func (a *area) Prompt() (string, bool) {
 	}
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name, true
+	}
+	if wp, _, _, ok := a.artifactUnderBody(); ok {
+		return "✦ e — claim " + wp.Name + ", a legend!", true
 	}
 	if it, _, _, ok := a.itemUnderBody(); ok {
 		return "e — take " + it.Name, true
@@ -1354,6 +1367,10 @@ func (a *area) hatUnderBody() (hatLoot, int, int, bool) {
 // the cell collected and persist. Called both by the 'e' key and by movement, so
 // finds — hats included — are gathered just by walking over them.
 func (a *area) pickUp() {
+	if wp, _, _, ok := a.artifactUnderBody(); ok {
+		a.claimArtifact(wp)
+		return
+	}
 	if h, x, y, ok := a.hatUnderBody(); ok {
 		a.collected[[2]int{x, y}] = true
 		a.ctx.Store.MarkCollected(a.ctx.Name, x, y)
@@ -1444,6 +1461,13 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Ch, t.Color = '⊘', "#8A8A98"
 						t.Prop, t.PropHex = game.PropSealed, "#7A7A88"
 						t.Tex, t.Ground = game.TexRock, "#33363E"
+					}
+				} else if id, isArt := a.artifactAtCell[[2]int{wx, wy}]; isArt && a.artifactUnclaimed(id) {
+					// A hidden legend, still unclaimed: a glowing arm on the ground that
+					// shines at night so a far-off shimmer can draw you to it.
+					if it, ok := game.ItemByID(id); ok {
+						t.Ch, t.Color = it.Glyph, it.Hex
+						t.Prop, t.PropHex, t.Ground = game.PropGemGlow, it.Hex, groundColor(cell.Biome)
 					}
 				} else if !a.collected[[2]int{wx, wy}] {
 					// Items/hats keep the biome ground under them; only the gem/hat on

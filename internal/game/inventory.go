@@ -9,6 +9,7 @@ const (
 	Common Rarity = iota
 	Uncommon
 	Rare
+	Legendary // one-of-a-kind: the unique artifact weapons
 )
 
 func (r Rarity) String() string {
@@ -17,6 +18,8 @@ func (r Rarity) String() string {
 		return "Uncommon"
 	case Rare:
 		return "Rare"
+	case Legendary:
+		return "Legendary"
 	default:
 		return "Common"
 	}
@@ -220,6 +223,33 @@ var Items = []Item{
 		About: "Flint-tipped, feather-fletched shafts. Spent when loosed.",
 		Found: "Crafted from Timber and a Feather.",
 		Use:   "Ammunition for the Hunter's Bow — one per shot."},
+	{ID: "sword", Name: "Cast Blade", Glyph: '†', Hex: "#D4AF37",
+		Source: Crafted, Rarity: Rare,
+		About: "A blade cast from refined ingots. Heavier and meaner than flint.",
+		Found: "Crafted from Gold Ingots and Timber.",
+		Use:   "f — strike what you face. The best blade you can make."},
+	// Found arms — hidden in the world, turned up by exploring (no recipe).
+	{ID: "sling", Name: "Sling", Glyph: ')', Hex: "#B6A07A",
+		Source: Forage, Rarity: Uncommon,
+		About: "A worn leather sling that flings a stone a fair way.",
+		Found: "Hidden in the hills and savanna.",
+		Use:   "f — sling a Cut Stone at what you face, a few tiles off."},
+	{ID: "dagger", Name: "Bone Dagger", Glyph: '†', Hex: "#E8E0CC",
+		Source: Forage, Rarity: Uncommon,
+		About: "A wicked blade ground from old bone. Quick in the hand.",
+		Found: "Hidden in the swamp and deep forest.",
+		Use:   "f — strike what you face. Faster than a knife, and sharper."},
+	// Legends — one per world, hidden; trade-only once claimed.
+	{ID: "durstbane", Name: "Durstbane", Glyph: '†', Hex: "#9FE7FF", Glow: true,
+		Source: Forage, Rarity: Legendary,
+		About: "The blade that ended the long audit. There is only one.",
+		Found: "A single blade, lost in the frozen heights far to the north.",
+		Use:   "f — strike what you face. No mortal arm hits harder."},
+	{ID: "skypiercer", Name: "Skypiercer", Glyph: ')', Hex: "#C9A6FF", Glow: true,
+		Source: Forage, Rarity: Legendary,
+		About: "A bow strung with storm-sinew; its arrows never wander. The only one.",
+		Found: "A single bow, lost deep in the old forest.",
+		Use:   "f — loose an Arrow at what you face, from far across the field."},
 }
 
 var itemIndex = func() map[string]Item {
