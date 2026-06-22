@@ -33,7 +33,17 @@ type Weapon struct {
 	Unique bool
 	Lore   string // a line of flavor for finds and legends (compendium / discovery)
 	Hint   string // where a legend is rumored to lie (for /legends); Unique only
+
+	// Special abilities (docs/WEAPON_PLAN.md) — each fits the one-strike model:
+	Knockback bool // a hit shoves the target a tile away (spears)
+	Pierce    bool // a ranged shot hits every target along its line (Skypiercer)
+	Cleave    bool // a melee hit also catches foes around the target (heavy blades)
+	Backstab  bool // bonus damage striking a foe from behind (daggers)
 }
+
+// BackstabBonus is the extra damage a backstab weapon deals when it strikes a
+// foe from behind.
+const BackstabBonus = 3
 
 // Fists is the implicit weapon everyone always has: a light, melee, no-cost
 // strike. BestWeapon falls back to it when the pack holds nothing better.
@@ -46,19 +56,19 @@ var Fists = Weapon{Item: "", Name: "bare hands", Damage: 1, Reach: 1}
 var weapons = []Weapon{
 	// Craftable — built at the bench.
 	{Item: "knife", Name: "Flint Knife", Damage: 2, Reach: 1, Cooldown: 1},
-	{Item: "spear", Name: "Spear", Damage: 3, Reach: 1, Cooldown: 2},
+	{Item: "spear", Name: "Spear", Damage: 3, Reach: 1, Cooldown: 2, Knockback: true},
 	{Item: "bow", Name: "Hunter's Bow", Damage: 2, Reach: 4, Cooldown: 2, Ammo: "arrow"},
-	{Item: "sword", Name: "Cast Blade", Damage: 4, Reach: 1, Cooldown: 2},
+	{Item: "sword", Name: "Cast Blade", Damage: 4, Reach: 1, Cooldown: 2, Cleave: true},
 	// Found — hidden in the world, no recipe.
 	{Item: "sling", Name: "Sling", Damage: 2, Reach: 3, Cooldown: 1, Ammo: "stone", Found: true,
 		Lore: "A worn leather sling. Flings a gathered stone a fair way."},
-	{Item: "dagger", Name: "Bone Dagger", Damage: 3, Reach: 1, Cooldown: 1, Found: true,
+	{Item: "dagger", Name: "Bone Dagger", Damage: 3, Reach: 1, Cooldown: 1, Found: true, Backstab: true,
 		Lore: "A wicked blade ground from old bone. Quick in the hand."},
 	// Unique — one per world, hidden; trade-only once claimed.
-	{Item: "durstbane", Name: "Durstbane", Damage: 6, Reach: 1, Cooldown: 2, Unique: true,
+	{Item: "durstbane", Name: "Durstbane", Damage: 6, Reach: 1, Cooldown: 2, Unique: true, Cleave: true,
 		Lore: "The blade that ended the long audit. There is only one.",
 		Hint: "said to rest in the frozen heights, far to the cold north"},
-	{Item: "skypiercer", Name: "Skypiercer", Damage: 4, Reach: 6, Cooldown: 2, Ammo: "arrow", Unique: true,
+	{Item: "skypiercer", Name: "Skypiercer", Damage: 4, Reach: 6, Cooldown: 2, Ammo: "arrow", Unique: true, Pierce: true,
 		Lore: "A bow strung with storm-sinew; its arrows never wander. The only one.",
 		Hint: "lost deep in the old forest, where the canopy swallows the light"},
 }

@@ -47,6 +47,10 @@ const (
 	// EventPlayerRespawn: Target is back on their feet at full HP. X/Y is the
 	// respawn tile.
 	EventPlayerRespawn
+	// EventPlayerShoved: Target is knocked back to (X,Y) by a knockback weapon.
+	// Player is the attacker. The victim's own client owns its position, so it
+	// applies the shove (re-checking the destination); others just see the move.
+	EventPlayerShoved
 )
 
 // Trade event phases, carried in Event.Detail.

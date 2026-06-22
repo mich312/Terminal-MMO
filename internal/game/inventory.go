@@ -212,7 +212,7 @@ var Items = []Item{
 		Source: Crafted, Rarity: Uncommon,
 		About: "A fire-hardened haft tipped with stone. Hits hard up close.",
 		Found: "Crafted from Cut Stone and Timber.",
-		Use:   "f — strike what you face. Heavier than a knife."},
+		Use:   "f — strike what you face. A thrust that knocks the target back a step."},
 	{ID: "bow", Name: "Hunter's Bow", Glyph: ')', Hex: "#A6753F",
 		Source: Crafted, Rarity: Uncommon,
 		About: "A supple bow of yew and cured leather. Strikes at range.",
@@ -227,7 +227,7 @@ var Items = []Item{
 		Source: Crafted, Rarity: Rare,
 		About: "A blade cast from refined ingots. Heavier and meaner than flint.",
 		Found: "Crafted from Gold Ingots and Timber.",
-		Use:   "f — strike what you face. The best blade you can make."},
+		Use:   "f — a heavy swing that cleaves every foe around your target."},
 	// Found arms — hidden in the world, turned up by exploring (no recipe).
 	{ID: "sling", Name: "Sling", Glyph: ')', Hex: "#B6A07A",
 		Source: Forage, Rarity: Uncommon,
@@ -238,18 +238,18 @@ var Items = []Item{
 		Source: Forage, Rarity: Uncommon,
 		About: "A wicked blade ground from old bone. Quick in the hand.",
 		Found: "Hidden in the swamp and deep forest.",
-		Use:   "f — strike what you face. Faster than a knife, and sharper."},
+		Use:   "f — strike what you face. Bonus damage when you hit from behind."},
 	// Legends — one per world, hidden; trade-only once claimed.
 	{ID: "durstbane", Name: "Durstbane", Glyph: '†', Hex: "#9FE7FF", Glow: true,
 		Source: Forage, Rarity: Legendary,
 		About: "The blade that ended the long audit. There is only one.",
 		Found: "A single blade, lost in the frozen heights far to the north.",
-		Use:   "f — strike what you face. No mortal arm hits harder."},
+		Use:   "f — a legendary blow that cleaves every foe around your target."},
 	{ID: "skypiercer", Name: "Skypiercer", Glyph: ')', Hex: "#C9A6FF", Glow: true,
 		Source: Forage, Rarity: Legendary,
 		About: "A bow strung with storm-sinew; its arrows never wander. The only one.",
 		Found: "A single bow, lost deep in the old forest.",
-		Use:   "f — loose an Arrow at what you face, from far across the field."},
+		Use:   "f — an Arrow that pierces every foe along its flight."},
 }
 
 var itemIndex = func() map[string]Item {

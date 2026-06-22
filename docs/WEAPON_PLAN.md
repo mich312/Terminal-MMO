@@ -43,10 +43,17 @@
 > draws each player as a single name token, so there's no sprite to hang a
 > weapon on there.
 >
-> **Still open:** per-weapon *special abilities* (knockback / bleed / pierce /
-> cleave — today weapons differ by damage, reach, cooldown and ammo only), a
-> dedicated compendium "Arms" section, and the optional "companion defends you"
-> stretch.
+> **Special abilities shipped:** weapons now carry abilities, not just stats —
+> the **Spear** knocks its target back a tile (creatures move directly; players
+> get an `EventPlayerShoved` their own client applies, respecting position
+> authority); the **Cast Blade** and **Durstbane** *cleave* every foe around the
+> target; **Skypiercer** *pierces* every foe along its line; and the **Bone
+> Dagger** lands a *backstab* bonus from behind. The strike resolves a target
+> set (one for a plain blow, many for cleave/pierce) and a per-target damage with
+> the backstab bonus. Tests cover all four.
+>
+> **Still open:** a dedicated compendium "Arms" section, and the optional
+> "companion defends you" stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

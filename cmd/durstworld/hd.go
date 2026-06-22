@@ -926,7 +926,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			// the world each frame, so they don't need the rest.
 			if ev.Type == world.EventSlide || ev.Type == world.EventDeck || ev.Type == world.EventChat ||
 				ev.Type == world.EventPlayerDamaged || ev.Type == world.EventPlayerDowned ||
-				ev.Type == world.EventPlayerRespawn {
+				ev.Type == world.EventPlayerRespawn || ev.Type == world.EventPlayerShoved {
 				area, _ = area.Update(game.WorldEventMsg(ev))
 				draw()
 			}

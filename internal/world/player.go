@@ -99,6 +99,20 @@ func (w *World) Downed(name string) bool {
 	return !p.DownedUntil.IsZero() && p.DownedUntil.After(time.Now())
 }
 
+// Shove tells a player they've been knocked back to (x,y) by attacker. Because
+// each session owns its own position, this only broadcasts the intent — the
+// victim's client moves itself (and re-validates the cell); everyone else sees
+// the resulting move. No-op for an unknown target.
+func (w *World) Shove(attacker, target string, x, y int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.players[target]
+	if !ok {
+		return
+	}
+	w.broadcastToArea(p.Area, Event{Type: EventPlayerShoved, Player: attacker, Target: target, Area: p.Area, X: x, Y: y})
+}
+
 // Immune reports whether the named player is in their post-respawn grace window.
 func (w *World) Immune(name string) bool {
 	w.mu.Lock()

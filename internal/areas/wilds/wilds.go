@@ -686,27 +686,114 @@ func (a *area) strike() {
 		return // still recovering from the last blow
 	}
 
-	if c, ok := a.creatureTarget(wp); ok {
-		a.strikeCreature(c, wp)
-		a.spendAmmo(wp)
-		a.lastStrike = time.Now()
+	cs, ps, blocked := a.gatherTargets(wp)
+	if len(cs) == 0 && len(ps) == 0 {
+		switch {
+		case blocked:
+			a.setToast("this is a peaceful place — no fighting here")
+		case wp.Reach > 1:
+			a.setToast("nothing within range")
+		default:
+			a.setToast("nothing within reach")
+		}
 		return
 	}
-	if p, ok := a.playerTarget(wp); ok {
-		if !a.pvpAllowed(p.X, p.Y) || !a.pvpAllowed(a.wx, a.wy) {
-			a.setToast("this is a peaceful place — no fighting here")
+
+	// Multi-target abilities (cleave/pierce) catch several foes; a plain strike
+	// hits one. Multi-hits get a tidy summary instead of clobbering toasts.
+	multi := wp.Pierce || wp.Cleave
+	hits := 0
+	for _, c := range cs {
+		if a.applyCreatureHit(c, wp, multi) {
+			hits++
+		}
+	}
+	for _, p := range ps {
+		if a.applyPlayerHit(p, wp, multi) {
+			hits++
+		}
+	}
+	if multi && hits > 1 {
+		verb := "sweeps"
+		if wp.Pierce {
+			verb = "skewers"
+		}
+		a.setToast(fmt.Sprintf("your %s %s %d foes!", wp.Name, verb, hits))
+	}
+	a.spendAmmo(wp)
+	a.lastStrike = time.Now()
+}
+
+// gatherTargets collects what a strike lands on, honoring the weapon's reach and
+// abilities: a pierce shot rakes every foe along its line, a cleave catches every
+// foe around you, and a plain blow takes the nearest single target (a creature
+// before a player). Players are included only where PvP is allowed; blocked is
+// true if the only thing in range was a player you can't fight here.
+func (a *area) gatherTargets(wp game.Weapon) (cs []world.Creature, ps []world.Player, blocked bool) {
+	creatures := a.ctx.World.CreaturesInArea("wilds")
+	others := a.ctx.World.PlayersInArea("wilds")
+	canHere := a.pvpAllowed(a.wx, a.wy)
+	seenC := map[string]bool{}
+	seenP := map[string]bool{}
+	addP := func(p world.Player) {
+		if p.Name == a.ctx.Name || seenP[p.Name] {
 			return
 		}
-		a.strikePlayer(p, wp)
-		a.spendAmmo(wp)
-		a.lastStrike = time.Now()
-		return
+		if canHere && a.pvpAllowed(p.X, p.Y) {
+			seenP[p.Name] = true
+			ps = append(ps, p)
+		} else {
+			blocked = true
+		}
 	}
-	if wp.Reach > 1 {
-		a.setToast("nothing within range")
-	} else {
-		a.setToast("nothing within reach")
+	bodyTouch := func(cx, cy int, p world.Player) bool {
+		return cx >= p.X-1 && cx <= p.X+game.PlayerW && cy >= p.Y-1 && cy <= p.Y+game.PlayerH
 	}
+
+	if wp.Reach > 1 { // ranged: scan the facing line, near to far
+		for _, t := range a.facingLine(wp.Reach) {
+			cellHit := false
+			for _, c := range creatures {
+				if !seenC[c.ID] && iabs(c.X-t[0]) <= 1 && iabs(c.Y-t[1]) <= 1 {
+					seenC[c.ID] = true
+					cs = append(cs, c)
+					cellHit = true
+				}
+			}
+			for _, p := range others {
+				if bodyTouch(t[0], t[1], p) {
+					addP(p)
+					cellHit = true
+				}
+			}
+			if cellHit && !wp.Pierce {
+				break // a normal shot stops at the first foe; a piercing one flies on
+			}
+		}
+	} else { // melee: the adjacent ring of the footprint
+		for _, c := range creatures {
+			if iabs(c.X-a.wx) <= 1 && iabs(c.Y-a.wy) <= 1 {
+				seenC[c.ID] = true
+				cs = append(cs, c)
+			}
+		}
+		for _, p := range others {
+			if bodyTouch(a.wx, a.wy, p) || bodyTouch(a.wx+1, a.wy+1, p) {
+				addP(p)
+			}
+		}
+	}
+
+	// A plain weapon takes a single target: the nearest creature, else the
+	// nearest player. Cleave/pierce keep the whole set.
+	if !wp.Pierce && !wp.Cleave {
+		if len(cs) > 0 {
+			cs, ps = cs[:1], nil
+		} else if len(ps) > 0 {
+			ps = ps[:1]
+		}
+	}
+	return cs, ps, blocked
 }
 
 // pvpAllowed reports whether a player standing at (x,y) may be struck: only out
@@ -817,49 +904,103 @@ func facingDelta(d world.Dir) (int, int) {
 	return 0, 1
 }
 
-// strikePlayer lands a blow on another player via the world's atomic Strike: a
-// non-lethal hit just hurts, the blow that empties their HP knocks them out
-// (they revive at the hub shortly after). Events tell both clients.
-func (a *area) strikePlayer(p world.Player, wp game.Weapon) {
-	_, downed, ok := a.ctx.World.Strike(a.ctx.Name, p.Name, wp.Name, wp.Damage, downedDuration)
-	if !ok {
-		if a.ctx.World.Immune(p.Name) {
-			a.setToast(p.Name + " is still catching their breath")
-		} else {
-			a.setToast(p.Name + " is already down")
-		}
-		return
-	}
-	with := ""
-	if wp.Item != "" {
-		with = " with the " + wp.Name
-	}
-	if downed {
-		a.setToast("you knock " + p.Name + " out" + with + "!")
-		return
-	}
-	a.setToast("you strike " + p.Name + with)
-}
-
-// strikeCreature lands a blow on a wild animal. A strike decrements its HP
-// atomically (so two hunters can't both claim one kill); a non-killing hit just
-// spooks it, and the blow that drops it despawns the animal and rolls its spoils
-// into the pack. Weapon damage scales the blow.
-func (a *area) strikeCreature(c world.Creature, wp game.Weapon) {
-	sp, ok := game.SpeciesByKind(c.Kind)
-	if !ok {
-		return
-	}
-	if c.Owner == a.ctx.Name {
-		a.setToast("you won't hunt your own companion")
-		return
-	}
-	a.noteSpecies(c.Kind)
-
+// weaponDamage is the blow a weapon lands on a target at (tx,ty) facing tdir,
+// including the backstab bonus when the attacker strikes from behind.
+func (a *area) weaponDamage(wp game.Weapon, tx, ty int, tdir world.Dir) int {
 	dmg := wp.Damage
 	if dmg < 1 {
 		dmg = 1
 	}
+	if wp.Backstab && a.isBehind(tx, ty, tdir) {
+		dmg += game.BackstabBonus
+	}
+	return dmg
+}
+
+// isBehind reports whether the attacker stands behind a target facing tdir — the
+// dot of the target's facing with the target→attacker vector is negative.
+func (a *area) isBehind(tx, ty int, tdir world.Dir) bool {
+	fx, fy := facingDelta(tdir)
+	return fx*(a.wx-tx)+fy*(a.wy-ty) < 0
+}
+
+// pushDir is the unit knockback away from the attacker toward (tx,ty).
+func (a *area) pushDir(tx, ty int) (int, int) {
+	dx, dy := isign(tx-a.wx), isign(ty-a.wy)
+	if dx == 0 && dy == 0 {
+		dy = 1
+	}
+	return dx, dy
+}
+
+func isign(n int) int {
+	switch {
+	case n > 0:
+		return 1
+	case n < 0:
+		return -1
+	default:
+		return 0
+	}
+}
+
+// applyPlayerHit lands a blow on another player via the world's atomic Strike: a
+// non-lethal hit just hurts, the blow that empties their HP knocks them out.
+// Knockback shoves them a tile back. quiet suppresses the per-target toast (for
+// multi-hit sweeps, which print a summary). Returns whether it connected.
+func (a *area) applyPlayerHit(p world.Player, wp game.Weapon, quiet bool) bool {
+	dmg := a.weaponDamage(wp, p.X, p.Y, p.Facing)
+	_, downed, ok := a.ctx.World.Strike(a.ctx.Name, p.Name, wp.Name, dmg, downedDuration)
+	if !ok {
+		if !quiet {
+			if a.ctx.World.Immune(p.Name) {
+				a.setToast(p.Name + " is still catching their breath")
+			} else {
+				a.setToast(p.Name + " is already down")
+			}
+		}
+		return false
+	}
+	if wp.Knockback && !downed {
+		dx, dy := a.pushDir(p.X, p.Y)
+		nx, ny := p.X+dx, p.Y+dy
+		if a.fits(nx, ny) {
+			a.ctx.World.Shove(a.ctx.Name, p.Name, nx, ny)
+		}
+	}
+	if !quiet {
+		with := ""
+		if wp.Item != "" {
+			with = " with the " + wp.Name
+		}
+		if downed {
+			a.setToast("you knock " + p.Name + " out" + with + "!")
+		} else {
+			a.setToast("you strike " + p.Name + with)
+		}
+	}
+	return true
+}
+
+// applyCreatureHit lands a blow on a wild animal. A strike decrements its HP
+// atomically (so two hunters can't both claim one kill); a non-killing hit just
+// spooks it (and a knockback weapon shoves it), and the blow that drops it
+// despawns the animal and rolls its spoils into the pack. quiet suppresses the
+// per-target toast for sweeps. Returns whether it connected.
+func (a *area) applyCreatureHit(c world.Creature, wp game.Weapon, quiet bool) bool {
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if !ok {
+		return false
+	}
+	if c.Owner == a.ctx.Name {
+		if !quiet {
+			a.setToast("you won't hunt your own companion")
+		}
+		return false
+	}
+	a.noteSpecies(c.Kind)
+
+	dmg := a.weaponDamage(wp, c.X, c.Y, c.Facing)
 	killed := false
 	changed := a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
 		if cc.HP <= 0 {
@@ -873,30 +1014,61 @@ func (a *area) strikeCreature(c world.Creature, wp game.Weapon) {
 		return true
 	})
 	if !changed {
-		a.setToast("the " + sp.Name + " is already gone")
-		return
+		if !quiet {
+			a.setToast("the " + sp.Name + " is already gone")
+		}
+		return false
 	}
 	if !killed {
-		a.setToast("you strike the " + sp.Name + " — it bolts")
-		return
+		if wp.Knockback {
+			a.shoveCreature(c, sp)
+		}
+		if !quiet {
+			a.setToast("you strike the " + sp.Name + " — it bolts")
+		}
+		return true
 	}
 
 	a.ctx.World.DespawnCreature(c.ID)
 	drops := game.RollDrops(sp, a.rng)
-	if len(drops) == 0 {
-		a.setToast("you catch the " + sp.Name)
-		return
-	}
-	parts := make([]string, 0, len(drops))
 	for id, n := range drops {
 		a.ctx.Inventory[id] += n
 		for i := 0; i < n; i++ {
 			a.ctx.Store.AddItem(a.ctx.Name, id)
 		}
-		parts = append(parts, fmt.Sprintf("+%d %s", n, itemName(id)))
 	}
-	sort.Strings(parts) // stable, readable toast
-	a.setToast("you catch the " + sp.Name + " — " + strings.Join(parts, ", "))
+	if !quiet {
+		if len(drops) == 0 {
+			a.setToast("you catch the " + sp.Name)
+			return true
+		}
+		parts := make([]string, 0, len(drops))
+		for id, n := range drops {
+			parts = append(parts, fmt.Sprintf("+%d %s", n, itemName(id)))
+		}
+		sort.Strings(parts)
+		a.setToast("you catch the " + sp.Name + " — " + strings.Join(parts, ", "))
+	}
+	return true
+}
+
+// shoveCreature knocks a live land creature back a tile onto walkable ground.
+func (a *area) shoveCreature(c world.Creature, sp game.Species) {
+	if sp.Aquatic {
+		return // fish don't get bumped across the bank
+	}
+	dx, dy := a.pushDir(c.X, c.Y)
+	nx, ny := c.X+dx, c.Y+dy
+	if !a.walkableAt(nx, ny) {
+		return
+	}
+	a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		if cc.HP <= 0 {
+			return false
+		}
+		cc.X, cc.Y = nx, ny
+		return true
+	})
 }
 
 // tameChance is the odds one offering of bait befriends a wary animal.
@@ -1082,6 +1254,15 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		case world.EventPlayerRespawn:
 			if ev.Target == a.ctx.Name {
 				a.setToast("you come to, safe at Durst HQ")
+			}
+		case world.EventPlayerShoved:
+			// Knocked back: your own client owns your position, so apply it here,
+			// re-checking the cell is open (terrain is shared, so this rarely fails).
+			if ev.Target == a.ctx.Name && !a.building && a.fits(ev.X, ev.Y) {
+				a.wx, a.wy = ev.X, ev.Y
+				a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
+				a.reveal()
+				a.persist()
 			}
 		}
 		return a, nil
