@@ -292,7 +292,20 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   it's the only way to post in HD, which has no command line. A shared composer
   (`OfferDraft` + `CycleOfferField`/`PostDraft` in `internal/game/offer_compose.go`)
   drives both clients identically, the way the character panel shares its cycling.
-- ⬜ Settlement claims and the parked wildlife layer come after.
+- ✅ **Settlement claims & protected building** (the land-tenure layer — see
+  [`CLAIMS_PLAN.md`](CLAIMS_PLAN.md)). Two tiers resolved by one `game.BuildRight`
+  predicate: **deed a settlement building** (a Workspace Charter) for a named,
+  bounded parcel only you may build on, or — in the open Wilds — your own
+  structures project a small **proximity buffer** others can't build inside.
+  Worldgen exposes the pre-drawn buildings as stable, pure-seed plots
+  (`worldgen.PlotAt`); a claim is shared world state persisted like the gate pool
+  (not a placement), arbitrated atomically so two claimants can't both win, and it
+  **lapses after the owner is absent ~7 days** (a wall-clock check, no per-tick
+  sim) so plots recirculate. In build mode `e` over a building deeds it and `x`
+  releases your own; the glyph HUD names the parcel ("Anna's Workspace, Brixen")
+  and both clients toast on entry. Movement is never gated — claims protect
+  building, never walking.
+- ⬜ The parked wildlife layer comes after.
 
 ## Parked polish
 

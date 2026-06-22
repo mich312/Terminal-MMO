@@ -81,6 +81,22 @@ func main() {
 		st.RemovePlacement,
 	)
 
+	// Restore the shared land claims (deeded settlement plots) and keep them saved
+	// as people claim, refresh and release.
+	claims := make([]world.Claim, 0)
+	for _, c := range st.LoadClaims() {
+		claims = append(claims, world.Claim{PlotID: c.PlotID, Owner: c.Owner,
+			MinX: c.MinX, MinY: c.MinY, MaxX: c.MaxX, MaxY: c.MaxY, LastTouch: c.LastTouch})
+	}
+	w.LoadClaims(claims)
+	w.SetClaimPersist(
+		func(c world.Claim) {
+			st.SaveClaim(store.Claim{PlotID: c.PlotID, Owner: c.Owner,
+				MinX: c.MinX, MinY: c.MinY, MaxX: c.MaxX, MaxY: c.MaxY, LastTouch: c.LastTouch})
+		},
+		st.RemoveClaim,
+	)
+
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
 		// persistent Ed25519 host key, generated on first run

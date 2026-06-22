@@ -149,9 +149,27 @@ extra storage.
    ClaimActive,WorkspaceAt}`. Tested: a claim reserves its plot, a second claimant
    fails, a lapsed claim is re-deedable, the owner's presence refreshes the lease,
    and the wilds buffer rejects a foreign builder but not the owner. (No UI yet.)
-3. **Wire `BuildRight` into `canBuildAt` / `Demolish`**, claim & release in the
-   build flow, and the HUD "Anna's Workspace, Brixen" line (both clients).
-4. **Docs** — fold the shipped result into `ROADMAP.md` Phase 9.
+3. ✅ **User-facing wiring.** `canBuildAt` now consults `BuildRight` (so the ghost
+   reddens in protected ground, with a "<owner>'s Workspace — protected" toast).
+   Claiming reuses the build cursor with no new key: in build mode, **`e` over a
+   settlement building deeds the plot** (open ground still places a structure) and
+   **`x` over your own plot releases it** (else it demolishes). Settlement names
+   come from `worldgen.SettlementNameAt`; the glyph status line shows
+   "your/Anna's Workspace, Brixen" persistently while you stand in a parcel, and
+   both clients toast on crossing into one. Standing on your own land refreshes
+   the lease. Claims persist through a new SQLite `claims` table wired in
+   `main.go` (with `noopStore` no-ops, so the game still plays without memory).
+4. **Docs** — folded into `ROADMAP.md` Phase 9.
 
 Everything after — co-owned plots, settlement-wide perks, decay tuning — layers
 onto these with no new architecture.
+
+### Deferred polish
+
+- **A subtle in-world marker** for a claimed plot (a deed post / boundary tint) so
+  ownership reads at a glance, not just from the HUD. Functional discovery already
+  works via the build-cursor prompt and the enter-claim toast.
+- **A persistent HD ambient label** matching the glyph status line (HD conveys the
+  claim via the enter toast today; the action-prompt slot is reserved for keyed
+  actions, so a non-keyed label needs its own HD status affordance).
+- **Wilds-buffer time-decay** (folds in with abandoned-structure cleanup).

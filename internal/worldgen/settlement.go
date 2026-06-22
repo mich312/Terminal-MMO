@@ -1748,7 +1748,7 @@ func (g *Generator) PlotAt(x, y int) (Plot, bool) {
 			ax, ay := l.ox+agx, l.oy+agy
 			return Plot{
 				ID:         fmt.Sprintf("%x:%d,%d", s.id, ax, ay),
-				Settlement: fmt.Sprintf("%x", s.id),
+				Settlement: settlementName(s.id),
 				Town:       s.town,
 				Kind:       buildTypeName(bt),
 				AX:         ax, AY: ay,
@@ -1757,6 +1757,40 @@ func (g *Generator) PlotAt(x, y int) (Plot, bool) {
 		}
 	}
 	return Plot{}, false
+}
+
+// SettlementNameAt returns the name of the settlement covering (x,y), if the
+// cell lies within one — for the claim HUD ("…, Brixen"). It mirrors the ±1
+// macro scan settlementAt uses to decide coverage.
+func (g *Generator) SettlementNameAt(x, y int) (string, bool) {
+	mx, my := floorDiv(x, settleCell), floorDiv(y, settleCell)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			s := g.settlementFor(mx+dx, my+dy)
+			if !s.valid {
+				continue
+			}
+			l := g.layoutOf(s)
+			gx, gy := x-l.ox, y-l.oy
+			if l.in(gx, gy) && l.at(gx, gy).kind != lEmpty {
+				return settlementName(s.id), true
+			}
+		}
+	}
+	return "", false
+}
+
+// settlementName derives a stable, pronounceable place-name from a settlement's
+// identity hash — an onset plus a tail, so towns read like "Brixen", "Morwick",
+// "Aldford". Deterministic: the same settlement is always the same name.
+func settlementName(id uint64) string {
+	onset := []string{"Bri", "Mor", "Ald", "Wen", "Tor", "Hal", "Fen", "Gar", "Dun",
+		"Kel", "Ash", "Win", "Stein", "Vel", "Lor", "Brenn"}
+	tail := []string{"xen", "wick", "ford", "ton", "dale", "moor", "heim", "burg",
+		"stead", "fell", "mar", "gard", "holt", "wend", "by", "thal"}
+	o := onset[id%uint64(len(onset))]
+	t := tail[(id/0x9E3779B1)%uint64(len(tail))]
+	return o + t
 }
 
 // anchorCovering finds the building anchor whose footprint covers grid cell

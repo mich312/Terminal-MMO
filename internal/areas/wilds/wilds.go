@@ -55,7 +55,7 @@ type area struct {
 	wx, wy     int // absolute world position (top-left of the body's footprint)
 	frame      int
 	showMap    bool
-	showBoard  bool // the notice board panel is open
+	showBoard  bool              // the notice board panel is open
 	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
@@ -66,6 +66,8 @@ type area struct {
 	building bool // placing a structure: movement drives the ghost, not the body
 	buildSel int  // selected placeable in game.Placeables
 	bx, by   int  // ghost cursor, absolute world coords
+
+	inClaim string // plot id of the claim the body stands in ("" if none)
 }
 
 // toastDuration is how long a pickup message lingers.
@@ -105,6 +107,9 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	a.wx, a.wy = a.resume()
 	a.reveal()
 	a.persist()
+	if c, _, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
+		a.inClaim = c.PlotID // show the workspace label on arrival, without a toast
+	}
 	a.ctx.World.EnterArea(a.ctx.Name, "wilds", a.wx, a.wy, "The Wilds")
 	return nil
 }
@@ -214,6 +219,9 @@ func (a *area) canBuildAt(x, y int) bool {
 	if x >= a.wx && x < a.wx+game.PlayerW && y >= a.wy && y < a.wy+game.PlayerH {
 		return false // can't build under yourself
 	}
+	if ok, _ := game.BuildRight(a.ctx, x, y); !ok {
+		return false // inside someone else's claim or wilds buffer
+	}
 	return true
 }
 
@@ -226,7 +234,11 @@ func (a *area) placeStructure() {
 	}
 	p := game.Placeables[a.buildSel]
 	if !a.canBuildAt(a.bx, a.by) {
-		a.setToast("can't build there")
+		if ok, owner := game.BuildRight(a.ctx, a.bx, a.by); !ok && owner != "" {
+			a.setToast(owner + "'s Workspace — protected")
+		} else {
+			a.setToast("can't build there")
+		}
 		return
 	}
 	if !game.CanAfford(p, a.ctx.Inventory) {
@@ -239,6 +251,97 @@ func (a *area) placeStructure() {
 	}
 	game.SpendFor(a.ctx, p)
 	a.setToast("built " + p.Name)
+}
+
+// updateClaimPresence refreshes the lease while the player stands on their own
+// land, and toasts when they cross into a Workspace — so both clients announce
+// the claim (the glyph status line also shows it persistently, via Hint).
+func (a *area) updateClaimPresence() {
+	c, mine, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy)
+	cur := ""
+	if ok {
+		cur = c.PlotID
+		if mine {
+			game.TouchWorkspace(a.ctx, c.PlotID)
+		}
+	}
+	if cur == a.inClaim {
+		return
+	}
+	a.inClaim = cur
+	if ok {
+		a.setToast("entering " + a.workspaceLabel(c, mine))
+	}
+}
+
+// workspaceLabel renders a claim as "your Workspace, Brixen" / "Anna's
+// Workspace, Brixen" (the settlement name dropped if unknown).
+func (a *area) workspaceLabel(c world.Claim, mine bool) string {
+	who := c.Owner + "'s"
+	if mine {
+		who = "your"
+	}
+	label := who + " Workspace"
+	if name, ok := a.gen.SettlementNameAt(a.wx, a.wy); ok {
+		label += ", " + name
+	}
+	return label
+}
+
+// ghostClaimPrompt is the claim-related action under the build cursor, if it
+// hovers a settlement plot: release your own, note another's, or claim a free one.
+func (a *area) ghostClaimPrompt() (string, bool) {
+	p, ok := a.gen.PlotAt(a.bx, a.by)
+	if !ok {
+		return "", false
+	}
+	if c, mine, ok := game.WorkspaceAt(a.ctx, a.bx, a.by); ok && c.PlotID == p.ID {
+		if mine {
+			return "x — release your Workspace (" + p.Settlement + ")", true
+		}
+		return c.Owner + "'s Workspace — protected", true
+	}
+	return "e — claim this " + p.Kind + " in " + p.Settlement, true
+}
+
+// claimUnderGhost deeds the settlement plot beneath the build cursor to the
+// player (the Workspace Charter), or reports who already holds it — the
+// land-tenure counterpart to placing a structure (docs/CLAIMS_PLAN.md).
+func (a *area) claimUnderGhost() {
+	p, ok := a.gen.PlotAt(a.bx, a.by)
+	if !ok {
+		a.setToast("no plot here — claim a building in a settlement")
+		return
+	}
+	if c, mine, held := game.WorkspaceAt(a.ctx, a.bx, a.by); held && c.PlotID == p.ID {
+		if mine {
+			a.setToast("you already hold this Workspace (x to release)")
+		} else {
+			a.setToast(c.Owner + " already holds this plot")
+		}
+		return
+	}
+	if game.ClaimWorkspace(a.ctx, p.ID, p.AX, p.AY, p.W, p.H) {
+		a.setToast("claimed a " + p.Kind + " in " + p.Settlement)
+	} else {
+		a.setToast("can't claim that")
+	}
+}
+
+// releaseUnderGhost gives up the player's claim on the plot under the build
+// cursor, if they hold it. Returns whether a release happened (with its toast).
+func (a *area) releaseUnderGhost() bool {
+	p, ok := a.gen.PlotAt(a.bx, a.by)
+	if !ok {
+		return false
+	}
+	if c, mine, held := game.WorkspaceAt(a.ctx, a.bx, a.by); held && mine && c.PlotID == p.ID {
+		if game.ReleaseWorkspace(a.ctx, p.ID) {
+			a.setToast("released your Workspace in " + p.Settlement)
+			return true
+		}
+	}
+	return false
 }
 
 func iabs(n int) int {
@@ -389,9 +492,19 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			case "[":
 				a.buildSel = (a.buildSel + len(game.Placeables) - 1) % len(game.Placeables)
 			case "e", "enter":
-				a.placeStructure()
+				// Over a settlement building, e deeds the plot; on open ground it
+				// places the selected structure.
+				if _, ok := a.gen.PlotAt(a.bx, a.by); ok {
+					a.claimUnderGhost()
+				} else {
+					a.placeStructure()
+				}
 			case "x":
-				if game.Demolish(a.ctx, a.bx, a.by) {
+				// Over your own claimed plot, x releases the deed; otherwise it
+				// demolishes your structure under the ghost.
+				if a.releaseUnderGhost() {
+					// released — toast set inside
+				} else if game.Demolish(a.ctx, a.bx, a.by) {
 					a.setToast("removed")
 				} else {
 					a.setToast("nothing of yours there")
@@ -459,6 +572,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		if a.wx != sx || a.wy != sy {
 			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
 			a.persist()
+			a.updateClaimPresence()
 		}
 	}
 	return a, nil
@@ -466,8 +580,11 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 
 func (a *area) Hint() string {
 	if a.building {
+		if s, ok := a.ghostClaimPrompt(); ok {
+			return s + " · b done"
+		}
 		pb := game.Placeables[a.buildSel]
-		return fmt.Sprintf("build: %s (%s) · move ghost · e place · x remove · r next · b done", pb.Name, game.PlaceableCost(pb))
+		return fmt.Sprintf("build: %s (%s) · e place · x remove · r next · b done", pb.Name, game.PlaceableCost(pb))
 	}
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
@@ -481,6 +598,10 @@ func (a *area) Hint() string {
 	if a.boardAdjacent() {
 		return "e — read the notice board"
 	}
+	if c, mine, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
+		dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
+		return a.workspaceLabel(c, mine) + " · ⌂ " + bearing(dx, dy)
+	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
 }
@@ -490,6 +611,9 @@ func (a *area) Hint() string {
 // not an action, so here it returns ok=false to keep the HD bottom clear.
 func (a *area) Prompt() (string, bool) {
 	if a.building {
+		if s, ok := a.ghostClaimPrompt(); ok {
+			return s, true
+		}
 		pb := game.Placeables[a.buildSel]
 		return fmt.Sprintf("e build %s (%s) · r next · x remove · b done", pb.Name, game.PlaceableCost(pb)), true
 	}

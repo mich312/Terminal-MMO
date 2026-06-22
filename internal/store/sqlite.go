@@ -99,6 +99,15 @@ CREATE TABLE IF NOT EXISTS placements (
 	created INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (x, y)
 );
+CREATE TABLE IF NOT EXISTS claims (
+	plot_id    TEXT PRIMARY KEY,
+	owner      TEXT NOT NULL,
+	min_x      INTEGER NOT NULL,
+	min_y      INTEGER NOT NULL,
+	max_x      INTEGER NOT NULL,
+	max_y      INTEGER NOT NULL,
+	last_touch INTEGER NOT NULL DEFAULT 0
+);
 `
 
 type sqliteStore struct {
@@ -448,6 +457,49 @@ func (s *sqliteStore) LoadPlacements() []Placement {
 		var p Placement
 		if err := rows.Scan(&p.X, &p.Y, &p.Kind, &p.Owner, &p.State, &p.Created); err == nil {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// SaveClaim upserts a land claim, keyed by plot id.
+func (s *sqliteStore) SaveClaim(c Claim) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO claims (plot_id, owner, min_x, min_y, max_x, max_y, last_touch)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(plot_id) DO UPDATE SET owner = excluded.owner, min_x = excluded.min_x,
+		 min_y = excluded.min_y, max_x = excluded.max_x, max_y = excluded.max_y,
+		 last_touch = excluded.last_touch`,
+		c.PlotID, c.Owner, c.MinX, c.MinY, c.MaxX, c.MaxY, c.LastTouch); err != nil {
+		log.Printf("store: save claim: %v", err)
+	}
+}
+
+// RemoveClaim deletes the claim on a plot.
+func (s *sqliteStore) RemoveClaim(plotID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM claims WHERE plot_id = ?`, plotID); err != nil {
+		log.Printf("store: remove claim: %v", err)
+	}
+}
+
+// LoadClaims returns every land claim in the world.
+func (s *sqliteStore) LoadClaims() []Claim {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT plot_id, owner, min_x, min_y, max_x, max_y, last_touch FROM claims`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Claim
+	for rows.Next() {
+		var c Claim
+		if err := rows.Scan(&c.PlotID, &c.Owner, &c.MinX, &c.MinY, &c.MaxX, &c.MaxY, &c.LastTouch); err == nil {
+			out = append(out, c)
 		}
 	}
 	return out

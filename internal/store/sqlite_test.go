@@ -42,7 +42,7 @@ func TestPositionRoundTrip(t *testing.T) {
 // stores as a negative int64 and must come back as the same uint64 bits.
 func TestDiscoveryRoundTrip(t *testing.T) {
 	s := openTemp(t)
-	s.SaveDiscovery("ada", 0, 0, 0xFFFFFFFFFFFFFFFF) // full chunk
+	s.SaveDiscovery("ada", 0, 0, 0xFFFFFFFFFFFFFFFF)  // full chunk
 	s.SaveDiscovery("ada", -3, 5, 0x8000000000000001) // high + low bit
 	got := s.LoadDiscovery("ada")
 	if got[[2]int{0, 0}] != 0xFFFFFFFFFFFFFFFF {
@@ -187,5 +187,37 @@ func TestPlacementRoundTrip(t *testing.T) {
 	s.RemovePlacement(9, 2)
 	if got := s.LoadPlacements(); len(got) != 1 {
 		t.Errorf("after remove there are %d placements, want 1", len(got))
+	}
+}
+
+func TestClaimRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if got := s.LoadClaims(); len(got) != 0 {
+		t.Fatalf("fresh store has %d claims, want 0", len(got))
+	}
+	s.SaveClaim(Claim{PlotID: "a:1,2", Owner: "ada", MinX: 1, MinY: 2, MaxX: 5, MaxY: 6, LastTouch: 100})
+	s.SaveClaim(Claim{PlotID: "b:3,4", Owner: "bob", MinX: 10, MinY: 10, MaxX: 12, MaxY: 12, LastTouch: 200})
+
+	got := s.LoadClaims()
+	if len(got) != 2 {
+		t.Fatalf("loaded %d claims, want 2", len(got))
+	}
+
+	// Upsert: same plot id, new owner/clock replaces (a lapse re-deed or a touch).
+	s.SaveClaim(Claim{PlotID: "a:1,2", Owner: "cy", MinX: 1, MinY: 2, MaxX: 5, MaxY: 6, LastTouch: 999})
+	byID := map[string]Claim{}
+	for _, c := range s.LoadClaims() {
+		byID[c.PlotID] = c
+	}
+	if len(byID) != 2 {
+		t.Fatalf("after upsert there are %d claims, want 2", len(byID))
+	}
+	if c := byID["a:1,2"]; c.Owner != "cy" || c.LastTouch != 999 {
+		t.Errorf("upsert kept %+v; want cy at t=999", c)
+	}
+
+	s.RemoveClaim("b:3,4")
+	if got := s.LoadClaims(); len(got) != 1 {
+		t.Errorf("after remove there are %d claims, want 1", len(got))
 	}
 }
