@@ -111,6 +111,24 @@ func DrawAreaTitle(img *image.RGBA, name string, emphasis float64) {
 	pixel.DrawText(img, x, y, s, name, rgbaLerp(hudDim, hudBright, emphasis))
 }
 
+// DrawClaimBanner draws the land-claim label as a quiet line just under the area
+// title (top-left) — the HD counterpart to the glyph status-line label, shown
+// only while the player stands in a claimed Workspace.
+func DrawClaimBanner(img *image.RGBA, label string) {
+	W := img.Bounds().Dx()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 5 * s
+	label = asciiOnly(label)
+	if label == "" {
+		return
+	}
+	x, y := pad, pad+lh // one line below the area title
+	tw := pixel.TextWidth(label, s)
+	pixel.Shade(img, x-2*s, y-2*s, tw+4*s, lh, 0.45)
+	pixel.DrawText(img, x, y, s, label, hudAccent)
+}
+
 // DrawTopLegend draws the persistent mini-legend as a 2×2 grid pinned to the
 // top-right corner — always visible, never in the way.
 func DrawTopLegend(img *image.RGBA) {

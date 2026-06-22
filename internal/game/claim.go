@@ -80,6 +80,20 @@ func TouchWorkspace(ctx *Ctx, plotID string) {
 	ctx.World.TouchClaim(plotID, ctx.Name, nowUnix())
 }
 
+// LiveClaimsOverlapping returns the active (non-lapsed) claims intersecting the
+// box — the in-world parcel tint reads it once per rendered window.
+func LiveClaimsOverlapping(ctx *Ctx, minX, minY, maxX, maxY int) []world.Claim {
+	now := nowUnix()
+	all := ctx.World.ClaimsOverlapping(minX, minY, maxX, maxY)
+	out := all[:0]
+	for _, c := range all {
+		if ClaimActive(c, now) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // WorkspaceAt returns the live claim covering (x,y) for the HUD, plus whether
 // ctx's player owns it. ok is false if the cell is unclaimed or the claim lapsed.
 func WorkspaceAt(ctx *Ctx, x, y int) (c world.Claim, mine, ok bool) {

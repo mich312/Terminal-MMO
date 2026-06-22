@@ -36,6 +36,14 @@ type Prompter interface {
 	Prompt() (text string, ok bool)
 }
 
+// ClaimLabeler lets an area name the land claim the player is standing in
+// ("your Workspace, Brixen") so the HD client can show it as a quiet banner —
+// the persistent ambient counterpart to the glyph status-line Hint. ok is false
+// when the player is on unclaimed ground.
+type ClaimLabeler interface {
+	ClaimLabel() (text string, ok bool)
+}
+
 // InputCapturer lets an area grab all key input (e.g. while the guestbook
 // panel is open) so the root model's global keys don't interfere.
 type InputCapturer interface {

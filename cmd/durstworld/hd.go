@@ -309,6 +309,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			emphasis = 1 - float64(d)/float64(areaFlare)
 		}
 		game.DrawAreaTitle(img, area.Name(), emphasis)
+		if cl, ok := area.(game.ClaimLabeler); ok {
+			if label, show := cl.ClaimLabel(); show {
+				game.DrawClaimBanner(img, label)
+			}
+		}
 		game.DrawTopLegend(img)
 		if prompt, show := actionPrompt(area); show {
 			game.DrawActionPrompt(img, prompt)

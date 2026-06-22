@@ -50,6 +50,20 @@ func (w *World) ClaimAt(x, y int) (Claim, bool) {
 	return Claim{}, false
 }
 
+// ClaimsOverlapping returns copies of every claim whose parcel intersects the
+// box — for the in-world parcel tint, fetched once per rendered window.
+func (w *World) ClaimsOverlapping(minX, minY, maxX, maxY int) []Claim {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []Claim
+	for _, c := range w.claims {
+		if c.MinX <= maxX && c.MaxX >= minX && c.MinY <= maxY && c.MaxY >= minY {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // ClaimForPlot returns the claim on a specific plot id, if any.
 func (w *World) ClaimForPlot(plotID string) (Claim, bool) {
 	w.mu.Lock()

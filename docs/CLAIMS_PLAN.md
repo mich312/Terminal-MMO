@@ -164,12 +164,16 @@ extra storage.
 Everything after — co-owned plots, settlement-wide perks, decay tuning — layers
 onto these with no new architecture.
 
-### Deferred polish
+### Polish
 
-- **A subtle in-world marker** for a claimed plot (a deed post / boundary tint) so
-  ownership reads at a glance, not just from the HUD. Functional discovery already
-  works via the build-cursor prompt and the enter-claim toast.
-- **A persistent HD ambient label** matching the glyph status line (HD conveys the
-  claim via the enter toast today; the action-prompt slot is reserved for keyed
-  actions, so a non-keyed label needs its own HD status affordance).
-- **Wilds-buffer time-decay** (folds in with abandoned-structure cleanup).
+- ✅ **In-world parcel tint.** A claimed parcel's ground gets a soft tint in the
+  sampled window — green over your own, amber over another's — the same green/red
+  language the build ghost uses, so ownership reads at a glance. Claims overlapping
+  the window are fetched once per sample (`game.LiveClaimsOverlapping`), so the
+  common no-claims-nearby case costs nothing.
+- ✅ **Persistent HD claim banner.** A quiet "your/Anna's Workspace, Brixen" line
+  under the HD area title (`game.DrawClaimBanner`, fed by the new `ClaimLabeler`
+  interface) — the HD counterpart to the glyph status-line label, so both clients
+  show the claim persistently, not just on the enter toast.
+- ⬜ **Wilds-buffer time-decay** (still deferred — folds in with abandoned-structure
+  cleanup, which needs a per-owner presence signal).

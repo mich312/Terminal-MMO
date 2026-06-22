@@ -288,6 +288,35 @@ func (a *area) workspaceLabel(c world.Claim, mine bool) string {
 	return label
 }
 
+// Parcel tint hues: a soft green over your own claimed ground, amber over
+// another player's — the same green/red-ghost language the build cursor uses.
+const (
+	tintMine  = "#7BD88F"
+	tintOther = "#E0B44D"
+)
+
+// claimTint returns the tint hue for (x,y) if it lies in a claimed parcel.
+func claimTint(claims []world.Claim, me string, x, y int) (string, bool) {
+	for _, c := range claims {
+		if c.Covers(x, y) {
+			if c.Owner == me {
+				return tintMine, true
+			}
+			return tintOther, true
+		}
+	}
+	return "", false
+}
+
+// ClaimLabel implements game.ClaimLabeler: the Workspace the body stands in, for
+// the HD banner (the glyph client shows the same label via Hint).
+func (a *area) ClaimLabel() (string, bool) {
+	if c, mine, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
+		return a.workspaceLabel(c, mine), true
+	}
+	return "", false
+}
+
 // ghostClaimPrompt is the claim-related action under the build cursor, if it
 // hovers a settlement plot: release your own, note another's, or claim a free one.
 func (a *area) ghostClaimPrompt() (string, bool) {
@@ -747,6 +776,9 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 	// Center the 2×2 body (not its top-left corner) in the window, so the avatar
 	// sits dead center in both the glyph and HD views.
 	ox, oy := a.wx-(vw-game.PlayerW)/2, a.wy-(vh-game.PlayerH)/2
+	// Land claims overlapping this window, fetched once: their parcels get a soft
+	// ground tint so ownership reads at a glance (green yours, amber others).
+	claims := game.LiveClaimsOverlapping(a.ctx, ox, oy, ox+vw-1, oy+vh-1)
 	tiles := make([][]game.Tile, vh)
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
@@ -799,6 +831,16 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex = pb.Prop, pb.Hex
 						t.Walkable = pb.Walkable
 						t.Ground = groundColor(cell.Biome)
+					}
+				}
+				if len(claims) > 0 {
+					if tint, ok := claimTint(claims, a.ctx.Name, wx, wy); ok {
+						if t.Ground != "" && t.Ground != fogColor {
+							t.Ground = string(ui.Blend(t.Ground, tint, 0.16))
+						}
+						if t.Color != "" { // a fainter nudge so the glyph view hints at it too
+							t.Color = string(ui.Blend(t.Color, tint, 0.10))
+						}
 					}
 				}
 				row[lx] = t
