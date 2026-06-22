@@ -107,6 +107,7 @@ const (
 	PropTower          // a stone wall tower, for towns (blocks, overhangs upward)
 	PropBrazier        // a fire brazier on a post — lights a city's gates and squares at night
 	PropStall          // a market stall with a striped awning, on a city's square (blocks)
+	PropNoticeBoard    // a wooden notice board / sign on the village green (blocks, readable)
 	PropBridgeH        // a plank bridge deck running east–west (walkable)
 	PropBridgeV        // a plank bridge deck running north–south (walkable)
 	// Caves: a dark arched mouth in the hills, and the bioluminescent life within.

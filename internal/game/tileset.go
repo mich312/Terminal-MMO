@@ -210,6 +210,16 @@ var propArt = map[TileProp][]string{
 		"PLppLP",
 		".pPPp.",
 	},
+	// A village notice board: a parchment face (W) with lines of writing (p) in
+	// a wooden frame (P) on a post (D) — the readable sign on the green.
+	PropNoticeBoard: {
+		"oPPPPo",
+		"PWWWWP",
+		"PWppWP",
+		"PWppWP",
+		"oPPPPo",
+		"..DD..",
+	},
 	// Ripe grain: a little stand of golden stalks with heavy seed-heads (W),
 	// standing in a field — reads as a crop ready to harvest.
 	PropCrop: {

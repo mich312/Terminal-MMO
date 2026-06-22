@@ -55,6 +55,7 @@ type area struct {
 	wx, wy     int // absolute world position (top-left of the body's footprint)
 	frame      int
 	showMap    bool
+	showBoard  bool // the notice board panel is open
 	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
@@ -288,6 +289,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		if msg.String() == "e" {
 			if g, ok := a.sealedGateUnderBody(); ok {
 				a.offerToGate(g)
+			} else if a.boardAdjacent() && !a.hasLootUnderBody() {
+				a.showBoard = !a.showBoard // read / dismiss the notice board
 			} else {
 				a.pickUp()
 			}
@@ -295,6 +298,9 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		}
 		if a.showMap {
 			a.showMap = false // any other key closes the map
+		}
+		if a.showBoard {
+			a.showBoard = false // any other key closes the notice board
 		}
 		dx, dy, steps, ok := game.MoveKey(msg.String())
 		if !ok {
@@ -337,6 +343,9 @@ func (a *area) Hint() string {
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name
 	}
+	if a.boardAdjacent() {
+		return "e — read the notice board"
+	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
 }
@@ -357,7 +366,28 @@ func (a *area) Prompt() (string, bool) {
 	if it, _, _, ok := a.itemUnderBody(); ok {
 		return "e — take " + it.Name, true
 	}
+	if a.boardAdjacent() {
+		return "e — read the notice board", true
+	}
 	return "", false
+}
+
+// hasLootUnderBody reports whether a pickable hat or item lies under the body.
+func (a *area) hasLootUnderBody() bool {
+	if _, _, _, ok := a.hatUnderBody(); ok {
+		return true
+	}
+	_, _, _, ok := a.itemUnderBody()
+	return ok
+}
+
+// boardAdjacent reports whether the notice board sits next to the player's 2×2
+// body (the board blocks, so you read it from an abutting tile). The ring is the
+// footprint grown by one cell in every direction.
+func (a *area) boardAdjacent() bool {
+	bx, by := worldgen.HubBoard()
+	return bx >= a.wx-1 && bx <= a.wx+game.PlayerW &&
+		by >= a.wy-1 && by <= a.wy+game.PlayerH
 }
 
 // itemUnderBody returns the first uncollected item beneath the 2×2 footprint.
@@ -545,6 +575,10 @@ func (a *area) View(width, height int) string {
 		panel := a.minimap()
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
+	} else if a.showBoard {
+		panel := a.boardPanel()
+		pw := lipgloss.Width(panel)
+		view = ui.Overlay(view, panel, (width-pw)/2, 1)
 	} else if msg, show := a.Toast(); show {
 		th := a.ctx.Theme
 		if th == nil {
@@ -603,6 +637,10 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground = game.PropBrazier, c.Color, "#9A8E78"
 	case 's': // a market stall on the square (blocks)
 		t.Prop, t.PropHex, t.Ground = game.PropStall, c.Color, packedEarth
+	case 'N': // a village notice board on the green (blocks, readable)
+		t.Prop, t.PropHex, t.Ground = game.PropNoticeBoard, c.Color, groundColor(c.Biome)
+	case '◉': // a fountain — glowing water centerpiece (blocks)
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropFountain, c.Color, "#2E6BFF", game.TexWater
 	case 'b': // a plank bridge over water (walkable) — Variant carries its run
 		t.Prop = game.PropBridgeH
 		if c.Variant == 1 {
@@ -786,6 +824,55 @@ func (a *area) minimap() string {
 	}
 	b.WriteString(th.Dim.Render("m or move to close"))
 	return th.Panel.Render(b.String())
+}
+
+// boardEntries is the notice board's text: a welcome and a directory of the
+// doors and gates around the green. Shared by the glyph panel and the HD slide.
+func boardEntries() (title string, lines []string) {
+	return "The Hamlet Notice Board", []string{
+		"Welcome, traveller. The doors around the green:",
+		"",
+		"  ⌂  Durst HQ — the keep at the heart",
+		"  P  Presentation — east, past the market hall",
+		"  K  Kraftwerk — west, by the smithy",
+		"  D  Demo Center — north, by the chapel",
+		"",
+		"Two old gates stand beyond the hamlet:",
+		"  ◈  Whispering Gate (east) — answer its riddle,",
+		"     or offer an Ice Crystal",
+		"  ◈  Sunken Gate (north) — the village pools",
+		"     Gold Nuggets to raise it",
+		"",
+		"Stand on a door and step in.",
+	}
+}
+
+// boardPanel renders the notice board for the glyph client, styled to match the
+// map and other overlays.
+func (a *area) boardPanel() string {
+	th := a.ctx.Theme
+	if th == nil {
+		th = ui.Default
+	}
+	title, lines := boardEntries()
+	var b strings.Builder
+	b.WriteString(th.PanelTitle.Render(title) + "\n")
+	for _, ln := range lines {
+		b.WriteString(ln + "\n")
+	}
+	b.WriteString(th.Dim.Render("e or move to close"))
+	return th.Panel.Render(b.String())
+}
+
+// HDSlide implements game.HDOverlayer: when the notice board is open it renders
+// its text as a panel over the HD frame (which has no glyph layer of its own).
+func (a *area) HDSlide() (string, string, bool) {
+	if !a.showBoard {
+		return "", "", false
+	}
+	title, lines := boardEntries()
+	src := "# " + title + "\n\n" + strings.Join(lines, "\n")
+	return src, "e or move to close", true
 }
 
 // HDMinimap supplies the same coarse overview to the HD pixel client, which

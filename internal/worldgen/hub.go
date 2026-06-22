@@ -43,12 +43,18 @@ var hubGlades = [][2]int{{16, 0}, {-16, 0}, {0, 12}, {22, 0}, {0, 18}}
 
 // Hamlet furniture, placed asymmetrically on the green and clear of both trail
 // bows (all cells have |x|>=4 and |y|>=4, so a meandering trail never runs onto
-// them). A well, a little west-side market, and a scatter of street lamps.
+// them): a fountain centrepiece, a readable notice board by a little west-side
+// market, and a pair of street lamps.
 var (
-	hubWell   = [2]int{4, 4}
-	hubStalls = [][2]int{{-4, 5}, {-5, 4}, {-5, 5}}
-	hubLamps  = [][2]int{{-4, 4}, {4, -4}, {-4, -4}}
+	hubFountain = [2]int{4, 4}
+	hubBoard    = [2]int{4, -4}
+	hubStalls   = [][2]int{{-5, 4}, {-4, 5}, {-5, 5}}
+	hubLamps    = [][2]int{{-4, 4}, {-4, -4}}
 )
+
+// HubBoard is the world cell of the notice board, so the Wilds can tell when a
+// player stands beside it (to offer the "read" action).
+func HubBoard() (int, int) { return hubBoard[0], hubBoard[1] }
 
 // hubCell returns the redressed cell for the hub hamlet, or ok=false for cells
 // the hamlet does not cover (so generation falls through to settlements/biome).
@@ -59,9 +65,13 @@ func (g *Generator) hubCell(x, y int) (Cell, bool) {
 		return c, true
 	}
 	// Hamlet furniture always wins its cell, regardless of where the ragged
-	// clearing rim falls, so a lamp/well/stall never goes missing.
-	if x == hubWell[0] && y == hubWell[1] {
-		return Cell{Biome: Grass, Glyph: 'W', Color: "#9AA7B0"}, true // village well (blocks)
+	// clearing rim falls, so a fountain/board/lamp/stall never goes missing.
+	if x == hubFountain[0] && y == hubFountain[1] {
+		return Cell{Biome: Water, Glyph: '◉', Color: "#7DF0FF",
+			AnimA: "#2E6BFF", AnimB: "#9BE8FF", Frames: []rune{'◉', '◍', '◉', '◌'}}, true // fountain (blocks, glows)
+	}
+	if x == hubBoard[0] && y == hubBoard[1] {
+		return Cell{Biome: Grass, Glyph: 'N', Color: "#7A5A38"}, true // notice board (blocks, readable)
 	}
 	for _, p := range hubLamps {
 		if x == p[0] && y == p[1] {
