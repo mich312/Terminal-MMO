@@ -91,6 +91,26 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 	}
 }
 
+// lootSelfLit is how bright luminous loot stays at the dark edge of the Wilds'
+// torch: a faint self-lit point far off, rising to full brightness once the
+// light reaches it — so glowing finds stay spottable without carpeting the
+// night map.
+const lootSelfLit = 0.15
+
+// lootEmitter reports whether a prop is a glowing *found item* (a crystal,
+// mushroom, geode or relic) as opposed to a fixed light source (campfire, lamp,
+// cave fungi, light shaft). Under the Wilds' torch these dim with distance so
+// the night isn't littered with full-bright finds; true light sources keep
+// their reach, and caves keep loot as beacons (the dimming is gated on the
+// non-warm surface light at the call sites).
+func lootEmitter(p TileProp) bool {
+	switch p {
+	case PropGemGlow, PropGeode, PropRelic:
+		return true
+	}
+	return false
+}
+
 // emitterGlow returns a prop's glow color, radius (in tiles), an intensity
 // multiplier (a campfire floods, loot only twinkles) and whether it emits at
 // all. propCol is the prop's day/night-tinted color. Flames and fixtures

@@ -54,7 +54,6 @@ func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 }
 
 // Light is a radial light source: tiles fade toward darkness past Radius from
-// Light is a radial light source: tiles fade toward darkness past Radius from
 // (X,Y) in world coordinates. A zero Radius means uniform light. Warm makes it a
 // lantern rather than a vignette — a generous, soft-edged warm pool over a faint
 // ambient floor, the way a held light reads underground.
@@ -62,10 +61,38 @@ func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 // Floor sets how dark the ground outside Radius gets (0 = use the default
 // nightFloor; 1 = no darkening at all). DayFadedLight raises it with the
 // time-of-day clock so a light can fade out by midday.
+//
+// Sunless marks a scene the sky never reaches (a cave, and any future
+// underground or interior world): it pins the ambient to a fixed deep-dark and
+// forces full night, so the lantern and the world's own glow always dominate
+// regardless of the surface day/night cycle. It is independent of Warm — a dark
+// place need not be lit by a warm lantern.
 type Light struct {
 	X, Y, Radius int
 	Warm         bool
+	Sunless      bool
 	Floor        float64
+}
+
+// sceneAmbient is the ambient tint/strength a scene renders under: the live
+// day/night sky normally, or the fixed deep-dark for a Sunless (underground /
+// interior) light, so such worlds stay dark whatever the hour above ground.
+func sceneAmbient(light Light) (hex string, strength float64) {
+	if light.Sunless {
+		return ui.SunlessAmbient()
+	}
+	return ui.Ambient(ui.Now())
+}
+
+// sceneNight is the night factor driving emissive effects (glow blooms): forced
+// to full underground, else the live day/night ramp — so a cave's bioluminescence
+// glows whenever you're down there, not only when it's night on the surface.
+func sceneNight(light Light) float64 {
+	if light.Sunless {
+		return 1
+	}
+	_, _, n := sunState()
+	return n
 }
 
 // floor is the brightness the radial falloff bottoms out at outside Radius.
@@ -156,7 +183,7 @@ func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, f
 // while originX is the window's true world origin, so the two differ and the
 // radial light must use the world origin to stay centered on its source.
 func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame, originX, originY int) [][]rcell {
-	ambHex, ambStr := ui.Ambient(ui.Now())
+	ambHex, ambStr := sceneAmbient(light)
 	amb := mustHex(ambHex)
 	base := map[TileKind]colorful.Color{
 		TileWall:   tint(mustHex(ui.HexDim), amb, ambStr),
@@ -264,6 +291,33 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if floor >= 1 { // fully faded (e.g. midday day-fade): no darkening at all
 		return col
 	}
+	if light.Warm {
+		floor = caveFloorLight
+	}
+	f := floor + lightLevel(x, y, light)*(1-floor)
+	out := col.BlendLab(shadowColor, 1-f)
+	if light.Warm {
+		// Warm the lit core like firelight; strongest near the source, gone by the
+		// dim edge — so the held light reads warm against cool bioluminescence.
+		warm := colorful.Color{R: 1, G: 0.72, B: 0.40}
+		out = out.BlendLab(warm, 0.22*math.Max(0, f-floor))
+	}
+	return out.Clamped()
+}
+
+// lightLevel returns a tile's normalized brightness within a radial light: 1 at
+// the lit core, 0 at the dark floor, quantized into the same discrete bands as
+// applyLight (so the light reads as stepped retro rings, not a smooth gradient).
+// With no light — or a fully-faded one — everything is fully lit (1). It is the
+// shared falloff that applyLight darkens by and that loot dims its glow with.
+func lightLevel(x, y int, light Light) float64 {
+	if light.Radius <= 0 {
+		return 1
+	}
+	floor := light.floor()
+	if floor >= 1 {
+		return 1
+	}
 	dx := float64(x - light.X)
 	dy := float64(y - light.Y)
 	d := math.Sqrt(dx*dx + dy*dy)
@@ -285,19 +339,8 @@ func applyLight(col colorful.Color, x, y int, light Light) colorful.Color {
 	if f > 1 {
 		f = 1
 	}
-	// Quantize brightness into discrete bands so the light reads as stepped
-	// retro rings (lit / dim / dark) instead of a smooth modern gradient.
 	t := (f - floor) / (1 - floor)
-	t = math.Round(t*lightBands) / lightBands
-	f = floor + t*(1-floor)
-	out := col.BlendLab(shadowColor, 1-f)
-	if light.Warm {
-		// Warm the lit core like firelight; strongest near the source, gone by the
-		// dim edge — so the held light reads warm against cool bioluminescence.
-		warm := colorful.Color{R: 1, G: 0.72, B: 0.40}
-		out = out.BlendLab(warm, 0.22*math.Max(0, f-floor))
-	}
-	return out.Clamped()
+	return math.Round(t*lightBands) / lightBands
 }
 
 // stampPlayers draws every visible player's sprite onto the grid; oldest

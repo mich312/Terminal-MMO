@@ -45,7 +45,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	// Day/night ambient for the ground and prop colors, so the whole HD scene
 	// (not just the base terrain that flows through buildGrid) shifts with the
 	// time of day, matching the glyph renderer.
-	ambHex, ambStr := ui.Ambient(ui.Now())
+	ambHex, ambStr := sceneAmbient(light)
 	amb := mustHex(ambHex)
 	cols := make([][]colorful.Color, cam.H)
 	texs := make([][]TileTex, cam.H)
@@ -82,14 +82,24 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					ph = t.Color
 				}
 				pc := tint(style.tint(ph), amb, ambStr)
-				// Under a lantern, props that don't shine on their own fade into the
-				// dark with distance like the ground, so a stalagmite or a gold seam
-				// is something the light finds — not a sprite floating on black. The
-				// emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
-				if light.Warm {
-					if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
-						pc = applyLight(pc, originX+x, originY+y, light)
-					}
+				// Props that don't shine on their own fade into the dark with distance
+				// like the ground, so a stalagmite, a gold seam or a dropped gem is
+				// something the light finds — not a sprite floating bright on dark
+				// ground. This applies under any radial light (the cave lantern and the
+				// Wilds' day-faded torch alike), so loot stops glowing through the night.
+				// The emissive ones (mushrooms, crystals, pools, shafts) keep their glow.
+				if _, _, _, emits := emitterGlow(t.Prop, pc, 0, 0, 0); !emits {
+					pc = applyLight(pc, originX+x, originY+y, light)
+				} else if lootEmitter(t.Prop) && !light.Warm {
+					// Luminous loot is self-lit, so it never fades fully dark — but under
+					// the Wilds' torch a glowing find far outside your light should read
+					// as a faint point that brightens as you approach, not a full-bright
+					// marker carpeting the whole night map. Dim it with distance to a
+					// self-lit floor. (Caves keep their loot/bioluminescence as beacons:
+					// the lantern is warm, so this skips it.)
+					lvl := lightLevel(originX+x, originY+y, light)
+					eff := lootSelfLit + (1-lootSelfLit)*lvl
+					pc = pc.BlendLab(shadowColor, 1-eff).Clamped()
 				}
 				propCols[y][x] = pc
 			}
@@ -180,7 +190,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		// scaled by how dark it is. Light shafts are the exception — they carry
 		// daylight down through thin rock, so they shine by day and the loop must
 		// run even at noon for them.
-		if _, _, night := sunState(); true {
+		if night := sceneNight(light); true {
 			apx := scale / tileArtN
 			if apx < 1 {
 				apx = 1
@@ -197,6 +207,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 						amount = mult // already day/night-weighted inside emitterGlow
 					} else if night <= 0.03 {
 						continue // ordinary emitters only bloom after dusk
+					}
+					if lootEmitter(p) && !light.Warm {
+						// Under the Wilds' torch a find's halo fades with distance too, so
+						// distant loot is a faint glint and a clear glow pool only once it's
+						// near — matching the dimmed sprite above. (Skipped in caves, where
+						// the lantern is warm and loot stays a beacon.)
+						amount *= lightLevel(originX+vx, originY+vy, light)
 					}
 					drawGlow(img, vx*scale+scale/2, vy*scale+scale/2, rad*float64(scale), col, amount, apx)
 				}
