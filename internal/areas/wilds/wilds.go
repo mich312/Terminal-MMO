@@ -69,6 +69,8 @@ type area struct {
 	building bool // placing a structure: movement drives the ghost, not the body
 	buildSel int  // selected placeable in game.Placeables
 	bx, by   int  // ghost cursor, absolute world coords
+
+	inClaim string // plot id of the claim the body stands in ("" if none)
 }
 
 // toastDuration is how long a pickup message lingers.
@@ -115,6 +117,9 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	a.wx, a.wy = a.resume()
 	a.reveal()
 	a.persist()
+	if c, _, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
+		a.inClaim = c.PlotID // show the workspace label on arrival, without a toast
+	}
 	a.ctx.World.EnterArea(a.ctx.Name, "wilds", a.wx, a.wy, "The Wilds")
 	return nil
 }
@@ -206,7 +211,20 @@ func (a *area) walkableAt(x, y int) bool {
 			return false
 		}
 	}
-	return a.gen.Walkable(x, y)
+	return a.gen.Walkable(x, y) || game.IsCleared(a.ctx, x, y)
+}
+
+// clearedTile is how a felled/quarried cell reads: walkable ground in place of
+// the tree or boulder — a grassy clearing over forest, bare dirt over rock.
+func clearedTile(cell worldgen.Cell) game.Tile {
+	switch cell.Biome {
+	case worldgen.Hill, worldgen.Mountain:
+		return game.Tile{Kind: game.TileFloor, Ch: '·', Walkable: true,
+			Color: "#9C8D67", Tex: game.TexDirt, Ground: "#9C8D67"}
+	default: // a felled forest reads as a grassy clearing
+		return game.Tile{Kind: game.TileFloor, Ch: ',', Walkable: true,
+			Color: "#5EAE63", Tex: game.TexGrass, Ground: "#5EAE63"}
+	}
 }
 
 // canBuildAt reports whether the ghost cell is a legal spot: discovered, buildable
@@ -215,14 +233,17 @@ func (a *area) canBuildAt(x, y int) bool {
 	if _, ok := a.ctx.World.PlacementAt(x, y); ok {
 		return false
 	}
-	if !a.seen(x, y) || !a.gen.Walkable(x, y) {
-		return false
+	if !a.seen(x, y) || (!a.gen.Walkable(x, y) && !game.IsCleared(a.ctx, x, y)) {
+		return false // undiscovered, or blocking terrain that hasn't been cleared
 	}
 	if _, ok := gateAtCell(x, y); ok {
 		return false
 	}
 	if x >= a.wx && x < a.wx+game.PlayerW && y >= a.wy && y < a.wy+game.PlayerH {
 		return false // can't build under yourself
+	}
+	if ok, _ := game.BuildRight(a.ctx, x, y); !ok {
+		return false // inside someone else's claim or wilds buffer
 	}
 	return true
 }
@@ -236,7 +257,11 @@ func (a *area) placeStructure() {
 	}
 	p := game.Placeables[a.buildSel]
 	if !a.canBuildAt(a.bx, a.by) {
-		a.setToast("can't build there")
+		if ok, owner := game.BuildRight(a.ctx, a.bx, a.by); !ok && owner != "" {
+			a.setToast(owner + "'s Workspace — protected")
+		} else {
+			a.setToast("can't build there")
+		}
 		return
 	}
 	if !game.CanAfford(p, a.ctx.Inventory) {
@@ -249,6 +274,265 @@ func (a *area) placeStructure() {
 	}
 	game.SpendFor(a.ctx, p)
 	a.setToast("built " + p.Name)
+}
+
+// tendCleared refreshes the regrowth clock on the player's own cleared cells
+// under and around the body, so a clearing you live in never grows back; cells
+// at the unused edges lapse first, and the woods creep in from there.
+func (a *area) tendCleared() {
+	for y := a.wy - 1; y <= a.wy+game.PlayerH; y++ {
+		for x := a.wx - 1; x <= a.wx+game.PlayerW; x++ {
+			game.TouchCleared(a.ctx, x, y)
+		}
+	}
+}
+
+// updateClaimPresence refreshes the lease while the player stands on their own
+// land, and toasts when they cross into a Workspace — so both clients announce
+// the claim (the glyph status line also shows it persistently, via Hint).
+func (a *area) updateClaimPresence() {
+	c, mine, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy)
+	cur := ""
+	if ok {
+		cur = c.PlotID
+		if mine {
+			game.TouchWorkspace(a.ctx, c.PlotID)
+		}
+	}
+	if cur == a.inClaim {
+		return
+	}
+	a.inClaim = cur
+	if ok {
+		a.setToast("entering " + a.workspaceLabel(c, mine))
+	}
+}
+
+// workspaceLabel renders a claim as "your Workspace, Brixen" / "Anna's
+// Workspace, Brixen" (the settlement name dropped if unknown).
+func (a *area) workspaceLabel(c world.Claim, mine bool) string {
+	who := c.Owner + "'s"
+	if mine {
+		who = "your"
+	}
+	label := who + " Workspace"
+	if name, ok := a.gen.SettlementNameAt(a.wx, a.wy); ok {
+		label += ", " + name
+	}
+	return label
+}
+
+// Parcel tint hues: a soft green over your own claimed ground, amber over
+// another player's — the same green/red-ghost language the build cursor uses.
+const (
+	tintMine  = "#7BD88F"
+	tintOther = "#E0B44D"
+)
+
+// claimTint returns the tint hue for (x,y) if it lies in a claimed parcel.
+func claimTint(claims []world.Claim, me string, x, y int) (string, bool) {
+	for _, c := range claims {
+		if c.Covers(x, y) {
+			if c.Owner == me {
+				return tintMine, true
+			}
+			return tintOther, true
+		}
+	}
+	return "", false
+}
+
+// BuildPanel implements game.BuildViewer: the HD client draws the build palette
+// from it while build mode is active.
+func (a *area) BuildPanel() (int, string, bool, bool) {
+	footer, warn := a.buildFooter()
+	return a.buildSel, footer, warn, a.building
+}
+
+// selectedTool returns the selected placeable if it's a clearing tool.
+func (a *area) selectedTool() (game.Placeable, bool) {
+	if a.buildSel < 0 || a.buildSel >= len(game.Placeables) {
+		return game.Placeable{}, false
+	}
+	p := game.Placeables[a.buildSel]
+	return p, game.IsTool(p)
+}
+
+// canClearAt reports whether tool pb can clear the ghost cell: the right blocking
+// terrain (a tree for the axe, a hill boulder for the pick — never a mountain
+// peak), discovered, not already cleared, and where build-rights allow.
+func (a *area) canClearAt(x, y int, pb game.Placeable) bool {
+	if !a.seen(x, y) || game.IsCleared(a.ctx, x, y) {
+		return false
+	}
+	if ok, _ := game.BuildRight(a.ctx, x, y); !ok {
+		return false
+	}
+	c := a.gen.At(x, y)
+	if c.Walkable { // nothing blocking to clear
+		return false
+	}
+	switch pb.Clear {
+	case game.ClearTree:
+		return c.Biome == worldgen.Forest
+	case game.ClearRock:
+		return c.Biome == worldgen.Hill // peaks (Mountain) stay permanent
+	}
+	return false
+}
+
+// clearVerb is the action word for a tool ("fell" / "break").
+func clearVerb(k game.ClearKind) string {
+	switch k {
+	case game.ClearTree:
+		return "fell"
+	case game.ClearRock:
+		return "break"
+	default:
+		return "clear"
+	}
+}
+
+// clearUnderGhost fells/breaks the cell under the ghost with tool pb, writing the
+// cleared overlay and paying the yield into the pack. The tool isn't consumed.
+func (a *area) clearUnderGhost(pb game.Placeable) {
+	if !a.canClearAt(a.bx, a.by, pb) {
+		a.setToast("nothing to " + clearVerb(pb.Clear) + " here")
+		return
+	}
+	if !game.ClearGround(a.ctx, a.bx, a.by) {
+		a.setToast("can't clear there")
+		return
+	}
+	item, n := pb.Clear.Yield()
+	game.AddToPack(a.ctx, item, n)
+	name := item
+	if it, ok := game.ItemByID(item); ok {
+		name = it.Name
+	}
+	a.setToast(fmt.Sprintf("%sed it — +%d %s", clearVerb(pb.Clear), n, name))
+}
+
+// buildFooter is the palette's context line under the ghost: for a tool, the
+// clear hint or why it can't; otherwise a claim hint, a block reason, or empty
+// (the panel then shows the key legend). warn marks a problem (amber).
+func (a *area) buildFooter() (string, bool) {
+	if pb, ok := a.selectedTool(); ok {
+		item, n := pb.Clear.Yield()
+		name := item
+		if it, ok := game.ItemByID(item); ok {
+			name = it.Name
+		}
+		if a.canClearAt(a.bx, a.by, pb) {
+			return fmt.Sprintf("e — %s here (+%d %s)", clearVerb(pb.Clear), n, name), false
+		}
+		return "nothing to " + clearVerb(pb.Clear) + " here", true
+	}
+	if s, ok := a.ghostClaimPrompt(); ok {
+		return s, false
+	}
+	if r := a.blockReasonText(); r != "" {
+		return "can't build: " + r, true
+	}
+	return "", false
+}
+
+// blockReasonText explains why the ghost cell can't be built on ("" when it's a
+// legal spot). Claims are surfaced separately by buildFooter as a hint.
+func (a *area) blockReasonText() string {
+	x, y := a.bx, a.by
+	if a.canBuildAt(x, y) {
+		return ""
+	}
+	if x >= a.wx && x < a.wx+game.PlayerW && y >= a.wy && y < a.wy+game.PlayerH {
+		return "you're standing there"
+	}
+	if _, ok := a.ctx.World.PlacementAt(x, y); ok {
+		return "already occupied"
+	}
+	if !a.seen(x, y) {
+		return "not explored yet"
+	}
+	if ok, owner := game.BuildRight(a.ctx, x, y); !ok && owner != "" {
+		return owner + "'s land"
+	}
+	if _, ok := gateAtCell(x, y); ok {
+		return "a gate stands here"
+	}
+	switch a.gen.At(x, y).Biome {
+	case worldgen.Forest:
+		return "trees in the way"
+	case worldgen.Hill, worldgen.Mountain, worldgen.Snow:
+		return "rock in the way"
+	case worldgen.Water, worldgen.Deep:
+		return "water"
+	}
+	return "can't build here"
+}
+
+// ClaimLabel implements game.ClaimLabeler: the Workspace the body stands in, for
+// the HD banner (the glyph client shows the same label via Hint).
+func (a *area) ClaimLabel() (string, bool) {
+	if c, mine, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
+		return a.workspaceLabel(c, mine), true
+	}
+	return "", false
+}
+
+// ghostClaimPrompt is the claim-related action under the build cursor, if it
+// hovers a settlement plot: release your own, note another's, or claim a free one.
+func (a *area) ghostClaimPrompt() (string, bool) {
+	p, ok := a.gen.PlotAt(a.bx, a.by)
+	if !ok {
+		return "", false
+	}
+	if c, mine, ok := game.WorkspaceAt(a.ctx, a.bx, a.by); ok && c.PlotID == p.ID {
+		if mine {
+			return "x — release your Workspace (" + p.Settlement + ")", true
+		}
+		return c.Owner + "'s Workspace — protected", true
+	}
+	return "e — claim this " + p.Kind + " in " + p.Settlement, true
+}
+
+// claimUnderGhost deeds the settlement plot beneath the build cursor to the
+// player (the Workspace Charter), or reports who already holds it — the
+// land-tenure counterpart to placing a structure (docs/CLAIMS_PLAN.md).
+func (a *area) claimUnderGhost() {
+	p, ok := a.gen.PlotAt(a.bx, a.by)
+	if !ok {
+		a.setToast("no plot here — claim a building in a settlement")
+		return
+	}
+	if c, mine, held := game.WorkspaceAt(a.ctx, a.bx, a.by); held && c.PlotID == p.ID {
+		if mine {
+			a.setToast("you already hold this Workspace (x to release)")
+		} else {
+			a.setToast(c.Owner + " already holds this plot")
+		}
+		return
+	}
+	if game.ClaimWorkspace(a.ctx, p.ID, p.AX, p.AY, p.W, p.H) {
+		a.setToast("claimed a " + p.Kind + " in " + p.Settlement)
+	} else {
+		a.setToast("can't claim that")
+	}
+}
+
+// releaseUnderGhost gives up the player's claim on the plot under the build
+// cursor, if they hold it. Returns whether a release happened (with its toast).
+func (a *area) releaseUnderGhost() bool {
+	p, ok := a.gen.PlotAt(a.bx, a.by)
+	if !ok {
+		return false
+	}
+	if c, mine, held := game.WorkspaceAt(a.ctx, a.bx, a.by); held && mine && c.PlotID == p.ID {
+		if game.ReleaseWorkspace(a.ctx, p.ID) {
+			a.setToast("released your Workspace in " + p.Settlement)
+			return true
+		}
+	}
+	return false
 }
 
 func iabs(n int) int {
@@ -588,10 +872,26 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				a.buildSel = (a.buildSel + 1) % len(game.Placeables)
 			case "[":
 				a.buildSel = (a.buildSel + len(game.Placeables) - 1) % len(game.Placeables)
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				if idx, ok := game.PaletteHotkey(a.ctx, int(ks[0]-'0')); ok {
+					a.buildSel = idx
+				}
 			case "e", "enter":
-				a.placeStructure()
+				// A tool clears; over a settlement building e deeds the plot; on open
+				// ground it places the selected structure.
+				if pb, ok := a.selectedTool(); ok {
+					a.clearUnderGhost(pb)
+				} else if _, ok := a.gen.PlotAt(a.bx, a.by); ok {
+					a.claimUnderGhost()
+				} else {
+					a.placeStructure()
+				}
 			case "x":
-				if game.Demolish(a.ctx, a.bx, a.by) {
+				// Over your own claimed plot, x releases the deed; otherwise it
+				// demolishes your structure under the ghost.
+				if a.releaseUnderGhost() {
+					// released — toast set inside
+				} else if game.Demolish(a.ctx, a.bx, a.by) {
 					a.setToast("removed")
 				} else {
 					a.setToast("nothing of yours there")
@@ -673,6 +973,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		if a.wx != sx || a.wy != sy {
 			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
 			a.persist()
+			a.updateClaimPresence()
+			a.tendCleared()
 		}
 	}
 	return a, nil
@@ -680,8 +982,11 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 
 func (a *area) Hint() string {
 	if a.building {
+		if s, ok := a.ghostClaimPrompt(); ok {
+			return s + " · b done"
+		}
 		pb := game.Placeables[a.buildSel]
-		return fmt.Sprintf("build: %s (%s) · move ghost · e place · x remove · r next · b done", pb.Name, game.PlaceableCost(pb))
+		return fmt.Sprintf("build: %s (%s) · e place · x remove · r next · b done", pb.Name, game.PlaceableCost(pb))
 	}
 	if name, ok := a.portalUnder(a.wx, a.wy); ok {
 		return "◈ step in to enter " + game.DisplayName(name)
@@ -698,6 +1003,10 @@ func (a *area) Hint() string {
 	if a.boardAdjacent() {
 		return "e — read the notice board"
 	}
+	if c, mine, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
+		dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
+		return a.workspaceLabel(c, mine) + " · ⌂ " + bearing(dx, dy)
+	}
 	dx, dy := worldgen.GateX-a.wx, worldgen.GateY-a.wy
 	return fmt.Sprintf("⌂ Durst HQ %s · y u b n diagonals · m map", bearing(dx, dy))
 }
@@ -707,6 +1016,9 @@ func (a *area) Hint() string {
 // not an action, so here it returns ok=false to keep the HD bottom clear.
 func (a *area) Prompt() (string, bool) {
 	if a.building {
+		if s, ok := a.ghostClaimPrompt(); ok {
+			return s, true
+		}
 		pb := game.Placeables[a.buildSel]
 		return fmt.Sprintf("e build %s (%s) · r next · x remove · b done", pb.Name, game.PlaceableCost(pb)), true
 	}
@@ -849,6 +1161,12 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 	for _, c := range a.ctx.World.CreaturesInArea("wilds") {
 		creatures[[2]int{c.X, c.Y}] = c
 	}
+	// Land claims overlapping this window, fetched once: their parcels get a soft
+	// ground tint so ownership reads at a glance (green yours, amber others).
+	claims := game.LiveClaimsOverlapping(a.ctx, ox, oy, ox+vw-1, oy+vh-1)
+	// Cleared cells in view, fetched once: a felled tree / broken boulder reads as
+	// walkable ground instead of the original terrain feature.
+	clearedSet := game.ActiveClearedSet(a.ctx, ox, oy, ox+vw-1, oy+vh-1)
 	tiles := make([][]game.Tile, vh)
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
@@ -857,6 +1175,9 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 			if a.seen(wx, wy) {
 				cell := a.gen.At(wx, wy)
 				t := CellTile(cell)
+				if clearedSet[[2]int{wx, wy}] {
+					t = clearedTile(cell) // felled/quarried → walkable ground
+				}
 				if g, ok := gateAtCell(wx, wy); ok {
 					// Both the open gate and the broken (sealed) arch carry the name of
 					// where they lead, so the renderer can float a label above them.
@@ -911,6 +1232,16 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Ch, t.Color = sp.Glyph, sp.Hex
 					}
 				}
+				if len(claims) > 0 {
+					if tint, ok := claimTint(claims, a.ctx.Name, wx, wy); ok {
+						if t.Ground != "" && t.Ground != fogColor {
+							t.Ground = string(ui.Blend(t.Ground, tint, 0.16))
+						}
+						if t.Color != "" { // a fainter nudge so the glyph view hints at it too
+							t.Color = string(ui.Blend(t.Color, tint, 0.10))
+						}
+					}
+				}
 				row[lx] = t
 			} else {
 				row[lx] = fogTile() // the unexplored world stays hidden
@@ -921,7 +1252,11 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 			if a.building && wx == a.bx && wy == a.by {
 				pb := game.Placeables[a.buildSel]
 				hex := "#7BD88F"
-				if !a.canBuildAt(wx, wy) {
+				if game.IsTool(pb) {
+					if !a.canClearAt(wx, wy, pb) {
+						hex = "#E0604D"
+					}
+				} else if !a.canBuildAt(wx, wy) {
 					hex = "#E0604D"
 				}
 				g := row[lx]
@@ -976,6 +1311,14 @@ func (a *area) View(width, height int) string {
 		panel := a.boardPanel()
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
+	} else if a.building {
+		panel := a.buildPanel()
+		pw := lipgloss.Width(panel)
+		view = ui.Overlay(view, panel, (width-pw)/2, 1) // centered, like the other panels
+		if msg, show := a.Toast(); show {
+			th := a.theme()
+			view = ui.Overlay(view, th.Toast.Render(msg), (width-lipgloss.Width(th.Toast.Render(msg)))/2, height-2)
+		}
 	} else if msg, show := a.Toast(); show {
 		th := a.ctx.Theme
 		if th == nil {
@@ -1242,6 +1585,64 @@ func boardEntries() (title string, lines []string) {
 		"",
 		"Stand on a door and step in.",
 	}
+}
+
+// theme returns the session theme, falling back to the default (nil-safe).
+func (a *area) theme() *ui.Theme {
+	if a.ctx.Theme != nil {
+		return a.ctx.Theme
+	}
+	return ui.Default
+}
+
+// buildPanel renders the build palette for the glyph client: the catalog grouped
+// (Structures · Machines · Trade · Tools), each row with a 1-9 hotbar badge, its
+// cost and afford count, the selected row marked, plus the current blurb and a
+// block reason. Mirrors the HD game.DrawBuildPanel.
+func (a *area) buildPanel() string {
+	th := a.theme()
+	green := th.Fg(lipgloss.Color("#7BD88F"))
+	rows := []string{th.PanelTitle.Render("Build")}
+	for _, g := range game.BuildPalette(a.ctx) {
+		rows = append(rows, th.Dim.Render(g.Name))
+		for _, e := range g.Entries {
+			badge := "   "
+			if e.Hotkey > 0 {
+				badge = fmt.Sprintf("[%d]", e.Hotkey)
+			}
+			body := fmt.Sprintf("%-22s %s", e.P.Name, game.PlaceableCost(e.P))
+			cnt := fmt.Sprintf("x%d", e.Max)
+			if e.P.Cat == game.CatTool {
+				cnt = "ready"
+			}
+			marker := "  "
+			var line string
+			switch {
+			case e.Index == a.buildSel:
+				marker = th.Accent.Render("► ")
+				line = th.Bright.Render(body) + "  " + green.Render(cnt)
+			case e.Afford:
+				line = th.ChatText.Render(body) + "  " + green.Render(cnt)
+			default:
+				line = th.Dim.Render(body + "  " + cnt)
+			}
+			rows = append(rows, marker+badge+" "+line)
+		}
+	}
+	rows = append(rows, "")
+	if a.buildSel >= 0 && a.buildSel < len(game.Placeables) {
+		rows = append(rows, th.Dim.Render("\""+game.Placeables[a.buildSel].Blurb+"\""))
+	}
+	if footer, warn := a.buildFooter(); footer != "" {
+		if warn {
+			rows = append(rows, th.Warn.Render(footer))
+		} else {
+			rows = append(rows, th.Accent.Render(footer))
+		}
+	} else {
+		rows = append(rows, th.Dim.Render("1-9/r pick · e place · x remove · b done"))
+	}
+	return th.Panel.Render(strings.Join(rows, "\n"))
 }
 
 // boardPanel renders the notice board for the glyph client, styled to match the

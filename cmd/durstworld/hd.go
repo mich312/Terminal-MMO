@@ -244,6 +244,8 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		awayIn     int           // input it consumed while away
 		stallXY    [2]int        // the trade stall whose panel is open
 		stallSel   int           // selected offer in the stall panel
+		stallNew   bool          // composing a new offer at the stall (owner)
+		stallDraft game.OfferDraft
 		compScroll int           // first visible line in the compendium panel
 		tradeSel   int           // selected pack slot in the trade panel
 		tradeReq   string        // latest player who asked us to trade (for /accept)
@@ -307,13 +309,32 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			emphasis = 1 - float64(d)/float64(areaFlare)
 		}
 		game.DrawAreaTitle(img, area.Name(), emphasis)
+		if cl, ok := area.(game.ClaimLabeler); ok {
+			if label, show := cl.ClaimLabel(); show {
+				game.DrawClaimBanner(img, label)
+			}
+		}
 		game.DrawTopLegend(img)
-		if prompt, show := actionPrompt(area); show {
+		// While building, the palette (with its own footer) is the guide; skip the
+		// centered action prompt so the two don't fight for the bottom.
+		building := false
+		if bv, ok := area.(game.BuildViewer); ok {
+			if _, _, _, show := bv.BuildPanel(); show {
+				building = true
+			}
+		}
+		if prompt, show := actionPrompt(area); show && !building {
 			game.DrawActionPrompt(img, prompt)
 		}
 		if tz, ok := area.(game.Toaster); ok {
 			if msg, show := tz.Toast(); show {
 				game.DrawToast(img, msg)
+			}
+		}
+		// The build palette (a left-anchored, non-modal HUD while building).
+		if bv, ok := area.(game.BuildViewer); ok {
+			if sel, footer, warn, show := bv.BuildPanel(); show {
+				game.DrawBuildPanel(img, ctx, sel, footer, warn)
 			}
 		}
 		// The coarse overview map (toggled with 'm'), drawn as colored blocks.
@@ -347,7 +368,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case hdPanelMachine:
 			game.DrawMachinePanel(img, ctx, machineXY[0], machineXY[1], awayOut, awayIn)
 		case hdPanelStall:
-			game.DrawStallPanel(img, ctx, stallXY[0], stallXY[1], stallSel)
+			game.DrawStallPanel(img, ctx, stallXY[0], stallXY[1], stallSel, stallNew, stallDraft)
 		case hdPanelTrade:
 			if v, ok := game.TradeViewFor(ctx, tradeSel); ok {
 				game.DrawTradePanel(img, v)
@@ -477,31 +498,61 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 			return true
 		}
-		// Trade stall: arrows pick an offer, e buys, owner f collects, q closes.
+		// Trade stall: arrows pick an offer, e buys, owner f collects/x removes/n
+		// composes a new offer; q closes. The composer (owner only) edits the offer
+		// terms in-panel — the UI twin of /sell, since HD has no command line.
 		if uiPanel == hdPanelStall {
-			if st, ok := game.StallSnapshot(ctx, stallXY[0], stallXY[1]); ok {
-				n := len(st.Offers)
+			st, ok := game.StallSnapshot(ctx, stallXY[0], stallXY[1])
+			if !ok {
+				uiPanel, stallNew = hdPanelNone, false
+				return true
+			}
+			owner := game.StallOwner(ctx, stallXY[0], stallXY[1])
+			if stallNew && owner {
 				switch key {
 				case "up":
-					if n > 0 {
-						stallSel = (stallSel + n - 1) % n
-					}
+					stallDraft.Field = (stallDraft.Field + game.OfferFields - 1) % game.OfferFields
 				case "down":
-					if n > 0 {
-						stallSel = (stallSel + 1) % n
-					}
+					stallDraft.Field = (stallDraft.Field + 1) % game.OfferFields
+				case "left":
+					game.CycleOfferField(ctx, &stallDraft, -1)
+				case "right":
+					game.CycleOfferField(ctx, &stallDraft, +1)
 				case "e", "\r", "\n":
-					game.AcceptOffer(ctx, stallXY[0], stallXY[1], stallSel)
-				case "f":
-					game.CollectTill(ctx, stallXY[0], stallXY[1])
-				case "x":
-					if game.RemoveOffer(ctx, stallXY[0], stallXY[1], stallSel) && stallSel > 0 {
-						stallSel--
+					if game.PostDraft(ctx, stallXY[0], stallXY[1], stallDraft) > 0 {
+						stallNew = false
+						stallSel = len(st.Offers) // the new last offer
 					}
 				case "q":
-					uiPanel = hdPanelNone
+					stallNew = false
 				}
-			} else {
+				return true
+			}
+			n := len(st.Offers)
+			switch key {
+			case "up":
+				if n > 0 {
+					stallSel = (stallSel + n - 1) % n
+				}
+			case "down":
+				if n > 0 {
+					stallSel = (stallSel + 1) % n
+				}
+			case "e", "\r", "\n":
+				game.AcceptOffer(ctx, stallXY[0], stallXY[1], stallSel)
+			case "n":
+				if owner {
+					if d, ok := game.NewOfferDraft(ctx); ok {
+						stallDraft, stallNew = d, true
+					}
+				}
+			case "f":
+				game.CollectTill(ctx, stallXY[0], stallXY[1])
+			case "x":
+				if game.RemoveOffer(ctx, stallXY[0], stallXY[1], stallSel) && stallSel > 0 {
+					stallSel--
+				}
+			case "q":
 				uiPanel = hdPanelNone
 			}
 			return true
@@ -791,7 +842,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				pl, _ := w.PlacementAt(xy[0], xy[1])
 				switch {
 				case game.IsStall(pl.Kind):
-					stallXY, stallSel, uiPanel = xy, 0, hdPanelStall
+					stallXY, stallSel, stallNew, uiPanel = xy, 0, false, hdPanelStall
 				case game.IsWorkbench(pl.Kind):
 					craftSel, uiPanel = 0, hdPanelCraft
 				default:

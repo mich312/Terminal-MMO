@@ -217,3 +217,63 @@ func TestCompendiumRoundTrip(t *testing.T) {
 		t.Fatalf("compendium = %v, want {rabbit, fox}", got)
 	}
 }
+
+func TestClaimRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if got := s.LoadClaims(); len(got) != 0 {
+		t.Fatalf("fresh store has %d claims, want 0", len(got))
+	}
+	s.SaveClaim(Claim{PlotID: "a:1,2", Owner: "ada", MinX: 1, MinY: 2, MaxX: 5, MaxY: 6, LastTouch: 100})
+	s.SaveClaim(Claim{PlotID: "b:3,4", Owner: "bob", MinX: 10, MinY: 10, MaxX: 12, MaxY: 12, LastTouch: 200})
+
+	got := s.LoadClaims()
+	if len(got) != 2 {
+		t.Fatalf("loaded %d claims, want 2", len(got))
+	}
+
+	// Upsert: same plot id, new owner/clock replaces (a lapse re-deed or a touch).
+	s.SaveClaim(Claim{PlotID: "a:1,2", Owner: "cy", MinX: 1, MinY: 2, MaxX: 5, MaxY: 6, LastTouch: 999})
+	byID := map[string]Claim{}
+	for _, c := range s.LoadClaims() {
+		byID[c.PlotID] = c
+	}
+	if len(byID) != 2 {
+		t.Fatalf("after upsert there are %d claims, want 2", len(byID))
+	}
+	if c := byID["a:1,2"]; c.Owner != "cy" || c.LastTouch != 999 {
+		t.Errorf("upsert kept %+v; want cy at t=999", c)
+	}
+
+	s.RemoveClaim("b:3,4")
+	if got := s.LoadClaims(); len(got) != 1 {
+		t.Errorf("after remove there are %d claims, want 1", len(got))
+	}
+}
+
+func TestClearedRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if got := s.LoadCleared(); len(got) != 0 {
+		t.Fatalf("fresh store has %d cleared cells, want 0", len(got))
+	}
+	s.SaveCleared(Cleared{X: 3, Y: -4, Owner: "ada", LastTouch: 100})
+	s.SaveCleared(Cleared{X: 9, Y: 2, Owner: "bob", LastTouch: 200})
+	if got := s.LoadCleared(); len(got) != 2 {
+		t.Fatalf("loaded %d cleared cells, want 2", len(got))
+	}
+	// Upsert: same cell, new owner/clock (a re-clear or a touch).
+	s.SaveCleared(Cleared{X: 3, Y: -4, Owner: "cy", LastTouch: 999})
+	byCell := map[[2]int]Cleared{}
+	for _, c := range s.LoadCleared() {
+		byCell[[2]int{c.X, c.Y}] = c
+	}
+	if len(byCell) != 2 {
+		t.Fatalf("after upsert there are %d cells, want 2", len(byCell))
+	}
+	if c := byCell[[2]int{3, -4}]; c.Owner != "cy" || c.LastTouch != 999 {
+		t.Errorf("upsert kept %+v; want cy at t=999", c)
+	}
+	s.RemoveCleared(9, 2)
+	if got := s.LoadCleared(); len(got) != 1 {
+		t.Errorf("after remove there are %d cleared cells, want 1", len(got))
+	}
+}

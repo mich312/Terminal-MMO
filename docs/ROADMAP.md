@@ -284,9 +284,40 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   to your pack — owner-gated, so nobody tears down someone else's Workspace; a
   placed **workbench opens crafting** when you press `e` beside it (the build →
   craft loop made literal); and a stall owner can `x` **remove a mislisted
-  offer**, refunding its stock. ⬜ In-panel offer *authoring* (beyond `/sell`) is
-  the last bit.
-- ⬜ Settlement claims and the parked wildlife layer come after.
+  offer**, refunding its stock.
+- ✅ **In-panel offer authoring:** the Concession panel now composes a new offer
+  in place (`n` at your stall) — pick the give/ask items and per-sale counts with
+  the arrows, watch a live "stocks N (M sales)" readout, and `e` to post. It's the
+  UI twin of `/sell` (which still works), routed through the same `AddOffer`, and
+  it's the only way to post in HD, which has no command line. A shared composer
+  (`OfferDraft` + `CycleOfferField`/`PostDraft` in `internal/game/offer_compose.go`)
+  drives both clients identically, the way the character panel shares its cycling.
+- ✅ **Settlement claims & protected building** (the land-tenure layer — see
+  [`CLAIMS_PLAN.md`](CLAIMS_PLAN.md)). Two tiers resolved by one `game.BuildRight`
+  predicate: **deed a settlement building** (a Workspace Charter) for a named,
+  bounded parcel only you may build on, or — in the open Wilds — your own
+  structures project a small **proximity buffer** others can't build inside.
+  Worldgen exposes the pre-drawn buildings as stable, pure-seed plots
+  (`worldgen.PlotAt`); a claim is shared world state persisted like the gate pool
+  (not a placement), arbitrated atomically so two claimants can't both win, and it
+  **lapses after the owner is absent ~7 days** (a wall-clock check, no per-tick
+  sim) so plots recirculate. In build mode `e` over a building deeds it and `x`
+  releases your own; the glyph HUD names the parcel ("Anna's Workspace, Brixen")
+  and both clients toast on entry. Movement is never gated — claims protect
+  building, never walking.
+- ✅ **Build palette + clearing tools** (see [`BUILD_TOOLS_PLAN.md`](BUILD_TOOLS_PLAN.md)).
+  The blind `r`-cycle build picker became a **palette + 1-9 hotbar**: the catalog
+  grouped (Structures · Machines · Trade · Tools), each row with its cost, a live
+  afford count (dimmed when short), the selected blurb, and an honest block reason
+  ("can't build: trees in the way") — both renderers, non-modal. **Clearing tools**
+  let you reshape the land: a rare **Axe-head** / **Pick-head** found in the world
+  unlocks crafting an **Axe** / **Pickaxe** (head + Timber); wielding one in build
+  mode fells a tree (→ Timber) or breaks a hill boulder (→ Cut Stone), with
+  mountain peaks left permanent. Cleared cells are a third sparse stored overlay on
+  the pure-seed terrain (after placements and claims) — walkable, buildable,
+  `BuildRight`-gated — and **regrow after the owner is absent ~2 weeks**, so the
+  woods reclaim ghost towns.
+- ⬜ The parked wildlife layer comes after.
 
 ## Parked polish
 

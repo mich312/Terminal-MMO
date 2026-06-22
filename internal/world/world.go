@@ -93,6 +93,21 @@ type World struct {
 	placementAdd func(Placement) // persist a placement (set by main)
 	placementDel func(x, y int)  // persist a removal (set by main)
 
+	// Shared land claims: a player's deed over a settlement plot (docs/CLAIMS_PLAN.md),
+	// keyed by worldgen plot id. Like the gate pool this is shared world state
+	// persisted via a callback, not a visual placement. The game layer owns the
+	// lapse policy; the world just stores each claim's bbox and last-touch clock.
+	claims       map[string]Claim
+	claimPersist func(Claim)         // persist a claim (set by main)
+	claimDel     func(plotID string) // persist a release (set by main)
+
+	// Cleared terrain: cells felled/quarried clear with a tool, a sparse stored
+	// overlay on the pure-seed terrain (docs/BUILD_TOOLS_PLAN.md). Regrows by the
+	// game layer's lapse clock.
+	cleared  map[[2]int]Cleared
+	clearAdd func(Cleared)  // persist a clear (set by main)
+	clearDel func(x, y int) // persist a regrowth (set by main)
+
 	// Player-to-player trading: live tables keyed by both traders' names,
 	// pending incoming requests (recipient → requester), and finished trades
 	// waiting for each party to apply its half (TakeCompletedTrade).
@@ -122,6 +137,8 @@ func New() *World {
 		gatePool:   make(map[string]int),
 		gateFixed:  make(map[string]bool),
 		placements: make(map[[2]int]Placement),
+		claims:     make(map[string]Claim),
+		cleared:    make(map[[2]int]Cleared),
 		trades:     make(map[string]*tradeState),
 		pending:    make(map[string]string),
 		completed:  make(map[string]CompletedTrade),
@@ -154,6 +171,21 @@ func (w *World) PlacementAt(x, y int) (Placement, bool) {
 	defer w.mu.Unlock()
 	p, ok := w.placements[[2]int{x, y}]
 	return p, ok
+}
+
+// PlacementsNear returns copies of every placement whose cell is within Chebyshev
+// distance r of (x,y). Placements are sparse, so this is a cheap scan; it backs
+// the wilds proximity-buffer check in build-rights.
+func (w *World) PlacementsNear(x, y, r int) []Placement {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []Placement
+	for c, p := range w.placements {
+		if abs(c[0]-x) <= r && abs(c[1]-y) <= r {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Place adds a structure at p.X,p.Y for everyone, persists it, and broadcasts an

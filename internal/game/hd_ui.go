@@ -111,6 +111,24 @@ func DrawAreaTitle(img *image.RGBA, name string, emphasis float64) {
 	pixel.DrawText(img, x, y, s, name, rgbaLerp(hudDim, hudBright, emphasis))
 }
 
+// DrawClaimBanner draws the land-claim label as a quiet line just under the area
+// title (top-left) — the HD counterpart to the glyph status-line label, shown
+// only while the player stands in a claimed Workspace.
+func DrawClaimBanner(img *image.RGBA, label string) {
+	W := img.Bounds().Dx()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 5 * s
+	label = asciiOnly(label)
+	if label == "" {
+		return
+	}
+	x, y := pad, pad+lh // one line below the area title
+	tw := pixel.TextWidth(label, s)
+	pixel.Shade(img, x-2*s, y-2*s, tw+4*s, lh, 0.45)
+	pixel.DrawText(img, x, y, s, label, hudAccent)
+}
+
 // DrawTopLegend draws the persistent mini-legend as a 2×2 grid pinned to the
 // top-right corner — always visible, never in the way.
 func DrawTopLegend(img *image.RGBA) {
@@ -573,13 +591,18 @@ func DrawMachinePanel(img *image.RGBA, ctx *Ctx, x, y, awayOut, awayIn int) {
 
 // DrawStallPanel draws a Durst Group Concession: the offer list (give ⇄ ask)
 // with stock and a green/amber affordability mark, plus the till for the owner.
-// sel is the highlighted offer.
-func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
+// sel is the highlighted offer. When compose is set (owners only), the panel
+// shows the in-panel offer composer driven by d instead of the list.
+func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int, compose bool, d OfferDraft) {
 	st, ok := StallSnapshot(ctx, x, y)
 	if !ok {
 		return
 	}
 	owner := StallOwner(ctx, x, y)
+	if compose && owner {
+		drawStallComposer(img, ctx, d)
+		return
+	}
 	name := func(id string) string {
 		if it, ok := ItemByID(id); ok {
 			return it.Name
@@ -595,7 +618,7 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 	title := "DURST GROUP CONCESSION"
 	footer := "up/down offer   e buy   q close"
 	if owner {
-		footer = "up/down offer   f collect   x remove   q close"
+		footer = "up/down offer   n new   f collect   x remove   q close"
 	}
 
 	type row struct {
@@ -649,7 +672,11 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 	yy := oy + pad + lh + lh/2
 
 	if len(rows) == 0 {
-		pixel.DrawText(img, xx, yy, s, "no offers yet — /sell to post one", hudDim)
+		hint := "no offers yet"
+		if owner {
+			hint = "no offers yet — press n to post one"
+		}
+		pixel.DrawText(img, xx, yy, s, hint, hudDim)
 	}
 	askX := xx + box + 4*s + giveCol + pixel.TextWidth("  <->  ", s)
 	for i, r := range rows {
@@ -688,6 +715,208 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 		pixel.DrawText(img, xx, yy, s, "till: "+itoa(till)+" items waiting", hudGood)
 	}
 	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+// drawStallComposer renders the in-panel offer authoring form (the HD twin of
+// /sell): four editable rows — give item, give count, ask item, ask count — with
+// the selected field marked, plus a live "stocks N (M sales)" line and a
+// validity-tinted post hint.
+func drawStallComposer(img *image.RGBA, ctx *Ctx, d OfferDraft) {
+	name := func(id string) string {
+		if it, ok := ItemByID(id); ok {
+			return it.Name
+		}
+		return id
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 10 * s
+	box := 9 * s
+
+	title := "POST AN OFFER"
+	footer := "up/down field   left/right change   e post   q back"
+
+	type frow struct {
+		label, val string
+		swatch     string // item hex for a leading gem, "" for none
+	}
+	rows := []frow{
+		{label: "Give", val: name(d.GiveItem), swatch: mustItemHex(d.GiveItem)},
+		{label: "Per sale", val: itoa(d.GiveN)},
+		{label: "For", val: name(d.AskItem), swatch: mustItemHex(d.AskItem)},
+		{label: "Per sale", val: itoa(d.AskN)},
+	}
+
+	units, sales := DraftStock(ctx, d)
+	stockLine := "stocks " + itoa(units) + " " + name(d.GiveItem) + " (" + itoa(sales) + " sales)"
+
+	labelCol := 0
+	for _, r := range rows {
+		if w := pixel.TextWidth(r.label, s); w > labelCol {
+			labelCol = w
+		}
+	}
+	rowW := 2*s + labelCol + 8*s + box + 6*s + pixel.TextWidth("Glittering Geode", s)
+	contentW := rowW
+	for _, t := range []string{title, footer, stockLine} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+
+	ph := pad*2 + lh + lh/2 + OfferFields*lh + lh/2 + lh + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	xx := ox + pad
+
+	pixel.DrawText(img, xx, oy+pad, s, title, hudAccent)
+	yy := oy + pad + lh + lh/2
+	valX := xx + 2*s + labelCol + 8*s
+	for i, r := range rows {
+		if i == d.Field {
+			pixel.Shade(img, xx-2*s, yy-2*s, pw-2*pad+4*s, lh, 0.3)
+			pixel.DrawText(img, xx-s, yy, s, ">", hudAccent)
+		}
+		lc := hudDim
+		if i == d.Field {
+			lc = hudWhite
+		}
+		pixel.DrawText(img, xx+2*s, yy, s, r.label, lc)
+		vx := valX
+		if r.swatch != "" {
+			itemSwatch(img, vx, yy, box, r.swatch)
+			vx += box + 6*s
+		}
+		pixel.DrawText(img, vx, yy, s, r.val, hudWhite)
+		yy += lh
+	}
+
+	yy += lh / 2
+	sc := hudGood
+	if !DraftValid(ctx, d) {
+		sc = hudWarn
+	}
+	pixel.DrawText(img, xx, yy, s, stockLine, sc)
+	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+// DrawBuildPanel draws the build palette: the buildable catalog grouped
+// (Structures · Machines · Trade · Tools), each row with a 1-9 hotbar badge, its
+// cost, and a right-aligned afford count — dimmed when the pack can't afford it.
+// The selected row is highlighted and its blurb shown, plus a block reason when
+// the ghost is on a bad cell. Left-anchored and non-modal, since build mode keeps
+// the ghost live. sel is the highlighted Placeables index; footer is a context
+// line (claim hint or block reason), shown amber when warn.
+func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool) {
+	groups := BuildPalette(ctx)
+	if len(groups) == 0 {
+		return
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 14 * s
+	pad := 8 * s
+
+	title := "BUILD"
+	keys := "1-9/r pick  e place  x remove  b done"
+
+	// Selected entry, for the blurb line.
+	var cur Placeable
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			if e.Index == sel {
+				cur = e.P
+			}
+		}
+	}
+	blurb := ""
+	if cur.ID != "" {
+		blurb = "\"" + cur.Blurb + "\""
+	}
+
+	// Width: the widest row "[n] Name   cost   x000", plus title/footer/blurb.
+	rowText := func(e PaletteEntry) (string, string, string) {
+		badge := "   "
+		if e.Hotkey > 0 {
+			badge = "[" + itoa(e.Hotkey) + "]"
+		}
+		cnt := "x" + itoa(e.Max)
+		if e.P.Cat == CatTool {
+			cnt = "ready" // a tool is wielded, not built
+		}
+		return badge + " " + e.P.Name, PlaceableCost(e.P), cnt
+	}
+	nameCol, costCol := 0, 0
+	rows := 0
+	for _, g := range groups {
+		rows += 1 + len(g.Entries)
+		for _, e := range g.Entries {
+			n, c, _ := rowText(e)
+			if w := pixel.TextWidth(n, s); w > nameCol {
+				nameCol = w
+			}
+			if w := pixel.TextWidth(c, s); w > costCol {
+				costCol = w
+			}
+		}
+	}
+	gap := 5 * s
+	rowW := nameCol + gap + costCol + gap + pixel.TextWidth("x000", s)
+	contentW := rowW
+	for _, t := range []string{title, keys, blurb, footer} {
+		if w := pixel.TextWidth(asciiOnly(t), s); w > contentW {
+			contentW = w
+		}
+	}
+	ph := pad*2 + lh + lh/2 + rows*lh + lh/2 + lh + lh
+	// Centered like the other panels (panelBox), on a translucent shade + frame
+	// rather than an opaque card, so the player and the ghost stay visible through
+	// the palette while build mode keeps the world live.
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.Shade(img, ox, oy, pw, ph, 0.7)
+	pixel.Frame(img, ox, oy, pw, ph)
+	x := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, x, oy+pad, s, title, hudAccent)
+	y := oy + pad + lh + lh/2
+	costX := x + nameCol + gap
+	for _, g := range groups {
+		pixel.DrawText(img, x, y, s, g.Name, hudDim)
+		y += lh
+		for _, e := range g.Entries {
+			name, cost, cnt := rowText(e)
+			nc, cc, xc := hudWhite, hudGood, hudGood
+			if !e.Afford {
+				nc, cc, xc = hudDim, hudDim, hudDim
+			}
+			if e.Index == sel {
+				pixel.Shade(img, x-2*s, y-2*s, pw-2*pad+4*s, lh, 0.32)
+				pixel.DrawText(img, x-s, y, s, ">", hudAccent)
+				if e.Afford {
+					nc = hudBright
+				}
+			}
+			pixel.DrawText(img, x, y, s, name, nc)
+			pixel.DrawText(img, costX, y, s, cost, cc)
+			pixel.DrawText(img, right-pixel.TextWidth(cnt, s), y, s, cnt, xc)
+			y += lh
+		}
+	}
+	y += lh / 2
+	if blurb != "" {
+		pixel.DrawText(img, x, y, s, blurb, hudDim)
+	}
+	y += lh
+	switch {
+	case footer != "" && warn:
+		pixel.DrawText(img, x, y, s, hudLine(footer), hudWarn)
+	case footer != "":
+		pixel.DrawText(img, x, y, s, hudLine(footer), hudAccent)
+	default:
+		pixel.DrawText(img, x, y, s, keys, hudDim)
+	}
 }
 
 func mustItemHex(id string) string {
@@ -1383,6 +1612,10 @@ func drawAvatarInto(img *image.RGBA, x, y, scale, style, accessory int, col lipg
 
 // asciiOnly strips non-ASCII runes so basicfont (ASCII-only) renders cleanly;
 // glyph-renderer strings sometimes carry box/arrow runes the HD font lacks.
+// hudLine prepares a UI string for the ASCII basicfont: the em-dash used in
+// prompts (nice in the glyph terminal) becomes a hyphen rather than vanishing.
+func hudLine(s string) string { return asciiOnly(strings.ReplaceAll(s, "—", "-")) }
+
 func asciiOnly(s string) string {
 	var b strings.Builder
 	for _, r := range s {

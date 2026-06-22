@@ -94,7 +94,9 @@ type Model struct {
 	awayIn      int  // input it consumed while away
 	showStall   bool // a trade Concession panel
 	stallXY     [2]int
-	stallSel    int    // selected offer in the stall panel
+	stallSel    int  // selected offer in the stall panel
+	stallNew    bool // composing a new offer at the stall (owner)
+	stallDraft  OfferDraft
 	showTrade   bool   // live trade table (modal: keys drive the offer)
 	tradeSel    int    // selected pack slot in the trade panel
 	tradeReq    string // latest player who asked to trade with us (for /accept)
@@ -483,14 +485,43 @@ func fmtSecs(sec int) string {
 func (m *Model) closePanels() {
 	m.showInfo, m.showPlayers, m.showChar = false, false, false
 	m.showCraft, m.showMachine, m.showStall, m.showTrade = false, false, false, false
+	m.stallNew = false
 }
 
 // handleStallKey drives the Concession panel: ↑↓ pick an offer, e buys it, the
-// owner can f collect the till; esc/q close.
+// owner can f collect the till, x remove an offer, and n compose a new one
+// in-panel (the UI twin of /sell); esc/q close. While composing, ↑↓ pick a term,
+// ←→ change it, e posts, esc/q backs out to the list.
 func (m *Model) handleStallKey(msg tea.KeyMsg) tea.Cmd {
 	st, ok := StallSnapshot(m.ctx, m.stallXY[0], m.stallXY[1])
 	if !ok {
-		m.showStall = false
+		m.showStall, m.stallNew = false, false
+		return nil
+	}
+	owner := StallOwner(m.ctx, m.stallXY[0], m.stallXY[1])
+	if m.stallNew && owner {
+		switch msg.String() {
+		case "esc", "q":
+			m.stallNew = false
+		case "up", "k":
+			m.stallDraft.Field = (m.stallDraft.Field + OfferFields - 1) % OfferFields
+		case "down", "j", "tab":
+			m.stallDraft.Field = (m.stallDraft.Field + 1) % OfferFields
+		case "left", "h":
+			CycleOfferField(m.ctx, &m.stallDraft, -1)
+		case "right", "l":
+			CycleOfferField(m.ctx, &m.stallDraft, +1)
+		case "e", "enter":
+			if n := PostDraft(m.ctx, m.stallXY[0], m.stallXY[1], m.stallDraft); n > 0 {
+				d := m.stallDraft
+				m.addSystemLine(fmt.Sprintf("listed %d %s for %d %s (stocked %d)",
+					d.GiveN, itemName(d.GiveItem), d.AskN, itemName(d.AskItem), n))
+				m.stallNew = false
+				m.stallSel = len(st.Offers) // the offer just appended
+			} else {
+				m.addSystemLine("can't list that — check the terms and your pack")
+			}
+		}
 		return nil
 	}
 	switch msg.String() {
@@ -503,6 +534,14 @@ func (m *Model) handleStallKey(msg tea.KeyMsg) tea.Cmd {
 	case "down", "j", "tab":
 		if len(st.Offers) > 0 {
 			m.stallSel = (m.stallSel + 1) % len(st.Offers)
+		}
+	case "n":
+		if owner {
+			if d, ok := NewOfferDraft(m.ctx); ok {
+				m.stallDraft, m.stallNew = d, true
+			} else {
+				m.addSystemLine("your pack is empty — nothing to sell")
+			}
 		}
 	case "e", "enter":
 		if o, ok := AcceptOffer(m.ctx, m.stallXY[0], m.stallXY[1], m.stallSel); ok {
@@ -546,13 +585,20 @@ func (m *Model) stallPanel() string {
 		return ""
 	}
 	owner := StallOwner(m.ctx, m.stallXY[0], m.stallXY[1])
+	if m.stallNew && owner {
+		return m.stallComposer()
+	}
 	title := "Concession"
 	if pl, ok := m.ctx.World.PlacementAt(m.stallXY[0], m.stallXY[1]); ok && !owner {
 		title = pl.Owner + "'s stall"
 	}
 	rows := []string{m.theme.PanelTitle.Render(title), ""}
 	if len(st.Offers) == 0 {
-		rows = append(rows, m.theme.Dim.Render("(no offers yet — /sell to post one)"))
+		hint := "(no offers yet)"
+		if owner {
+			hint = "(no offers yet — press n to post one)"
+		}
+		rows = append(rows, m.theme.Dim.Render(hint))
 	}
 	name := func(id string) string {
 		if it, ok := ItemByID(id); ok {
@@ -584,10 +630,47 @@ func (m *Model) stallPanel() string {
 			till += n
 		}
 		rows = append(rows, "", m.theme.Dim.Render(fmt.Sprintf("till: %d items waiting — f collect", till)))
-		rows = append(rows, m.theme.Dim.Render("↑↓ offer · f collect · x remove · /sell to post · esc close"))
+		rows = append(rows, m.theme.Dim.Render("↑↓ offer · n new · f collect · x remove · esc close"))
 	} else {
 		rows = append(rows, "", m.theme.Dim.Render("↑↓ offer · e buy · esc close"))
 	}
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
+// stallComposer renders the in-panel offer authoring form for the glyph client
+// (the twin of /sell): four editable terms with the selected one marked, a live
+// "stocks N (M sales)" line, and a validity-tinted post hint.
+func (m *Model) stallComposer() string {
+	d := m.stallDraft
+	units, sales := DraftStock(m.ctx, d)
+	rows := []string{m.theme.PanelTitle.Render("Post an Offer"), ""}
+	fields := []struct {
+		label, val string
+	}{
+		{"Give", fmt.Sprintf("%d %s", d.GiveN, itemName(d.GiveItem))},
+		{"For", fmt.Sprintf("%d %s", d.AskN, itemName(d.AskItem))},
+	}
+	// The four editable fields collapse into two display rows (item + count each);
+	// mark whichever underlying field is selected.
+	itemSel := []int{OfferFieldGive, OfferFieldAsk}
+	countSel := []int{OfferFieldGiveN, OfferFieldAskN}
+	for i, f := range fields {
+		marker := "  "
+		val := m.theme.ChatText.Render(f.val)
+		if d.Field == itemSel[i] || d.Field == countSel[i] {
+			marker = m.theme.Accent.Render("► ")
+			val = m.theme.Bright.Render(f.val)
+		}
+		label := m.theme.Dim.Render(fmt.Sprintf("%-5s ", f.label+":"))
+		rows = append(rows, marker+label+val)
+	}
+	stock := fmt.Sprintf("stocks %d %s (%d sales)", units, itemName(d.GiveItem), sales)
+	if DraftValid(m.ctx, d) {
+		rows = append(rows, "", m.theme.Fg(lipgloss.Color("#7BD88F")).Render(stock))
+	} else {
+		rows = append(rows, "", m.theme.Warn.Render(stock))
+	}
+	rows = append(rows, m.theme.Dim.Render("↑↓ field · ←→ change · e post · esc back"))
 	return m.theme.Panel.Render(strings.Join(rows, "\n"))
 }
 
@@ -748,7 +831,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case IsStall(pl.Kind):
 			m.closePanels()
-			m.stallXY, m.stallSel, m.showStall = xy, 0, true
+			m.stallXY, m.stallSel, m.stallNew, m.showStall = xy, 0, false, true
 		case IsWorkbench(pl.Kind):
 			m.closePanels()
 			m.showCraft, m.craftSel = true, 0

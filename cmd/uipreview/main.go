@@ -48,6 +48,7 @@ func main() {
 	write("uishots/5-crafting-real.png", panelOver(realCraftPanel))
 	write("uishots/6-machine-real.png", panelOver(realMachinePanel))
 	write("uishots/7-stall-real.png", panelOver(realStallPanel))
+	write("uishots/9-stall-compose.png", panelOver(realStallComposer))
 	write("uishots/8-compendium-real.png", panelOver(realCompendiumPanel))
 	write("uishots/2-machine.png", panelOver(machinePanel))
 	write("uishots/3-build.png", buildFrame())
@@ -121,7 +122,24 @@ func realStallPanel(img *image.RGBA) {
 	w.EnterArea(bname, "wilds", 0, 0, "")
 	bctx := &game.Ctx{World: w, Store: store.Open(""), Name: bname,
 		Inventory: map[string]int{"stone": 11}}
-	game.DrawStallPanel(img, bctx, 5, 5, 0)
+	game.DrawStallPanel(img, bctx, 5, 5, 0, false, game.OfferDraft{})
+}
+
+// realStallComposer renders main's in-panel offer composer (the `n`-at-your-stall
+// authoring form) with a partly-edited draft, so the art tool shows the keyboard
+// path that replaces /sell in HD.
+func realStallComposer(img *image.RGBA) {
+	w := world.New()
+	defer w.Close()
+	oname, _ := w.Join("anna")
+	w.EnterArea(oname, "wilds", 0, 0, "")
+	octx := &game.Ctx{World: w, Store: store.Open(""), Name: oname,
+		Inventory: map[string]int{"plank": 20, "ingot": 4, "salve": 10}}
+	w.Place("wilds", world.Placement{X: 5, Y: 5, Kind: "stall", Owner: oname})
+	d, _ := game.NewOfferDraft(octx)
+	d.GiveItem, d.GiveN, d.AskItem, d.AskN = "plank", 10, "stone", 6
+	d.Field = game.OfferFieldAsk
+	game.DrawStallPanel(img, octx, 5, 5, 0, true, d)
 }
 
 // realCompendiumPanel renders main's shipped compendium with a pack that holds

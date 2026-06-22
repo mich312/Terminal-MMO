@@ -83,6 +83,36 @@ func main() {
 		st.RemovePlacement,
 	)
 
+	// Restore the shared land claims (deeded settlement plots) and keep them saved
+	// as people claim, refresh and release.
+	claims := make([]world.Claim, 0)
+	for _, c := range st.LoadClaims() {
+		claims = append(claims, world.Claim{PlotID: c.PlotID, Owner: c.Owner,
+			MinX: c.MinX, MinY: c.MinY, MaxX: c.MaxX, MaxY: c.MaxY, LastTouch: c.LastTouch})
+	}
+	w.LoadClaims(claims)
+	w.SetClaimPersist(
+		func(c world.Claim) {
+			st.SaveClaim(store.Claim{PlotID: c.PlotID, Owner: c.Owner,
+				MinX: c.MinX, MinY: c.MinY, MaxX: c.MaxX, MaxY: c.MaxY, LastTouch: c.LastTouch})
+		},
+		st.RemoveClaim,
+	)
+
+	// Restore cleared terrain (felled/quarried cells) and keep it saved as people
+	// clear ground and as it regrows.
+	cleared := make([]world.Cleared, 0)
+	for _, c := range st.LoadCleared() {
+		cleared = append(cleared, world.Cleared{X: c.X, Y: c.Y, Owner: c.Owner, LastTouch: c.LastTouch})
+	}
+	w.LoadCleared(cleared)
+	w.SetClearPersist(
+		func(c world.Cleared) {
+			st.SaveCleared(store.Cleared{X: c.X, Y: c.Y, Owner: c.Owner, LastTouch: c.LastTouch})
+		},
+		st.RemoveCleared,
+	)
+
 	// Wildlife: one server-side stepper drives the live herd in the Wilds, on the
 	// same overworld seed every session sees. It spawns near online players and
 	// reclaims animals when nobody is around, so the population tracks who's

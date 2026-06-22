@@ -43,6 +43,12 @@ var Recipes = []Recipe{
 		In: []Ingredient{{"meat", 2}}, Out: "ration", OutN: 1},
 	{ID: "leather", Name: "Cured Leather", Blurb: "Tanned to spec. Supple, compliant.",
 		In: []Ingredient{{"hide", 2}}, Out: "leather", OutN: 1},
+	// Tools — gated by a rare found head, so the recipe is "unlocked" the moment
+	// you turn one up in the world.
+	{ID: "axe", Name: "Axe", Blurb: "A flint head, a Timber haft. Fells trees.",
+		In: []Ingredient{{"axe_head", 1}, {"wood", 2}}, Out: "axe", OutN: 1},
+	{ID: "pick", Name: "Pickaxe", Blurb: "An iron head, a Timber haft. Breaks rock.",
+		In: []Ingredient{{"pick_head", 1}, {"wood", 2}}, Out: "pick", OutN: 1},
 }
 
 // Craftable reports how many times the recipe can be made from inv — the min,
