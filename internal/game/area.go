@@ -83,6 +83,13 @@ type Toaster interface {
 	Toast() (text string, show bool)
 }
 
+// Hurtable lets an area tell the renderers the local player just took a blow, so
+// they can flash the frame for an instant (docs/WEAPON_PLAN.md). Areas without
+// combat simply don't implement it.
+type Hurtable interface {
+	Hurt() bool
+}
+
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The
 // Presentation Wing uses it to show the current slide on screen in HD (there
 // are no terminal cells in HD, so the markdown is rendered into the image). It

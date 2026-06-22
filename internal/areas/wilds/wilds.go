@@ -64,6 +64,8 @@ type area struct {
 	rng        *rand.Rand        // per-session stream for hunting drop rolls
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
+	lastStrike time.Time         // when this session last landed a blow (weapon cooldown)
+	hurtUntil  time.Time         // brief on-hit flash window after taking damage
 
 	// build mode (the shared placements layer)
 	building bool // placing a structure: movement drives the ghost, not the body
@@ -628,19 +630,58 @@ func (a *area) noteSpecies(kind string) {
 // this is the game-layer policy it's told.
 const downedDuration = 5 * time.Second
 
+// hurtFlashDuration is how long the on-hit cue lingers after you take a blow.
+const hurtFlashDuration = 350 * time.Millisecond
+
+// hitByMessage phrases an incoming blow from the victim's side: who hit you and
+// with what ("" detail means bare hands).
+func hitByMessage(ev world.Event) string {
+	if ev.Detail != "" {
+		return ev.Player + "'s " + ev.Detail + " catches you"
+	}
+	return ev.Player + " strikes you"
+}
+
+// Hurt reports whether the on-hit flash is still active (read by the renderers
+// to tint the frame red for an instant). Part of game.Hurtable.
+func (a *area) Hurt() bool {
+	return time.Now().Before(a.hurtUntil)
+}
+
+// strikePrompt offers the strike action when another player is in range and the
+// spot allows fighting — so PvP is discoverable, not a hidden key.
+func (a *area) strikePrompt() (string, bool) {
+	if a.ctx.World.Downed(a.ctx.Name) {
+		return "", false
+	}
+	p, ok := a.playerTarget(game.BestWeapon(a.ctx.Inventory))
+	if !ok || !a.pvpAllowed(p.X, p.Y) || !a.pvpAllowed(a.wx, a.wy) {
+		return "", false
+	}
+	return "f — strike " + p.Name, true
+}
+
 // strike is the single combat action behind the `f` key: it lands the best
 // weapon in the pack on whatever it can reach — a wild animal first, then a
 // player out in the open Wilds. Reach 1 is the melee ring; a ranged weapon scans
 // the tiles ahead. Ammo is spent only on a connecting shot.
+// tickInterval mirrors the world's 2 Hz clock, so a weapon's Cooldown (in ticks)
+// converts to wall-clock for the per-session strike throttle.
+const tickInterval = 500 * time.Millisecond
+
 func (a *area) strike() {
 	if a.ctx.World.Downed(a.ctx.Name) {
 		return // can't act while knocked out
 	}
 	wp := game.BestWeapon(a.ctx.Inventory)
+	if cd := time.Duration(wp.Cooldown) * tickInterval; cd > 0 && time.Since(a.lastStrike) < cd {
+		return // still recovering from the last blow
+	}
 
 	if c, ok := a.creatureTarget(wp); ok {
 		a.strikeCreature(c, wp)
 		a.spendAmmo(wp)
+		a.lastStrike = time.Now()
 		return
 	}
 	if p, ok := a.playerTarget(wp); ok {
@@ -650,6 +691,7 @@ func (a *area) strike() {
 		}
 		a.strikePlayer(p, wp)
 		a.spendAmmo(wp)
+		a.lastStrike = time.Now()
 		return
 	}
 	if wp.Reach > 1 {
@@ -778,7 +820,11 @@ func facingDelta(d world.Dir) (int, int) {
 func (a *area) strikePlayer(p world.Player, wp game.Weapon) {
 	_, downed, ok := a.ctx.World.Strike(a.ctx.Name, p.Name, wp.Name, wp.Damage, downedDuration)
 	if !ok {
-		a.setToast(p.Name + " is already down")
+		if a.ctx.World.Immune(p.Name) {
+			a.setToast(p.Name + " is still catching their breath")
+		} else {
+			a.setToast(p.Name + " is already down")
+		}
 		return
 	}
 	with := ""
@@ -1019,6 +1065,21 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 					a.fixPersonalGate(g)
 				}
 			}
+		case world.EventPlayerDamaged:
+			// You took a blow — react even though you didn't act.
+			if ev.Target == a.ctx.Name {
+				a.setToast(hitByMessage(ev))
+				a.hurtUntil = time.Now().Add(hurtFlashDuration)
+			}
+		case world.EventPlayerDowned:
+			if ev.Target == a.ctx.Name {
+				a.setToast("you're knocked out! reviving at Durst HQ…")
+				a.hurtUntil = time.Now().Add(hurtFlashDuration)
+			}
+		case world.EventPlayerRespawn:
+			if ev.Target == a.ctx.Name {
+				a.setToast("you come to, safe at Durst HQ")
+			}
 		}
 		return a, nil
 
@@ -1196,6 +1257,9 @@ func (a *area) Hint() string {
 	if c, ok := a.creatureAdjacent(); ok {
 		return a.creaturePrompt(c)
 	}
+	if s, ok := a.strikePrompt(); ok {
+		return s
+	}
 	if a.boardAdjacent() {
 		return "e — read the notice board"
 	}
@@ -1232,6 +1296,9 @@ func (a *area) Prompt() (string, bool) {
 	}
 	if c, ok := a.creatureAdjacent(); ok {
 		return a.creaturePrompt(c), true
+	}
+	if s, ok := a.strikePrompt(); ok {
+		return s, true
 	}
 	if mx, my, ok := a.stationAdjacent(); ok {
 		if pl, ok := a.ctx.World.PlacementAt(mx, my); ok {

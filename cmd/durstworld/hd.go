@@ -331,6 +331,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				game.DrawToast(img, msg)
 			}
 		}
+		// On-hit damage flash: a red rim for an instant after taking a blow.
+		if hz, ok := area.(game.Hurtable); ok && hz.Hurt() {
+			game.DrawHurtFlash(img)
+		}
 		// The build palette (a left-anchored, non-modal HUD while building).
 		if bv, ok := area.(game.BuildViewer); ok {
 			if sel, footer, warn, show := bv.BuildPanel(); show {
@@ -917,9 +921,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				draw()
 			}
 			// Presentation needs slide/deck events to rebuild; the Wilds needs
-			// chat to catch a gate riddle answered aloud. Other areas poll the
-			// world each frame, so they don't need the rest.
-			if ev.Type == world.EventSlide || ev.Type == world.EventDeck || ev.Type == world.EventChat {
+			// chat to catch a gate riddle answered aloud, and the combat events so
+			// a struck player flashes and is told who hit them. Other areas poll
+			// the world each frame, so they don't need the rest.
+			if ev.Type == world.EventSlide || ev.Type == world.EventDeck || ev.Type == world.EventChat ||
+				ev.Type == world.EventPlayerDamaged || ev.Type == world.EventPlayerDowned ||
+				ev.Type == world.EventPlayerRespawn {
 				area, _ = area.Update(game.WorldEventMsg(ev))
 				draw()
 			}

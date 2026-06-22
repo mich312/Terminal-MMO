@@ -71,10 +71,15 @@ type Player struct {
 	MaxHP       int       // cap (DefaultMaxHP for now; gear/food may lift it later)
 	DownedUntil time.Time // > now ⇒ knocked out: immune, can't act, awaiting respawn
 	LastHurt    time.Time // last time this player took damage (gates regen / "in combat" UI)
+	InvulnUntil time.Time // > now ⇒ briefly immune after respawn, so no spawn-camping
 }
 
 // DefaultMaxHP is every player's starting and full health.
 const DefaultMaxHP = 10
+
+// RespawnImmunity is how long a freshly revived player can't be struck — an
+// anti-grief floor so a knock-out can't be chained into a spawn-camp.
+const RespawnImmunity = 3 * time.Second
 
 const eventBuffer = 64
 
@@ -404,6 +409,7 @@ func (w *World) processRespawns() {
 	for _, p := range revived {
 		p.HP = p.MaxHP
 		p.DownedUntil = time.Time{}
+		p.InvulnUntil = now.Add(RespawnImmunity)
 		p.Area = area
 		p.X, p.Y = x, y
 		p.LastMoved = now

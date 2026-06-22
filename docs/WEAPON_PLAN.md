@@ -9,10 +9,15 @@
 > knock-out with no item loss, reviving at Durst HQ. A bottom-line HP bar and
 > downed banner show in both clients via the shared `Hint`.
 >
-> **Follow-ups (Phase 4):** bespoke HD pixel HP pips + a hit-spark FX (today
-> weapons fall back to gem icons and feedback is a toast), `/wield` + `/pvp`
-> commands, weapon cooldowns + respawn-immunity tuning, a compendium "Arms"
-> section, and the optional "companion defends you" stretch.
+> **Phase 4 polish shipped:** victim-side feedback (you're told who hit you and
+> with what, even though you didn't act), a red on-hit screen-rim flash in HD
+> (`pixel.TintEdges`/`DrawHurtFlash`), post-respawn immunity (`RespawnImmunity`,
+> no spawn-camping) and per-weapon strike cooldowns, and a discoverable "f —
+> strike <name>" prompt when you face a foe in the wild.
+>
+> **Still open:** bespoke HD pixel weapon icons (they fall back to gems today),
+> `/wield` + `/pvp` commands, a compendium "Arms" section, and the optional
+> "companion defends you" stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

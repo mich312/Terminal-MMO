@@ -284,6 +284,18 @@ func DrawToast(img *image.RGBA, text string) {
 	pixel.DrawText(img, x, y, s, text, hudToast)
 }
 
+// DrawHurtFlash rims the frame in red for an instant when the player takes a
+// blow (docs/WEAPON_PLAN.md) — a quick, unmissable cue that doesn't obscure the
+// world the way a full-screen tint would.
+func DrawHurtFlash(img *image.RGBA) {
+	W := img.Bounds().Dx()
+	band := W / 16
+	if band < 8 {
+		band = 8
+	}
+	pixel.TintEdges(img, color.RGBA{200, 40, 40, 255}, band, 0.55)
+}
+
 // DrawMinimapPanel draws an area's coarse overview as a grid of colored blocks —
 // the HD twin of the glyph client's 'm' map. Explored cells show their terrain
 // color, the player's block is bright, and unexplored ground is left dark so the

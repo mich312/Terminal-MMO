@@ -72,6 +72,45 @@ func TestStrikePlayerRefusedInHub(t *testing.T) {
 	}
 }
 
+// A weapon's cooldown throttles strike spam: a second blow fired immediately is
+// dropped, so only one lands.
+func TestWeaponCooldownThrottlesStrikes(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	atk := newFighter(t, w, "attacker", 100, 100)
+	atk.ctx.Inventory["spear"] = 1 // damage 3, cooldown 2 ticks (~1s)
+	vicName, _ := w.Join("victim")
+	w.EnterArea(vicName, "wilds", 101, 100, "")
+
+	atk.strike()
+	atk.strike() // immediately again — should still be cooling down
+
+	vp, _ := w.Self(vicName)
+	if vp.HP != world.DefaultMaxHP-3 {
+		t.Fatalf("victim HP = %d, want one spear blow (%d) — the second was on cooldown",
+			vp.HP, world.DefaultMaxHP-3)
+	}
+}
+
+// Being struck flashes the screen and tells the victim who hit them, even though
+// they didn't press a key.
+func TestVictimFeedbackOnDamage(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	a := newFighter(t, w, "victim", 100, 100)
+
+	a.Update(game.WorldEventMsg(world.Event{
+		Type: world.EventPlayerDamaged, Player: "attacker", Target: a.ctx.Name, Detail: "spear",
+	}))
+
+	if !a.Hurt() {
+		t.Fatal("victim should flash after taking a blow")
+	}
+	if msg, show := a.Toast(); !show || msg == "" {
+		t.Fatalf("victim should get a toast, got show=%v msg=%q", show, msg)
+	}
+}
+
 func TestPvPAllowedZones(t *testing.T) {
 	w := world.New()
 	t.Cleanup(w.Close)

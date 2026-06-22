@@ -45,6 +45,9 @@ func (w *World) Strike(attacker, target, weapon string, dmg int, downedFor time.
 	if !p.DownedUntil.IsZero() && p.DownedUntil.After(now) {
 		return p.HP, false, false // already knocked out — can't be hit again
 	}
+	if !p.InvulnUntil.IsZero() && p.InvulnUntil.After(now) {
+		return p.HP, false, false // just respawned — briefly protected
+	}
 	if dmg < 0 {
 		dmg = 0
 	}
@@ -75,11 +78,13 @@ func (w *World) Respawn(name, area string, x, y int) {
 	if !ok {
 		return
 	}
+	now := time.Now()
 	p.HP = p.MaxHP
 	p.DownedUntil = time.Time{}
+	p.InvulnUntil = now.Add(RespawnImmunity)
 	p.Area = area
 	p.X, p.Y = x, y
-	p.LastMoved = time.Now()
+	p.LastMoved = now
 	w.broadcastToArea(area, Event{Type: EventPlayerRespawn, Player: name, Target: name, Area: area, X: x, Y: y})
 }
 
@@ -92,4 +97,15 @@ func (w *World) Downed(name string) bool {
 		return false
 	}
 	return !p.DownedUntil.IsZero() && p.DownedUntil.After(time.Now())
+}
+
+// Immune reports whether the named player is in their post-respawn grace window.
+func (w *World) Immune(name string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.players[name]
+	if !ok {
+		return false
+	}
+	return !p.InvulnUntil.IsZero() && p.InvulnUntil.After(time.Now())
 }

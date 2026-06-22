@@ -143,6 +143,25 @@ func TestMutatePlayer(t *testing.T) {
 	}
 }
 
+// A freshly respawned player is briefly immune, so a knock-out can't be chained
+// into a spawn-camp.
+func TestStrikeRefusedWhileImmune(t *testing.T) {
+	w := New()
+	defer w.Close()
+	atk, _, vic, _ := twoFighters(w)
+
+	w.Respawn(vic, "wilds", 2, 1) // grants the post-respawn grace window
+	if !w.Immune(vic) {
+		t.Fatal("a just-respawned player should be immune")
+	}
+	if _, _, ok := w.Strike(atk, vic, "", 3, time.Second); ok {
+		t.Fatal("striking an immune player should be refused")
+	}
+	if p, _ := w.Self(vic); p.HP != p.MaxHP {
+		t.Fatalf("immune player HP = %d, want full %d", p.HP, p.MaxHP)
+	}
+}
+
 // A downed player whose timer has lapsed is no longer "downed" and can be hit
 // again — the gate is the clock, not a sticky flag.
 func TestDownedExpires(t *testing.T) {
