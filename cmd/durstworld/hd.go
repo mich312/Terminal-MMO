@@ -294,6 +294,10 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		base := inc.Render(tm, players, name, frame, light, ox, oy, hdScale, style, full, w.CreaturesInArea(areaID)...)
 		// Composite UI onto a copy so overlays never bleed into the cached terrain.
 		img := frameCopy(base)
+		// A raycaster area (Doom) repaints the whole frame in first person.
+		if fr, ok := area.(game.HDFramer); ok {
+			fr.HDFrame(img)
+		}
 		game.OverlayWalkable(img, tm, hdScale)  // debug: tint blocked tiles (toggle with F2)
 		game.DrawPortalLabels(img, tm, hdScale) // float each gate's destination name above it
 

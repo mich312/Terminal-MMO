@@ -3,6 +3,7 @@
 package game
 
 import (
+	"image"
 	"sort"
 	"time"
 
@@ -103,6 +104,15 @@ type Ticker interface {
 // the camera and return true here so the renderers skip the avatar pass.
 type AvatarHider interface {
 	HideAvatars() bool
+}
+
+// HDFramer lets an area paint straight into the HD pixel frame, on top of the
+// (usually blank) tile render — for a first-person raycaster (Doom) that isn't a
+// tilemap at all. The HD loop calls it each frame after compositing terrain and
+// before the UI overlays; the glyph client renders such an area from its View
+// string as usual. img is the full RGBA frame to draw into.
+type HDFramer interface {
+	HDFrame(img *image.RGBA)
 }
 
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The

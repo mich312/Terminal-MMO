@@ -26,7 +26,7 @@ var rows = []string{
 	"#..S....M....N....T....P.....#",
 	"#............................#",
 	"#............................#",
-	"#..B....Z....G....C....c.....#",
+	"#..B....Z....G....C....O.....#",
 	"#............................#",
 	"#..o......................o..#",
 	"#............................#",
@@ -56,6 +56,7 @@ var legend = map[rune]game.LegendEntry{
 	'Z': cabinet("bomberman", "Bomberman", "#FF4040", "#FFD166"),
 	'G': cabinet("2048", "2048", "#FFD166", "#FF8A4C"),
 	'C': cabinet("chess", "Chess", "#EAE0C8", "#9AA0B0"),
+	'O': cabinet("doom", "Doom", "#C24A3A", "#FF8A4C"),
 	// The door back to the overworld.
 	'X': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds", Color: "#56E1FF"},
 	// Dormant cabinets — room for the next games to dock.
@@ -79,6 +80,7 @@ var spawnBy = map[string][2]int{
 	"bomberman": {8, 6},
 	"2048":      {13, 6},
 	"chess":     {18, 6},
+	"doom":      {23, 6},
 }
 
 var texts = []game.MapText{
@@ -145,7 +147,7 @@ func (a *area) View(width, height int) string {
 		line("Bomberman", "blast foes"),
 		line("2048", "merge tiles"),
 		line("Chess", "vs the house"),
-		th.Dim.Render("▦ (more docking soon)"),
+		line("Doom", "raycaster maze"),
 	}, "\n"))
 
 	const gap = 3

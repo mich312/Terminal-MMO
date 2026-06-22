@@ -29,14 +29,15 @@ destination (building it from the registry with `game.NewArea`).
      │           │       │      │      ▼ ▼ ▼ ▼ ▼   ▼ ▼ ▼
      └───────────┴───────┴──────┘   each cabinet is a portal into a game:
         every hall's '0' door        Sokoban Maze Snake Tetris Pong
-        → "wilds" (return to hub)     Breakout Bomberman 2048 — each has a
+        → "wilds" (return to hub)     Breakout Bomberman 2048 Chess Doom — each has a
                                       door/key back to the Arcade, and the
                                       Arcade's ◈ door → the Wilds.
 ```
 
 Games split two ways: **keypress** (Sokoban, Maze) advance only on input;
-**real-time** (Snake, Tetris, Pong, Breakout) implement `game.Ticker` and run on
-the wall clock. The board games (Tetris, Pong, Breakout) also implement
+**real-time** (Snake, Tetris, Pong, Breakout, Bomberman) implement `game.Ticker`
+and run on the wall clock. The board games (Tetris, Pong, Breakout, 2048, Chess)
+also implement
 `game.AvatarHider` — the player isn't a token on the grid, so the camera frames
 the board and no "you" avatar is drawn.
 
@@ -68,8 +69,9 @@ Areas return a `View(w,h) string` for the **glyph** client and a tile window
 client. Walls/floors/props in the tilemap drive both. Optional area interfaces:
 `Hinter`/`Prompter` (status hints), `Toaster` (transient messages),
 `HDLighter` (a torch circle, used by Maze), `Ticker` (a real-time clock — see
-below), and `AvatarHider` (board games suppress the "you" avatar and frame the
-board with the camera).
+below), `AvatarHider` (board games suppress the "you" avatar and frame the board
+with the camera), and `HDFramer` (an area paints the HD pixel frame itself — the
+Doom raycaster, which is neither tilemap nor board).
 
 ## Minigames: keypress vs. real-time
 
@@ -78,7 +80,7 @@ The HD client forwards **only key events** to an area's `Update` and ignores any
 
 - **Keypress games** (Sokoban, Maze) advance only when you press a key, so they
   need nothing special and play identically in both clients.
-- **Real-time games** (Snake — and future ones like Bomberman) implement
+- **Real-time games** (Snake, Tetris, Pong, Breakout, Bomberman) implement
   `game.Ticker`: both clients drive `GameTick()` off a wall-clock cadence
   (`TickInterval()`), the HD loop from its frame ticker and the glyph client from
   a `tea.Tick` loop. This is the shared foundation for anything that moves on its
