@@ -257,6 +257,12 @@ func iabs(n int) int {
 	return n
 }
 
+// facingWest reports whether a heading points left, so the renderer mirrors a
+// creature's side-view sprite (drawn facing east by default) to match it.
+func facingWest(d world.Dir) bool {
+	return d == world.DirW || d == world.DirNW || d == world.DirSW
+}
+
 // stationAdjacent finds an interactable placement (a machine or a trade stall)
 // on the ring of cells bordering the 2×2 body, so you can "use" something you're
 // standing next to (they're solid, so you never stand on one).
@@ -909,6 +915,7 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 					if sp, ok := game.SpeciesByKind(c.Kind); ok {
 						t.Ch, t.Color = sp.Glyph, sp.Hex
 						t.Prop, t.PropHex = sp.Prop, sp.Hex
+						t.Flip = facingWest(c.Facing) // mirror the side-view sprite to face its heading
 						if t.Ground == "" || t.Ground == fogColor {
 							t.Ground = groundColor(cell.Biome)
 						}

@@ -51,11 +51,13 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	texs := make([][]TileTex, cam.H)
 	props := make([][]TileProp, cam.H)
 	propCols := make([][]colorful.Color, cam.H)
+	flips := make([][]bool, cam.H)
 	for y := 0; y < cam.H; y++ {
 		cols[y] = make([]colorful.Color, cam.W)
 		texs[y] = make([]TileTex, cam.W)
 		props[y] = make([]TileProp, cam.W)
 		propCols[y] = make([]colorful.Color, cam.W)
+		flips[y] = make([]bool, cam.W)
 		for x := 0; x < cam.W; x++ {
 			if c := grid[y][x]; c.blank {
 				cols[y][x] = shadowColor
@@ -69,6 +71,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			t := tm.Tiles[ty][tx]
 			texs[y][x] = t.Tex
 			props[y][x] = t.Prop
+			flips[y][x] = t.Flip
 			// A prop's ground is colored separately from the glyph's color so the
 			// flower-glyph stays red in the text renderer while HD draws grass.
 			if t.Ground != "" {
@@ -182,6 +185,8 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
 					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs, frame, props[vy][vx])
+				} else if art, ok := creatureArt[props[vy][vx]]; ok {
+					drawCreature(img, vx, vy, scale, propCols[vy][vx], art, flips[vy][vx])
 				}
 			}
 		}
@@ -480,6 +485,73 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 			}
 		}
 		blitTileArt(img, ox, oy, scale, art, paint)
+	}
+}
+
+// drawCreature renders a wildlife sprite (a detailed side-view animal) centered
+// on tile (vx,vy) and bottom-aligned, at the avatar's pixel density (12 art-
+// pixels across a tile) so it reads as a proper figure rather than a 6×6 blob.
+// flip mirrors it horizontally for a creature facing west. A soft contact shadow
+// plants it on the ground. Codes: P body, p shade, o outline, L light, W
+// highlight, D dark, e eye, n nose/muzzle.
+func drawCreature(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, flip bool) {
+	bw := len([]rune(art[0]))
+	bh := len(art)
+	// Two art-pixels per ground-tile pixel — the avatar's density. The sprite is
+	// bw=12 wide, so destW lands at ~2 tiles; clamp it to one tile so a creature
+	// stays within its cell (incremental-safe) and reads at the right scale.
+	apx := scale / bw
+	if apx < 1 {
+		apx = 1
+	}
+	destW, destH := bw*apx, bh*apx
+	left := vx*scale + (scale-destW)/2
+	top := (vy+1)*scale - destH
+
+	body := colorfulToRGBA(col)
+	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
+	dark := colorfulToRGBA(col.BlendLab(shadowColor, 0.5).Clamped())
+	outline := colorfulToRGBA(col.BlendLab(shadowColor, 0.7).Clamped())
+	light := colorfulToRGBA(col.BlendLab(spriteWhite, 0.4).Clamped())
+	white := colorfulToRGBA(col.BlendLab(spriteWhite, 0.75).Clamped())
+	eye := colorfulToRGBA(col.BlendLab(shadowColor, 0.85).Clamped())
+
+	// Soft contact shadow at the feet, kept inside the tile.
+	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
+		float64(destW)*0.40, float64(apx)*1.1, apx, float64(destH))
+
+	for ay := 0; ay < bh; ay++ {
+		runes := []rune(art[ay])
+		for ax := 0; ax < bw && ax < len(runes); ax++ {
+			var c color.RGBA
+			ok := true
+			switch runes[ax] {
+			case 'P':
+				c = body
+			case 'p':
+				c = shade
+			case 'D':
+				c = dark
+			case 'o':
+				c = outline
+			case 'L':
+				c = light
+			case 'W', 'n':
+				c = white
+			case 'e':
+				c = eye
+			default:
+				ok = false // '.' transparent
+			}
+			if !ok {
+				continue
+			}
+			dx := ax
+			if flip {
+				dx = bw - 1 - ax
+			}
+			fillRect(img, left+dx*apx, top+ay*apx, apx, apx, c)
+		}
 	}
 }
 

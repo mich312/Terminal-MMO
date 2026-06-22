@@ -155,6 +155,7 @@ type Tile struct {
 	Ground   string    // HD ground base color (hex); falls back to Color if empty
 	Prop     TileProp  // HD decoration sprite drawn over the ground
 	PropHex  string    // HD prop color (hex); falls back to Color if empty
+	Flip     bool      // HD: mirror the prop sprite horizontally (a creature facing west)
 }
 
 // TileAnim makes a tile come alive: its glyph cycles through Frames and its

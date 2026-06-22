@@ -257,6 +257,9 @@ func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style
 		h = fnv1aStr(h, string(t.Ground))
 		h = fnv1aStr(h, string(t.Color))
 		h = fnv1aStr(h, string(t.PropHex))
+		if t.Flip {
+			h = fnv1a(h, 0x9E3779B97F4A7C15)
+		}
 		return h
 	}
 	out := make([]uint64, vw*vh)
