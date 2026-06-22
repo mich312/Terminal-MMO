@@ -53,6 +53,10 @@ var banner = []string{
 type introTickMsg struct{}
 type shimmerTickMsg struct{}
 
+// gameTickMsg drives a real-time area (a game.Ticker). gen tags the tick loop so
+// a stale loop left over from a previous area stops itself when the area changes.
+type gameTickMsg struct{ gen int }
+
 // Model is the root bubbletea model for one SSH session.
 type Model struct {
 	ctx    *Ctx
@@ -101,6 +105,24 @@ type Model struct {
 	tradeSel    int    // selected pack slot in the trade panel
 	tradeReq    string // latest player who asked to trade with us (for /accept)
 	quitArmed   bool
+
+	tickGen int // generation of the current real-time tick loop (see gameTickMsg)
+}
+
+// scheduleTick starts a fresh real-time tick loop for the current area if it is
+// a game.Ticker, retiring any previous loop by bumping the generation. Returns
+// nil for non-real-time areas.
+func (m *Model) scheduleTick() tea.Cmd {
+	t, ok := m.area.(Ticker)
+	if !ok {
+		return nil
+	}
+	m.tickGen++
+	return tickCmd(m.tickGen, t.TickInterval())
+}
+
+func tickCmd(gen int, d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return gameTickMsg{gen} })
 }
 
 // NewModel wires a session model. The player is already Joined to the
@@ -154,6 +176,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Tick(introFrame, func(time.Time) tea.Msg { return introTickMsg{} })
 
+	case gameTickMsg:
+		// A real-time area's clock. Ignore stale loops (area changed) and ticks
+		// while not in play; otherwise advance the game and reschedule.
+		if msg.gen != m.tickGen || m.phase != phasePlay {
+			return m, nil
+		}
+		t, ok := m.area.(Ticker)
+		if !ok {
+			return m, nil
+		}
+		next := t.GameTick()
+		if tr, isT := next.(Transition); isT {
+			return m, m.startTransition(tr.To)
+		}
+		m.area = next
+		return m, tickCmd(m.tickGen, t.TickInterval())
+
 	case shimmerTickMsg:
 		if m.phase != phaseTransition {
 			return m, nil
@@ -186,7 +225,7 @@ func (m *Model) beginPlay() tea.Cmd {
 	m.ctx.Store.RecordAreaVisit(m.ctx.Name, m.areaID)
 	m.ctx.Store.LogEvent(m.ctx.Name, "join", m.areaID)
 	self, _ := m.ctx.World.Self(m.ctx.Name)
-	return m.area.Init(&self)
+	return tea.Batch(m.area.Init(&self), m.scheduleTick())
 }
 
 func (m *Model) welcomeLine() string {
@@ -700,7 +739,7 @@ func (m *Model) finishTransition() tea.Cmd {
 	m.area = NewArea(m.areaID, m.ctx)
 	m.phase = phasePlay
 	self, _ := m.ctx.World.Self(m.ctx.Name)
-	return m.area.Init(&self)
+	return tea.Batch(m.area.Init(&self), m.scheduleTick())
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

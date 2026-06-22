@@ -38,6 +38,7 @@ import (
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/maze"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
+	_ "github.com/durst-group/durstworld/internal/areas/snake"
 	_ "github.com/durst-group/durstworld/internal/areas/sokoban"
 	_ "github.com/durst-group/durstworld/internal/areas/vault"
 	"github.com/durst-group/durstworld/internal/areas/wilds"

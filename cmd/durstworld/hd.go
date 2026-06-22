@@ -166,6 +166,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		Inventory: st.LoadInventory(name), Hats: st.LoadHats(name),
 		FixedGates: st.LoadPersonalGates(name)}
 	areaID, area, hv := enterHD(ctx, "", "wilds")
+	lastGameTick := time.Now() // wall-clock pacing for real-time areas (game.Ticker)
 
 	cellW, cellH := hdCellSize(ptyReq.Window)
 	win := ptyReq.Window
@@ -667,7 +668,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 					inc.Reset() // new area → discard the cached terrain
 					ctrl("\x1b[2J")
 					areaID, area, hv = enterHD(ctx, areaID, dest)
-					enteredAt = time.Now()
+					enteredAt, lastGameTick = time.Now(), time.Now()
 				} else {
 					appendChat(game.HDLine{Text: "no such area: " + f[1], Col: hudDim})
 				}
@@ -730,17 +731,24 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		havePending bool
 		lastStep    time.Time
 	)
-	applyMove := func(km tea.KeyMsg) {
-		next, _ := area.Update(km)
+	// sendArea hands a message to the active area and, if it asks to leave
+	// (returns a Transition), swaps in the destination — the single place key and
+	// move handlers funnel area updates so none of them can strand the player on
+	// the Transition sentinel (which is not itself renderable).
+	sendArea := func(msg tea.Msg) {
+		next, _ := area.Update(msg)
 		if t, isTransition := next.(game.Transition); isTransition {
 			fw.Reset()  // new scene → full repaint
 			inc.Reset() // new area → discard the cached terrain
 			ctrl("\x1b[2J")
 			areaID, area, hv = enterHD(ctx, areaID, t.To)
-			enteredAt = time.Now()
+			enteredAt, lastGameTick = time.Now(), time.Now()
 		} else {
 			area = next
 		}
+	}
+	applyMove := func(km tea.KeyMsg) {
+		sendArea(km)
 		lastStep = time.Now()
 		draw()
 	}
@@ -835,7 +843,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				havePending = true
 			}
 		} else if key == "e" { // pick up an item, or open a station beside you
-			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 			if ctx.UseStation != nil { // the area asked to open a panel
 				xy := *ctx.UseStation
 				ctx.UseStation = nil
@@ -854,17 +862,18 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			draw()
 		} else if key == "b" || key == "r" || key == "[" || key == "]" || key == "x" {
 			// build mode: 'b' toggles, 'r'/brackets cycle the placeable, 'x' demolishes
-			// under the ghost (the area reinterprets movement as ghost movement).
-			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			// under the ghost. In a minigame these double as game keys (restart/leave),
+			// which may transition — so funnel through sendArea.
+			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 			draw()
 		} else if key == "f" { // hunt an adjacent animal
-			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
 			draw()
 		} else if key == "t" { // tame an adjacent animal with bait
-			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
 			draw()
 		} else if key == "m" { // toggle the area overview map
-			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 			draw()
 		} else if key == "f2" { // toggle the walkability debug overlay
 			game.DebugWalkable = !game.DebugWalkable
@@ -967,6 +976,22 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			if havePending && time.Since(lastKey) < heldTimeout && time.Since(lastStep) >= moveInterval {
 				applyMove(pendingMove)
 				havePending = false
+			}
+			// Drive a real-time area (Snake, …) off the wall clock — the HD client
+			// never forwards a clock to areas otherwise. A tick may transition.
+			if tk, ok := area.(game.Ticker); ok && time.Since(lastGameTick) >= tk.TickInterval() {
+				lastGameTick = time.Now()
+				next := tk.GameTick()
+				if t, isT := next.(game.Transition); isT {
+					fw.Reset()
+					inc.Reset()
+					ctrl("\x1b[2J")
+					areaID, area, hv = enterHD(ctx, areaID, t.To)
+					enteredAt = time.Now()
+				} else {
+					area = next
+				}
+				dirty = true
 			}
 			// Advance the animation/world-reflection counter on wall-clock time so
 			// it stays at hdFPS regardless of the (higher) render cadence. While a

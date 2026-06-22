@@ -4,7 +4,8 @@ A small multiplayer terminal world for Durst Group employees, played over
 SSH. Walk around the ASCII lobby of Durst HQ, bump into colleagues in real
 time, chat (proximity-based — gossip stays local), sign the guestbook, and
 step through portals into the Presentation Wing, Kraftwerk, Demo Center and
-the Arcade — a hall of cabinets, each a minigame (Sokoban, a torch-lit Maze).
+the Arcade — a hall of cabinets, each a minigame (Sokoban, a torch-lit Maze,
+Snake).
 
 ```
 ssh -p 2222 yourname@durstworld.example.com
@@ -207,13 +208,17 @@ from the lobby) — a neon hall of cabinets, each a portal into a self-contained
   then on to the next. `r` resets the current puzzle.
 - **Maze** (`◊`) — feel your way by torchlight to the green `◈` exit; solve it
   and a bigger maze is carved. `r` carves a fresh one.
+- **Snake** (`◊`) — steer a growing snake around a walled pit, eat the `◆`
+  pellets, don't hit the wall or yourself. `r` restarts, `x` leaves.
 
-Minigames are **keypress-driven** (the HD client only forwards key events to an
-area, never a clock), so they play identically in both clients. Each has a `◊`
-door back to the Arcade; the Arcade's `◈` door returns you to the Wilds. To dock
-a new game, add a package under `internal/areas/`, register it, and point a new
-cabinet tile in `internal/areas/arcade` at it (the `c` cabinet is reserved for
-the next one).
+Most minigames are **keypress-driven** (the HD client only forwards key events to
+an area, never a clock), so they play identically in both clients. Real-time
+ones like Snake implement `game.Ticker`, which both clients drive off a
+wall-clock cadence — the shared foundation for anything that moves on its own.
+Each game has a door back to the Arcade; the Arcade's `◈` door returns you to the
+Wilds. To dock a new game, add a package under `internal/areas/`, register it,
+and point a new cabinet tile in `internal/areas/arcade` at it (the `c` cabinet is
+the next free slot). See [`docs/AREAS.md`](docs/AREAS.md) for the full map.
 
 ## Adding a new area (or mini-game)
 

@@ -4,6 +4,7 @@ package game
 
 import (
 	"sort"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -81,6 +82,18 @@ type HDLighter interface {
 // draws it onto the frame.
 type Toaster interface {
 	Toast() (text string, show bool)
+}
+
+// Ticker is a real-time area: one that advances on its own clock rather than
+// only on key presses (Snake, and future games like Bomberman). The HD client
+// forwards only key events to Update and ignores area tea.Cmds, so it cannot
+// self-clock there — instead both clients drive GameTick() off the wall clock at
+// TickInterval() cadence (the HD loop from its frame ticker, the glyph client
+// from a tea.Tick loop). GameTick returns the next Area, so a game may even
+// transition on a tick (return a Transition); normally it returns itself.
+type Ticker interface {
+	TickInterval() time.Duration
+	GameTick() Area
 }
 
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The

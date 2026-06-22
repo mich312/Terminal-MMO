@@ -23,7 +23,7 @@ import (
 var rows = []string{
 	"######################",
 	"#....................#",
-	"#..S.....M.....c.....#",
+	"#..S.....M.....N..c..#",
 	"#....................#",
 	"#....................#",
 	"#..o..............o..#",
@@ -43,6 +43,9 @@ var legend = map[rune]game.LegendEntry{
 	'M': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "maze", Label: "Maze",
 		Color: "#C792EA", Tex: game.TexFloor, Ground: "#241F30", Prop: game.PropScreen, PropHex: "#C792EA",
 		Anim: &game.TileAnim{ColorA: "#9A6FD6", ColorB: "#C792EA", Speed: 3}},
+	'N': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "snake", Label: "Snake",
+		Color: "#7BD88F", Tex: game.TexFloor, Ground: "#241F30", Prop: game.PropScreen, PropHex: "#7BD88F",
+		Anim: &game.TileAnim{ColorA: "#3FB65B", ColorB: "#9BE8AB", Speed: 3}},
 	// The door back to the overworld.
 	'X': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds", Color: "#56E1FF"},
 	// A dormant cabinet — room for the next game to dock.
@@ -113,6 +116,7 @@ func (a *area) View(width, height int) string {
 		th.ChatText.Render("to the Wilds."), "",
 		th.Accent.Render("◊ Sokoban") + th.Dim.Render("  crate puzzle"),
 		th.Accent.Render("◊ Maze") + th.Dim.Render("     find the exit"),
+		th.Accent.Render("◊ Snake") + th.Dim.Render("    eat & grow"),
 		th.Dim.Render("▦ (more docking soon)"),
 	}, "\n"))
 
