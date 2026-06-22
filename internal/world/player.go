@@ -56,6 +56,7 @@ func (w *World) Strike(attacker, target, weapon string, dmg int, downedFor time.
 		p.HP = 0
 	}
 	p.LastHurt = now
+	p.LastHurtBy = attacker
 
 	x, y := p.X, p.Y
 	if p.HP == 0 {
@@ -81,6 +82,7 @@ func (w *World) Respawn(name, area string, x, y int) {
 	now := time.Now()
 	p.HP = p.MaxHP
 	p.DownedUntil = time.Time{}
+	p.LastHurtBy = ""
 	p.InvulnUntil = now.Add(RespawnImmunity)
 	p.Area = area
 	p.X, p.Y = x, y

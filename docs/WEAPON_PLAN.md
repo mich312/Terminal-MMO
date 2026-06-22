@@ -56,7 +56,13 @@
 > dedicated "Arms" heading in the codex via a new `Arms` item source, instead of
 > being scattered across Forage/Crafted.
 >
-> **Still open:** the optional "companion defends you" stretch.
+> **Companion defense shipped:** a tamed pet now stands up for you. `Strike`
+> records who hurt a player (`Player.LastHurtBy`); the wildlife sim then has the
+> owner's companion break from heel, pursue that attacker, and bite on a cadence
+> (credited to the owner, gentle damage scaled by the animal's size) — only out
+> in the open Wilds, never in the hub or on a claim, and it stands down once the
+> threat leaves or is downed. The whole weapon system is now feature-complete
+> against this plan.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

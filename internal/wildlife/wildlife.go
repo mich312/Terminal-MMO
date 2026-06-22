@@ -190,7 +190,11 @@ func (s *Sim) move(players []world.Player, creatures []world.Creature) {
 			continue
 		}
 		if c.Owner != "" {
-			s.follow(c, sp, players)
+			if foe, ok := s.defendTarget(c, players); ok {
+				s.defend(c, sp, foe)
+			} else {
+				s.follow(c, sp, players)
+			}
 			continue
 		}
 		px, py, dist := nearestPlayer(players, c.X, c.Y)
@@ -270,6 +274,103 @@ func (s *Sim) follow(c world.Creature, sp game.Species, players []world.Player) 
 		cc.X, cc.Y, cc.Facing, cc.State, cc.LastMoved = nx, ny, facing, "tamed", time.Now()
 		return true
 	})
+}
+
+// Companion defense (docs/WEAPON_PLAN.md): a tamed pet stands up for its owner.
+// When someone strikes you in the open Wilds, your companion drops the heel and
+// goes for the attacker — closing the gap and biting on a cadence — until the
+// threat passes or it loses them.
+const (
+	defendWindow = 6 * time.Second // how long after a blow a pet stays roused
+	aggroRadius  = 9               // it only takes up a fight this near its owner
+	biteEvery    = 2               // bites once every N ticks (~1/sec at 2 Hz)
+	petKnockout  = 5 * time.Second // a pet's blow downs a player for this long, like any strike
+)
+
+// defendTarget returns the player a companion should fight for its owner, if
+// any: the owner's recent attacker, still present, near enough, not already
+// down, and standing where fighting is allowed (never the hub or a claim).
+func (s *Sim) defendTarget(c world.Creature, players []world.Player) (world.Player, bool) {
+	var owner world.Player
+	found := false
+	for _, p := range players {
+		if p.Name == c.Owner {
+			owner, found = p, true
+			break
+		}
+	}
+	if !found || owner.LastHurtBy == "" || time.Since(owner.LastHurt) > defendWindow {
+		return world.Player{}, false
+	}
+	for _, p := range players {
+		if p.Name != owner.LastHurtBy {
+			continue
+		}
+		if s.w.Downed(p.Name) || !s.pvpHere(p.X, p.Y) {
+			return world.Player{}, false
+		}
+		if chebyshev(owner.X, owner.Y, p.X, p.Y) > aggroRadius {
+			return world.Player{}, false
+		}
+		return p, true
+	}
+	return world.Player{}, false
+}
+
+// defend moves a companion toward the foe and bites when it's in reach. The bite
+// is credited to the owner ("ada's fox catches you") and respects the same
+// knock-out rules as any strike.
+func (s *Sim) defend(c world.Creature, sp game.Species, foe world.Player) {
+	if chebyshev(c.X, c.Y, foe.X, foe.Y) <= 1 {
+		facing := world.Facing8(sign(foe.X-c.X), sign(foe.Y-c.Y))
+		s.w.MutateCreature(c.ID, func(cc *world.Creature) bool {
+			cc.Facing, cc.State, cc.LastMoved = facing, "tamed", time.Now()
+			return true
+		})
+		if s.frame%biteEvery == 0 {
+			s.w.Strike(c.Owner, foe.Name, sp.Name, petBite(sp), petKnockout)
+		}
+		return
+	}
+	// Close the gap, stepping around obstacles like follow does.
+	dx, dy := sign(foe.X-c.X), sign(foe.Y-c.Y)
+	nx, ny := c.X+dx, c.Y+dy
+	if !s.habitable(sp, nx, ny) {
+		switch {
+		case dx != 0 && s.habitable(sp, c.X+dx, c.Y):
+			ny = c.Y
+		case dy != 0 && s.habitable(sp, c.X, c.Y+dy):
+			nx = c.X
+		default:
+			return
+		}
+	}
+	facing := world.Facing8(nx-c.X, ny-c.Y)
+	s.w.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		cc.X, cc.Y, cc.Facing, cc.State, cc.LastMoved = nx, ny, facing, "tamed", time.Now()
+		return true
+	})
+}
+
+// petBite is how hard a companion bites — gentle, scaled a little by the
+// animal's size so a deer hits harder than a rabbit.
+func petBite(sp game.Species) int {
+	if d := sp.MaxHP / 3; d > 1 {
+		return d
+	}
+	return 1
+}
+
+// pvpHere mirrors game.PvPAllowedAt for the sim (which has no game.Ctx): the open
+// Wilds allow fighting, the hub ward and claimed land do not.
+func (s *Sim) pvpHere(x, y int) bool {
+	if worldgen.HubSafe(x, y) {
+		return false
+	}
+	if _, claimed := s.w.ClaimAt(x, y); claimed {
+		return false
+	}
+	return true
 }
 
 // spawn tops the population up toward the player-scaled budget, placing new

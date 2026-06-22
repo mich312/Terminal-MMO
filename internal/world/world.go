@@ -72,6 +72,7 @@ type Player struct {
 	MaxHP       int       // cap (DefaultMaxHP for now; gear/food may lift it later)
 	DownedUntil time.Time // > now ⇒ knocked out: immune, can't act, awaiting respawn
 	LastHurt    time.Time // last time this player took damage (gates regen / "in combat" UI)
+	LastHurtBy  string    // who last struck this player (a tamed companion defends against them)
 	InvulnUntil time.Time // > now ⇒ briefly immune after respawn, so no spawn-camping
 }
 
@@ -418,6 +419,7 @@ func (w *World) processRespawns() {
 	for _, p := range revived {
 		p.HP = p.MaxHP
 		p.DownedUntil = time.Time{}
+		p.LastHurtBy = ""
 		p.InvulnUntil = now.Add(RespawnImmunity)
 		p.Area = area
 		p.X, p.Y = x, y
