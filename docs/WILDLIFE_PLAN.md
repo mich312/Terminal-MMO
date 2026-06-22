@@ -336,3 +336,32 @@ infinite map never inflates the bill.
 radii · the optional `len==0` render guard · the optional batched
 `StepCreatures` lock. Start conservative; raise `maxTotal` only after a profile
 under real concurrency.
+
+---
+
+## Future tasks (backlog)
+
+Deferred-by-design extensions, not gaps in what shipped. Roughly ordered by
+value-to-effort.
+
+- [ ] **Hunt feedback** — surface a creature's health while you strike it (a HP
+  pip / hit flash), instead of only the "it bolts" toast. Phase 2 already tracks
+  `HP`; this is presentation.
+- [ ] **Companion utility** — give a tamed pet a purpose beyond cosmetic: e.g. a
+  pack animal that extends inventory, or a hound that flushes nearby game.
+- [ ] **Companion management** — release/dismiss and (optionally) rename a
+  companion; a small indicator that you have one.
+- [ ] **Cross-area companions** — let a pet follow its owner through portals into
+  sub-areas, instead of waiting in the Wilds and reattaching on return. Needs
+  each area to render the creature list (today only the Wilds does).
+- [ ] **Per-species gaits** — a real hop arc for the rabbit (and bird), distinct
+  from the shared walk bob (`Species.Gait` + arc math in `blitCreature`).
+- [ ] **Predators / aggressive fauna** — a `Species` flag for animals that fight
+  back or hunt the player; the first creature→player damage. Cozy-world scoping
+  required.
+- [ ] **More species & biomes** — fill out snow / swamp / shore / mountain fauna;
+  herds and flocks (group spawning + cohesion).
+- [ ] **Day/night activity** — nocturnal vs diurnal species, tied to the existing
+  day/night clock.
+- [ ] **Deeper drop economy** — more recipes/wearables off hunting spoils (a fur
+  cloak, feathered cap), so leather/pelt/feather feed the wearable loop too.
