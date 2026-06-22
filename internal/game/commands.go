@@ -93,6 +93,16 @@ func init() {
 			run:     cmdCraft,
 		},
 		{
+			name: "wield", usage: "/wield [weapon|fists|auto]",
+			summary: "choose the arm you fight with (no arg: show your options)",
+			run:     cmdWield,
+		},
+		{
+			name: "pvp", usage: "/pvp",
+			summary: "whether you can be struck where you stand",
+			run:     cmdPvP,
+		},
+		{
 			name: "sell", usage: "/sell <n> <item> for <m> <item>",
 			summary: "post an offer at your Concession (stocks it from your pack)",
 			run:     cmdSell,
@@ -197,6 +207,65 @@ func cmdWhere(m *Model, args []string) tea.Cmd {
 		return nil
 	}
 	m.addSystemLine(fmt.Sprintf("%s · (%d, %d)", DisplayName(self.Area), self.X, self.Y))
+	return nil
+}
+
+// cmdWield chooses the arm the player fights with. No argument lists the current
+// choice and the usable options; "auto" returns to picking the strongest, and
+// "fists" forces bare hands.
+func cmdWield(m *Model, args []string) tea.Cmd {
+	inv := m.ctx.Inventory
+	if len(args) == 0 {
+		cur := WieldedWeapon(m.ctx)
+		tag := ""
+		if m.ctx.Wielded == "" {
+			tag = " (auto)"
+		}
+		m.addSystemLine("wielding: " + cur.Name + tag)
+		opts := []string{"auto", "fists"}
+		for _, wp := range Weapons() {
+			if inv[wp.Item] > 0 {
+				opts = append(opts, wp.Item)
+			}
+		}
+		m.addSystemLine("options: " + strings.Join(opts, ", "))
+		return nil
+	}
+	switch strings.ToLower(args[0]) {
+	case "auto", "best", "none":
+		m.ctx.Wielded = ""
+		m.addSystemLine("wielding the best arm you carry (auto)")
+	case "fists", "fist", "hands":
+		m.ctx.Wielded = FistsKey
+		m.addSystemLine("you raise your fists")
+	default:
+		wp, ok := MatchWeapon(args[0])
+		if !ok {
+			m.addSystemLine("no such weapon: " + args[0])
+			return nil
+		}
+		if inv[wp.Item] <= 0 {
+			m.addSystemLine("you don't carry a " + wp.Name)
+			return nil
+		}
+		m.ctx.Wielded = wp.Item
+		m.addSystemLine("you ready the " + wp.Name)
+	}
+	return nil
+}
+
+// cmdPvP tells the player whether they can be struck where they stand — the
+// plain status line the zone-based model promises.
+func cmdPvP(m *Model, args []string) tea.Cmd {
+	self, ok := m.ctx.World.Self(m.ctx.Name)
+	if !ok {
+		return nil
+	}
+	if PvPAllowedAt(m.ctx, self.Area, self.X, self.Y) {
+		m.addSystemLine("open ground — you can be struck here. Watch yourself.")
+	} else {
+		m.addSystemLine("safe ground — no fighting reaches you here.")
+	}
 	return nil
 }
 

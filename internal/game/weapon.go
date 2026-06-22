@@ -1,5 +1,11 @@
 package game
 
+import (
+	"strings"
+
+	"github.com/durst-group/durstworld/internal/worldgen"
+)
+
 // Weapons (docs/WEAPON_PLAN.md). A weapon is a multiplier on the single strike
 // action: more damage, sometimes more reach. It is "wielded" simply by owning
 // it — the same pattern as the axe/pick tools (placeable.go) — so there is no
@@ -46,10 +52,72 @@ func WeaponByItem(item string) (Weapon, bool) {
 	return wp, ok
 }
 
+// Weapons returns the craftable weapon roster (for listing in /wield etc.).
+func Weapons() []Weapon { return weapons }
+
+// MatchWeapon resolves a user-typed token to a weapon by item id or by a
+// case-insensitive prefix of its name ("flint" or "knife" → Flint Knife).
+func MatchWeapon(s string) (Weapon, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if wp, ok := weaponByItem[s]; ok {
+		return wp, true
+	}
+	for _, wp := range weapons {
+		name := strings.ToLower(wp.Name)
+		if name == s || strings.HasPrefix(name, s) || strings.Contains(name, s) {
+			return wp, true
+		}
+	}
+	return Weapon{}, false
+}
+
+// PvPAllowedAt reports whether a player at (area, x, y) may be struck: only out
+// in the open Wilds — never in another area, never in the hub's peace ward, and
+// never on a claimed homestead. The single source of truth shared by the strike
+// action and the /pvp command (docs/WEAPON_PLAN.md).
+func PvPAllowedAt(ctx *Ctx, area string, x, y int) bool {
+	if area != "wilds" {
+		return false
+	}
+	if worldgen.HubSafe(x, y) {
+		return false
+	}
+	if ctx != nil && ctx.World != nil {
+		if _, claimed := ctx.World.ClaimAt(x, y); claimed {
+			return false
+		}
+	}
+	return true
+}
+
 // IsWeapon reports whether an item id names a weapon.
 func IsWeapon(item string) bool {
 	_, ok := weaponByItem[item]
 	return ok
+}
+
+// FistsKey is the /wield value that forces bare hands.
+const FistsKey = "fists"
+
+// WieldedWeapon resolves what the player actually fights with: their chosen
+// weapon if they set one with /wield and it's still usable, otherwise the
+// auto-picked best. An empty or no-longer-usable choice falls through to
+// BestWeapon, so dropping or spending your pick never leaves you unarmed.
+func WieldedWeapon(ctx *Ctx) Weapon {
+	switch ctx.Wielded {
+	case "":
+		return BestWeapon(ctx.Inventory)
+	case FistsKey:
+		return Fists
+	}
+	wp, ok := weaponByItem[ctx.Wielded]
+	if !ok || ctx.Inventory[wp.Item] <= 0 {
+		return BestWeapon(ctx.Inventory)
+	}
+	if wp.Ammo != "" && ctx.Inventory[wp.Ammo] <= 0 {
+		return BestWeapon(ctx.Inventory) // chosen bow, but out of arrows
+	}
+	return wp
 }
 
 // BestWeapon picks the strongest usable arm the pack holds, falling back to

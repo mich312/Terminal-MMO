@@ -33,6 +33,54 @@ func TestBestWeaponBowNeedsArrows(t *testing.T) {
 	}
 }
 
+func TestWieldedWeaponHonorsChoice(t *testing.T) {
+	ctx := &Ctx{Inventory: map[string]int{"knife": 1, "spear": 1}}
+	// Auto picks the spear (more damage).
+	if got := WieldedWeapon(ctx); got.Item != "spear" {
+		t.Fatalf("auto wield = %q, want spear", got.Item)
+	}
+	// An explicit choice overrides auto.
+	ctx.Wielded = "knife"
+	if got := WieldedWeapon(ctx); got.Item != "knife" {
+		t.Fatalf("chosen wield = %q, want knife", got.Item)
+	}
+	// Fists are always available.
+	ctx.Wielded = FistsKey
+	if got := WieldedWeapon(ctx); got.Item != "" {
+		t.Fatalf("fists wield = %q, want bare hands", got.Item)
+	}
+	// A choice you no longer carry falls back to the best usable arm.
+	ctx.Wielded = "bow"
+	if got := WieldedWeapon(ctx); got.Item != "spear" {
+		t.Fatalf("stale choice fell back to %q, want spear", got.Item)
+	}
+}
+
+func TestMatchWeapon(t *testing.T) {
+	if wp, ok := MatchWeapon("knife"); !ok || wp.Item != "knife" {
+		t.Fatalf("MatchWeapon(knife) = %+v ok=%v", wp, ok)
+	}
+	if wp, ok := MatchWeapon("Hunter"); !ok || wp.Item != "bow" {
+		t.Fatalf("MatchWeapon(Hunter) = %+v ok=%v, want bow", wp, ok)
+	}
+	if _, ok := MatchWeapon("trebuchet"); ok {
+		t.Fatal("MatchWeapon(trebuchet) should not resolve")
+	}
+}
+
+func TestPvPAllowedAt(t *testing.T) {
+	ctx := &Ctx{}
+	if PvPAllowedAt(ctx, "lobby", 999, 999) {
+		t.Error("non-wilds areas should be safe")
+	}
+	if PvPAllowedAt(ctx, "wilds", 0, 0) {
+		t.Error("the hub heart should be safe")
+	}
+	if !PvPAllowedAt(ctx, "wilds", 300, 300) {
+		t.Error("the open wilds should allow PvP")
+	}
+}
+
 func TestWeaponRecipesResolveToRealItems(t *testing.T) {
 	for _, wp := range weapons {
 		if _, ok := ItemByID(wp.Item); !ok {

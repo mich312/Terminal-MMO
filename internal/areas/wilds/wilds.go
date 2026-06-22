@@ -654,7 +654,7 @@ func (a *area) strikePrompt() (string, bool) {
 	if a.ctx.World.Downed(a.ctx.Name) {
 		return "", false
 	}
-	p, ok := a.playerTarget(game.BestWeapon(a.ctx.Inventory))
+	p, ok := a.playerTarget(game.WieldedWeapon(a.ctx))
 	if !ok || !a.pvpAllowed(p.X, p.Y) || !a.pvpAllowed(a.wx, a.wy) {
 		return "", false
 	}
@@ -673,7 +673,7 @@ func (a *area) strike() {
 	if a.ctx.World.Downed(a.ctx.Name) {
 		return // can't act while knocked out
 	}
-	wp := game.BestWeapon(a.ctx.Inventory)
+	wp := game.WieldedWeapon(a.ctx)
 	if cd := time.Duration(wp.Cooldown) * tickInterval; cd > 0 && time.Since(a.lastStrike) < cd {
 		return // still recovering from the last blow
 	}
@@ -703,15 +703,10 @@ func (a *area) strike() {
 
 // pvpAllowed reports whether a player standing at (x,y) may be struck: only out
 // in the open Wilds — never in the hub's peace ward, and never on a claimed
-// homestead, which stays a sanctuary even in the wild.
+// homestead, which stays a sanctuary even in the wild. Delegates to the shared
+// game.PvPAllowedAt so the strike action and the /pvp command never disagree.
 func (a *area) pvpAllowed(x, y int) bool {
-	if worldgen.HubSafe(x, y) {
-		return false
-	}
-	if _, claimed := a.ctx.World.ClaimAt(x, y); claimed {
-		return false
-	}
-	return true
+	return game.PvPAllowedAt(a.ctx, "wilds", x, y)
 }
 
 // spendAmmo consumes one round for a ranged weapon after a connecting strike.

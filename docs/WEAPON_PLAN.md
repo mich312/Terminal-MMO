@@ -12,12 +12,13 @@
 > **Phase 4 polish shipped:** victim-side feedback (you're told who hit you and
 > with what, even though you didn't act), a red on-hit screen-rim flash in HD
 > (`pixel.TintEdges`/`DrawHurtFlash`), post-respawn immunity (`RespawnImmunity`,
-> no spawn-camping) and per-weapon strike cooldowns, and a discoverable "f —
-> strike <name>" prompt when you face a foe in the wild.
+> no spawn-camping) and per-weapon strike cooldowns, a discoverable "f — strike
+> <name>" prompt, bespoke compendium icons for all four arms, and the
+> **`/wield`** (choose your arm, incl. `auto`/`fists`) and **`/pvp`** (am I safe
+> here?) commands, sharing one `PvPAllowedAt` truth with the strike action.
 >
-> **Still open:** bespoke HD pixel weapon icons (they fall back to gems today),
-> `/wield` + `/pvp` commands, a compendium "Arms" section, and the optional
-> "companion defends you" stretch.
+> **Still open:** a dedicated compendium "Arms" section (weapons list under
+> "Crafted" today) and the optional "companion defends you" stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

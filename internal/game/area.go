@@ -145,6 +145,10 @@ type Ctx struct {
 	// kind, then clears it. (HD and the glyph client both poll it after
 	// dispatching a key to the area.)
 	UseStation *[2]int
+	// Wielded is the weapon the player has chosen to fight with (an item id), or
+	// "" to auto-pick the strongest usable arm (docs/WEAPON_PLAN.md). The value
+	// "fists" forces bare hands. Session state, set by /wield; not persisted.
+	Wielded string
 }
 
 // Accessory is the index of the accessory the player is currently wearing (0 =
