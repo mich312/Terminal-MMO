@@ -33,6 +33,7 @@ var compendiumGroups = []struct {
 	{CaveFind, "Cave finds"},
 	{Crafted, "Crafted goods"},
 	{Hunt, "Hunting spoils"},
+	{Arms, "Arms"},
 }
 
 // Compendium builds the full item catalog grouped by source, annotated with the

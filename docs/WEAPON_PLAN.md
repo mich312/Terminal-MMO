@@ -52,8 +52,11 @@
 > set (one for a plain blow, many for cleave/pierce) and a per-target damage with
 > the backstab bonus. Tests cover all four.
 >
-> **Still open:** a dedicated compendium "Arms" section, and the optional
-> "companion defends you" stretch.
+> **Arms compendium section shipped:** weapons (and arrows) now group under a
+> dedicated "Arms" heading in the codex via a new `Arms` item source, instead of
+> being scattered across Forage/Crafted.
+>
+> **Still open:** the optional "companion defends you" stretch.
 
 > How arms land on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),
