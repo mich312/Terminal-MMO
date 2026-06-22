@@ -801,6 +801,126 @@ func drawStallComposer(img *image.RGBA, ctx *Ctx, d OfferDraft) {
 	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
 }
 
+// DrawBuildPanel draws the build palette: the buildable catalog grouped
+// (Structures · Machines · Trade · Tools), each row with a 1-9 hotbar badge, its
+// cost, and a right-aligned afford count — dimmed when the pack can't afford it.
+// The selected row is highlighted and its blurb shown, plus a block reason when
+// the ghost is on a bad cell. Left-anchored and non-modal, since build mode keeps
+// the ghost live. sel is the highlighted Placeables index; footer is a context
+// line (claim hint or block reason), shown amber when warn.
+func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool) {
+	groups := BuildPalette(ctx)
+	if len(groups) == 0 {
+		return
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 14 * s
+	pad := 8 * s
+
+	title := "BUILD"
+	keys := "1-9/r pick  e place  x remove  b done"
+
+	// Selected entry, for the blurb line.
+	var cur Placeable
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			if e.Index == sel {
+				cur = e.P
+			}
+		}
+	}
+	blurb := ""
+	if cur.ID != "" {
+		blurb = "\"" + cur.Blurb + "\""
+	}
+
+	// Width: the widest row "[n] Name   cost   x000", plus title/footer/blurb.
+	rowText := func(e PaletteEntry) (string, string, string) {
+		badge := "   "
+		if e.Hotkey > 0 {
+			badge = "[" + itoa(e.Hotkey) + "]"
+		}
+		return badge + " " + e.P.Name, PlaceableCost(e.P), "x" + itoa(e.Max)
+	}
+	nameCol, costCol := 0, 0
+	rows := 0
+	for _, g := range groups {
+		rows += 1 + len(g.Entries)
+		for _, e := range g.Entries {
+			n, c, _ := rowText(e)
+			if w := pixel.TextWidth(n, s); w > nameCol {
+				nameCol = w
+			}
+			if w := pixel.TextWidth(c, s); w > costCol {
+				costCol = w
+			}
+		}
+	}
+	rowW := nameCol + 8*s + costCol + 8*s + pixel.TextWidth("x000", s)
+	contentW := rowW
+	for _, t := range []string{title, keys, blurb, footer} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+	pw := contentW + pad*2
+	if pw > W-4 {
+		pw = W - 4
+	}
+	ph := pad*2 + lh + lh/2 + rows*lh + lh/2 + lh + lh
+	// Left-anchored, below the area title / claim banner.
+	ox, oy := pad, 3*lh
+	if oy+ph > H-2 {
+		oy = H - 2 - ph
+	}
+	if oy < 2 {
+		oy = 2
+	}
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	x := ox + pad
+	right := ox + pw - pad
+
+	pixel.DrawText(img, x, oy+pad, s, title, hudAccent)
+	y := oy + pad + lh + lh/2
+	costX := x + nameCol + 8*s
+	for _, g := range groups {
+		pixel.DrawText(img, x, y, s, g.Name, hudDim)
+		y += lh
+		for _, e := range g.Entries {
+			name, cost, cnt := rowText(e)
+			nc, cc, xc := hudWhite, hudGood, hudGood
+			if !e.Afford {
+				nc, cc, xc = hudDim, hudDim, hudDim
+			}
+			if e.Index == sel {
+				pixel.Shade(img, x-2*s, y-2*s, pw-2*pad+4*s, lh, 0.32)
+				pixel.DrawText(img, x-s, y, s, ">", hudAccent)
+				if e.Afford {
+					nc = hudBright
+				}
+			}
+			pixel.DrawText(img, x, y, s, name, nc)
+			pixel.DrawText(img, costX, y, s, cost, cc)
+			pixel.DrawText(img, right-pixel.TextWidth(cnt, s), y, s, cnt, xc)
+			y += lh
+		}
+	}
+	y += lh / 2
+	if blurb != "" {
+		pixel.DrawText(img, x, y, s, blurb, hudDim)
+	}
+	y += lh
+	switch {
+	case footer != "" && warn:
+		pixel.DrawText(img, x, y, s, footer, hudWarn)
+	case footer != "":
+		pixel.DrawText(img, x, y, s, footer, hudAccent)
+	default:
+		pixel.DrawText(img, x, y, s, keys, hudDim)
+	}
+}
+
 func mustItemHex(id string) string {
 	if it, ok := ItemByID(id); ok {
 		return it.Hex

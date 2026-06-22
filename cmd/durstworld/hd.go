@@ -315,12 +315,26 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 		}
 		game.DrawTopLegend(img)
-		if prompt, show := actionPrompt(area); show {
+		// While building, the palette (with its own footer) is the guide; skip the
+		// centered action prompt so the two don't fight for the bottom.
+		building := false
+		if bv, ok := area.(game.BuildViewer); ok {
+			if _, _, _, show := bv.BuildPanel(); show {
+				building = true
+			}
+		}
+		if prompt, show := actionPrompt(area); show && !building {
 			game.DrawActionPrompt(img, prompt)
 		}
 		if tz, ok := area.(game.Toaster); ok {
 			if msg, show := tz.Toast(); show {
 				game.DrawToast(img, msg)
+			}
+		}
+		// The build palette (a left-anchored, non-modal HUD while building).
+		if bv, ok := area.(game.BuildViewer); ok {
+			if sel, footer, warn, show := bv.BuildPanel(); show {
+				game.DrawBuildPanel(img, ctx, sel, footer, warn)
 			}
 		}
 		// The coarse overview map (toggled with 'm'), drawn as colored blocks.

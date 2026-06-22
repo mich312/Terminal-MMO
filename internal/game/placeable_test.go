@@ -50,3 +50,60 @@ func TestSpendForInsufficientIsNoOp(t *testing.T) {
 		t.Errorf("plank = %d, want 2 (untouched on a failed build)", ctx.Inventory["plank"])
 	}
 }
+
+func TestBuildPaletteGroupsAffordAndHotkeys(t *testing.T) {
+	ctx := &Ctx{Name: "ada", Store: store.Open(""),
+		Inventory: map[string]int{"plank": 12, "lamp": 1, "stone": 4}}
+	groups := BuildPalette(ctx)
+	if len(groups) < 3 {
+		t.Fatalf("got %d groups, want at least Structures/Machines/Trade", len(groups))
+	}
+	// First group is Structures, in catalog order, and hotkeys run 1..N across all.
+	if groups[0].Cat != CatStructure {
+		t.Errorf("first group = %v, want Structures", groups[0].Cat)
+	}
+	seen := map[int]bool{}
+	hot := 0
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			if e.Hotkey != 0 {
+				hot++
+				if seen[e.Hotkey] {
+					t.Errorf("hotkey %d assigned twice", e.Hotkey)
+				}
+				seen[e.Hotkey] = true
+			}
+			// afford state matches affordMax.
+			if (e.Max > 0) != e.Afford {
+				t.Errorf("%s afford=%v but Max=%d", e.P.ID, e.Afford, e.Max)
+			}
+		}
+	}
+	if hot == 0 || hot > 9 {
+		t.Errorf("assigned %d hotkeys, want 1..9", hot)
+	}
+	// The furnace needs 8 stone; with 4 it must be unaffordable (x0).
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			if e.P.ID == "furnace" && (e.Afford || e.Max != 0) {
+				t.Errorf("furnace should be unaffordable with 4 stone, got afford=%v max=%d", e.Afford, e.Max)
+			}
+			if e.P.ID == "fence" && e.Max != 12 {
+				t.Errorf("fence (1 plank) with 12 planks should be x12, got %d", e.Max)
+			}
+		}
+	}
+}
+
+func TestPaletteHotkeyResolves(t *testing.T) {
+	ctx := &Ctx{Name: "ada", Store: store.Open(""), Inventory: map[string]int{}}
+	// Hotkey 1 is the first catalog placeable (fence), regardless of afford.
+	idx, ok := PaletteHotkey(ctx, 1)
+	if !ok || Placeables[idx].ID != "fence" {
+		t.Errorf("hotkey 1 = (%d,%v), want the fence", idx, ok)
+	}
+	if _, ok := PaletteHotkey(ctx, 9); ok {
+		// only 8 placeables today, so 9 has no entry
+		t.Error("hotkey 9 should be unassigned with 8 placeables")
+	}
+}

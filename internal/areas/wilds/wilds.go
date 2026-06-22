@@ -308,6 +308,59 @@ func claimTint(claims []world.Claim, me string, x, y int) (string, bool) {
 	return "", false
 }
 
+// BuildPanel implements game.BuildViewer: the HD client draws the build palette
+// from it while build mode is active.
+func (a *area) BuildPanel() (int, string, bool, bool) {
+	footer, warn := a.buildFooter()
+	return a.buildSel, footer, warn, a.building
+}
+
+// buildFooter is the palette's context line under the ghost: a claim hint when
+// it hovers a settlement plot, a block reason when the cell is unbuildable, or
+// empty (the panel then shows the key legend). warn marks a block reason (amber).
+func (a *area) buildFooter() (string, bool) {
+	if s, ok := a.ghostClaimPrompt(); ok {
+		return s, false
+	}
+	if r := a.blockReasonText(); r != "" {
+		return "can't build: " + r, true
+	}
+	return "", false
+}
+
+// blockReasonText explains why the ghost cell can't be built on ("" when it's a
+// legal spot). Claims are surfaced separately by buildFooter as a hint.
+func (a *area) blockReasonText() string {
+	x, y := a.bx, a.by
+	if a.canBuildAt(x, y) {
+		return ""
+	}
+	if x >= a.wx && x < a.wx+game.PlayerW && y >= a.wy && y < a.wy+game.PlayerH {
+		return "you're standing there"
+	}
+	if _, ok := a.ctx.World.PlacementAt(x, y); ok {
+		return "already occupied"
+	}
+	if !a.seen(x, y) {
+		return "not explored yet"
+	}
+	if ok, owner := game.BuildRight(a.ctx, x, y); !ok && owner != "" {
+		return owner + "'s land"
+	}
+	if _, ok := gateAtCell(x, y); ok {
+		return "a gate stands here"
+	}
+	switch a.gen.At(x, y).Biome {
+	case worldgen.Forest:
+		return "trees in the way"
+	case worldgen.Hill, worldgen.Mountain, worldgen.Snow:
+		return "rock in the way"
+	case worldgen.Water, worldgen.Deep:
+		return "water"
+	}
+	return "can't build here"
+}
+
 // ClaimLabel implements game.ClaimLabeler: the Workspace the body stands in, for
 // the HD banner (the glyph client shows the same label via Hint).
 func (a *area) ClaimLabel() (string, bool) {
@@ -520,6 +573,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				a.buildSel = (a.buildSel + 1) % len(game.Placeables)
 			case "[":
 				a.buildSel = (a.buildSel + len(game.Placeables) - 1) % len(game.Placeables)
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+				if idx, ok := game.PaletteHotkey(a.ctx, int(ks[0]-'0')); ok {
+					a.buildSel = idx
+				}
 			case "e", "enter":
 				// Over a settlement building, e deeds the plot; on open ground it
 				// places the selected structure.
@@ -908,6 +965,12 @@ func (a *area) View(width, height int) string {
 		panel := a.boardPanel()
 		pw := lipgloss.Width(panel)
 		view = ui.Overlay(view, panel, (width-pw)/2, 1)
+	} else if a.building {
+		view = ui.Overlay(view, a.buildPanel(), 2, 1) // left-anchored palette
+		if msg, show := a.Toast(); show {
+			th := a.theme()
+			view = ui.Overlay(view, th.Toast.Render(msg), (width-lipgloss.Width(th.Toast.Render(msg)))/2, height-2)
+		}
 	} else if msg, show := a.Toast(); show {
 		th := a.ctx.Theme
 		if th == nil {
@@ -1174,6 +1237,61 @@ func boardEntries() (title string, lines []string) {
 		"",
 		"Stand on a door and step in.",
 	}
+}
+
+// theme returns the session theme, falling back to the default (nil-safe).
+func (a *area) theme() *ui.Theme {
+	if a.ctx.Theme != nil {
+		return a.ctx.Theme
+	}
+	return ui.Default
+}
+
+// buildPanel renders the build palette for the glyph client: the catalog grouped
+// (Structures · Machines · Trade · Tools), each row with a 1-9 hotbar badge, its
+// cost and afford count, the selected row marked, plus the current blurb and a
+// block reason. Mirrors the HD game.DrawBuildPanel.
+func (a *area) buildPanel() string {
+	th := a.theme()
+	green := th.Fg(lipgloss.Color("#7BD88F"))
+	rows := []string{th.PanelTitle.Render("Build")}
+	for _, g := range game.BuildPalette(a.ctx) {
+		rows = append(rows, th.Dim.Render(g.Name))
+		for _, e := range g.Entries {
+			badge := "   "
+			if e.Hotkey > 0 {
+				badge = fmt.Sprintf("[%d]", e.Hotkey)
+			}
+			body := fmt.Sprintf("%-22s %s", e.P.Name, game.PlaceableCost(e.P))
+			cnt := fmt.Sprintf("x%d", e.Max)
+			marker := "  "
+			var line string
+			switch {
+			case e.Index == a.buildSel:
+				marker = th.Accent.Render("► ")
+				line = th.Bright.Render(body) + "  " + green.Render(cnt)
+			case e.Afford:
+				line = th.ChatText.Render(body) + "  " + green.Render(cnt)
+			default:
+				line = th.Dim.Render(body + "  " + cnt)
+			}
+			rows = append(rows, marker+badge+" "+line)
+		}
+	}
+	rows = append(rows, "")
+	if a.buildSel >= 0 && a.buildSel < len(game.Placeables) {
+		rows = append(rows, th.Dim.Render("\""+game.Placeables[a.buildSel].Blurb+"\""))
+	}
+	if footer, warn := a.buildFooter(); footer != "" {
+		if warn {
+			rows = append(rows, th.Warn.Render(footer))
+		} else {
+			rows = append(rows, th.Accent.Render(footer))
+		}
+	} else {
+		rows = append(rows, th.Dim.Render("1-9/r pick · e place · x remove · b done"))
+	}
+	return th.Panel.Render(strings.Join(rows, "\n"))
 }
 
 // boardPanel renders the notice board for the glyph client, styled to match the
