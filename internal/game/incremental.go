@@ -44,9 +44,34 @@ func (r *IncrementalRenderer) Reset() { r.have = false }
 // against a full render by TestIncrementalMatchesFull — raise it if that fails.
 const overhangTiles = 4
 
+// ambientOverhang bounds how far a drifting firefly / mist mote reaches from its
+// own cell (drift + glow ≈ 2 tiles), used to dilate those small-reach ambient
+// tiles instead of the much wider overhangTiles. Keeping it tight is what lets a
+// still, fully-explored night wood stay incremental rather than full-repainting
+// every frame. Validated against a full render by TestIncrementalMatchesFull at
+// night — raise it if that fails.
+const ambientOverhang = 2
+
 // fullRedrawFrac forces a plain full rasterize once the dirty set covers more of
 // the frame than this — past it the bookkeeping costs more than it saves.
 const fullRedrawFrac = 0.6
+
+// smallReachTile reports whether a dirty tile's only frame-to-frame change is a
+// drifting firefly / mist mote — ambient effects that stay within ambientOverhang
+// tiles of the cell. Such tiles can be dilated with a tighter halo than the wide
+// casters (campfires, portals, avatars). Only natural forest/swamp ground (bare or
+// under a static canopy) qualifies; anything carrying a portal or a glowing emitter
+// can spill much further and stays in the wide bucket.
+func smallReachTile(t Tile) bool {
+	if t.Tex != TexForest && t.Tex != TexSwamp {
+		return false
+	}
+	switch t.Prop {
+	case PropNone, PropTree, PropAcacia, PropPalm, PropFir, PropCrag:
+		return true
+	}
+	return false
+}
 
 // Render returns the terrain frame for a vw×vh tile window (tm), reusing the
 // previous frame where it can. tm's tile (0,0) is world (ox,oy); cam is implicitly
@@ -112,7 +137,45 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 
 	// Grow the dirty set by the overhang, then — if it now covers most of the
 	// frame — a plain full rasterize is cheaper than many overlapping regions.
-	dil := dilate(dirty, vw, vh, overhangTiles)
+	//
+	// Split by spill distance first. Most night churn is drifting fireflies / mist
+	// motes that stay within ambientOverhang tiles of their own cell — far less than
+	// the campfire-glow / canopy / avatar overhang the rest needs. Dilating a sparse
+	// scatter of motes by the full overhang re-covers a whole explored wood (each
+	// mote's 9×9 halo overlaps its neighbours), tipping a still night forest into a
+	// full repaint every frame; the tighter halo keeps it incremental. Wide casters
+	// and avatar footprints stay in the big bucket.
+	big, small := make([]bool, vw*vh), make([]bool, vw*vh)
+	for ty := 0; ty < vh; ty++ {
+		for tx := 0; tx < vw; tx++ {
+			i := ty*vw + tx
+			if !dirty[i] {
+				continue
+			}
+			if smallReachTile(tm.At(tx, ty)) {
+				small[i] = true
+			} else {
+				big[i] = true
+			}
+		}
+	}
+	forceBig := func(f tileXY) {
+		if tx, ty := f.x-ox, f.y-oy; tx >= 0 && tx < vw && ty >= 0 && ty < vh {
+			big[ty*vw+tx], small[ty*vw+tx] = true, false
+		}
+	}
+	for _, f := range feet {
+		forceBig(f)
+	}
+	for _, f := range r.prevFeet {
+		forceBig(f)
+	}
+	dil := dilate(big, vw, vh, overhangTiles)
+	for i, d := range dilate(small, vw, vh, ambientOverhang) {
+		if d {
+			dil[i] = true
+		}
+	}
 	nDil := 0
 	for _, d := range dil {
 		if d {
@@ -202,7 +265,7 @@ func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style
 			h := tileSig(tx, ty)
 			h = fnv1a(h, tileSig(tx, ty-1), tileSig(tx+1, ty-1), tileSig(tx+1, ty), tileSig(tx+1, ty+1))
 			h = fnv1a(h, tileSig(tx, ty+1), tileSig(tx-1, ty+1), tileSig(tx-1, ty), tileSig(tx-1, ty-1))
-			if tileAnimated(tm.At(tx, ty), night, style) {
+			if tileAnimated(tm.At(tx, ty), ox+tx, oy+ty, night, style) {
 				h = fnv1a(h, uint64(frame))
 			}
 			out[ty*vw+tx] = h
@@ -213,8 +276,19 @@ func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style
 
 // tileAnimated reports whether a tile's pixels change frame-to-frame: water
 // (ripples + glint), portals and emissive props (pulse/flicker, day or night),
-// and forest/swamp tiles after dusk (fireflies).
-func tileAnimated(t Tile, night float64, style *Style) bool {
+// and — after dusk — the forest/swamp cells that actually host a drifting
+// firefly or mist wisp. (wx,wy) is the cell's world position, needed for those
+// per-cell night effects.
+//
+// The night branch is deliberately per-cell rather than per-biome: marking the
+// whole wood animated meant a fully-explored forest re-rasterized every tile
+// every night frame, which is the bulk of the "explored world" cost. Only the
+// cells fireflyHost/mistHost light actually change, and their sub-tile drift and
+// glow stay within the renderer's overhang, so the neighbours a mote spills onto
+// are still redrawn via the dirty-set dilation (the same way a campfire's glow
+// reaches its neighbours). Validated against a full render by
+// TestIncrementalMatchesFull at day, dusk and night.
+func tileAnimated(t Tile, wx, wy int, night float64, style *Style) bool {
 	if t.Tex == TexWater || t.Prop == PropPortal {
 		return true
 	}
@@ -230,8 +304,13 @@ func tileAnimated(t Tile, night float64, style *Style) bool {
 	if propHasGlowArt(style, t.Prop) {
 		return true
 	}
-	if night >= 0.3 && (t.Tex == TexForest || t.Tex == TexSwamp) {
-		return true
+	if night >= 0.3 {
+		switch t.Tex {
+		case TexForest:
+			return fireflyHost(wx, wy)
+		case TexSwamp:
+			return fireflyHost(wx, wy) || mistHost(wx, wy)
+		}
 	}
 	return false
 }

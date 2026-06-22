@@ -264,6 +264,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	}
 
 	frameInFlight := false // a frame is queued/being written; don't compute another
+	minimapOpen := false   // the overview map is up (set in render) — a covering overlay
 	render := func() {
 		if frameInFlight {
 			return // backpressure: the writer is still draining the last frame
@@ -316,9 +317,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			}
 		}
 		// The coarse overview map (toggled with 'm'), drawn as colored blocks.
+		minimapOpen = false
 		if mm, ok := area.(game.HDMinimapper); ok {
 			if title, rows, show := mm.HDMinimap(); show {
 				game.DrawMinimapPanel(img, title, rows)
+				minimapOpen = true
 			}
 		}
 		// Chat log + input, fading out when idle so the scene stays clear.
@@ -909,10 +912,18 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				havePending = false
 			}
 			// Advance the animation/world-reflection counter on wall-clock time so
-			// it stays at hdFPS regardless of the (higher) render cadence.
+			// it stays at hdFPS regardless of the (higher) render cadence. While a
+			// full-screen panel or the overview map is up, the scene is all but
+			// hidden, so don't repaint just because the world animated a frame: a
+			// translucent panel over animated terrain otherwise re-diffs (and often
+			// fully repaints) every frame for a shimmer no one can see. The counter
+			// still advances, so the world catches up the moment the menu is closed
+			// or the player acts (those paths set dirty explicitly).
 			if nf := int(time.Since(start) / (time.Second / hdFPS)); nf != frame {
 				frame = nf
-				dirty = true
+				if uiPanel == hdPanelNone && !minimapOpen {
+					dirty = true
+				}
 			}
 			// Render only when the writer is free; if it's still draining, leave the
 			// frame dirty and frameDone will pick it up (dropping intermediate ones).
