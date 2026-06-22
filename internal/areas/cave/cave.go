@@ -360,7 +360,7 @@ func (a *area) lanternRadius() int {
 // HDLight gives the HD renderer a lantern around the player so the cavern falls
 // away into darkness past its reach — and closes in as the lantern runs dry.
 func (a *area) HDLight() game.Light {
-	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: a.lanternRadius(), Warm: true}
+	return game.Light{X: a.X + game.PlayerW/2, Y: a.Y + game.PlayerH/2, Radius: a.lanternRadius(), Warm: true, Sunless: true}
 }
 
 // isGlow reports whether a prop sheds its own light — daylight shafts and the

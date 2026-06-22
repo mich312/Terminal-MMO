@@ -130,3 +130,12 @@ func Ambient(t time.Time) (hex string, strength float64) {
 	}
 	return dayCycle[0].Hex, dayCycle[0].Strength
 }
+
+// SunlessAmbient is the fixed tint for worlds the sky never reaches — caves
+// today, and any future underground or interior area — so they stay dark and
+// lantern-lit regardless of the surface day/night cycle. It is the deep-night
+// key, the darkest the open sky gets, so a sunless place reads as permanent
+// night rather than tracking the clock above ground.
+func SunlessAmbient() (hex string, strength float64) {
+	return dayCycle[0].Hex, dayCycle[0].Strength
+}

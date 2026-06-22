@@ -45,7 +45,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	// Day/night ambient for the ground and prop colors, so the whole HD scene
 	// (not just the base terrain that flows through buildGrid) shifts with the
 	// time of day, matching the glyph renderer.
-	ambHex, ambStr := ui.Ambient(ui.Now())
+	ambHex, ambStr := sceneAmbient(light)
 	amb := mustHex(ambHex)
 	cols := make([][]colorful.Color, cam.H)
 	texs := make([][]TileTex, cam.H)
@@ -190,7 +190,7 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		// scaled by how dark it is. Light shafts are the exception — they carry
 		// daylight down through thin rock, so they shine by day and the loop must
 		// run even at noon for them.
-		if _, _, night := sunState(); true {
+		if night := sceneNight(light); true {
 			apx := scale / tileArtN
 			if apx < 1 {
 				apx = 1
