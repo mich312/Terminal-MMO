@@ -12,9 +12,28 @@ import (
 // in the area package.
 const testSeed uint64 = 0xD0117_C0FFEE_5742
 
-// newSim builds a sim over the real overworld generator.
+// newSim builds a sim over the real overworld generator (no persistence).
 func newSim(w *world.World) *Sim {
-	return New(w, worldgen.New(testSeed))
+	return New(w, worldgen.New(testSeed), nil)
+}
+
+// walkableAwayFrom finds open, non-portal land at Chebyshev distance >= want
+// from (px,py), to place a companion a few tiles off its owner.
+func walkableAwayFrom(gen *worldgen.Generator, px, py, want int) (int, int, bool) {
+	for r := want; r < want+10; r++ {
+		for dy := -r; dy <= r; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if max(abs(dx), abs(dy)) != r {
+					continue
+				}
+				x, y := px+dx, py+dy
+				if c := gen.At(x, y); c.Walkable && c.Portal == "" {
+					return x, y, true
+				}
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 // walkableNearGate finds open, non-portal land near the home gate to stand a
@@ -69,7 +88,7 @@ func TestSpawnsNearPlayer(t *testing.T) {
 	w := world.New()
 	defer w.Close()
 	gen := worldgen.New(testSeed)
-	s := New(w, gen)
+	s := New(w, gen, nil)
 	px, py := walkableNearGate(gen)
 	joinAt(t, w, "anna", px, py)
 
@@ -94,7 +113,7 @@ func TestDespawnsAwayFromPlayers(t *testing.T) {
 	w := world.New()
 	defer w.Close()
 	gen := worldgen.New(testSeed)
-	s := New(w, gen)
+	s := New(w, gen, nil)
 	px, py := walkableNearGate(gen)
 	joinAt(t, w, "anna", px, py)
 
@@ -113,7 +132,7 @@ func TestFleeDoesNotApproach(t *testing.T) {
 	w := world.New()
 	defer w.Close()
 	gen := worldgen.New(testSeed)
-	s := New(w, gen)
+	s := New(w, gen, nil)
 	px, py := walkableNearGate(gen)
 	joinAt(t, w, "anna", px, py)
 
@@ -136,5 +155,59 @@ func TestFleeDoesNotApproach(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the rabbit vanished during a move step")
+	}
+}
+
+func TestCompanionFollowsOwner(t *testing.T) {
+	w := world.New()
+	defer w.Close()
+	gen := worldgen.New(testSeed)
+	s := New(w, gen, nil)
+	px, py := walkableNearGate(gen)
+	joinAt(t, w, "anna", px, py)
+
+	cx, cy, ok := walkableAwayFrom(gen, px, py, 4)
+	if !ok {
+		t.Skip("no walkable tile a few steps from the gate on this seed")
+	}
+	w.SpawnCreature(world.Creature{ID: "fox-pet-anna-1", Kind: "fox", Area: Area,
+		X: cx, Y: cy, Owner: "anna", State: "tamed", HP: 4})
+	before := chebyshev(px, py, cx, cy)
+
+	for i := 0; i < 40; i++ {
+		s.Step()
+	}
+
+	var after int
+	found := false
+	for _, c := range w.CreaturesInArea(Area) {
+		if c.ID == "fox-pet-anna-1" {
+			found, after = true, chebyshev(px, py, c.X, c.Y)
+		}
+	}
+	if !found {
+		t.Fatal("the companion was despawned while its owner was present")
+	}
+	if after >= before {
+		t.Fatalf("companion did not approach its owner: %d -> %d", before, after)
+	}
+}
+
+func TestCompanionDespawnsWhenOwnerAbsent(t *testing.T) {
+	w := world.New()
+	defer w.Close()
+	gen := worldgen.New(testSeed)
+	s := New(w, gen, nil)
+	px, py := walkableNearGate(gen)
+	joinAt(t, w, "anna", px, py) // anna is here; bob is not
+
+	w.SpawnCreature(world.Creature{ID: "fox-pet-bob-1", Kind: "fox", Area: Area,
+		X: px + 2, Y: py, Owner: "bob", State: "tamed", HP: 4})
+	s.Step()
+
+	for _, c := range w.CreaturesInArea(Area) {
+		if c.ID == "fox-pet-bob-1" {
+			t.Fatal("a companion whose owner is absent was not reclaimed")
+		}
 	}
 }

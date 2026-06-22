@@ -98,6 +98,10 @@ type Store interface {
 	MarkSpecies(name, kind string)
 	// LoadCompendium returns the wildlife species a player has observed.
 	LoadCompendium(name string) map[string]bool
+	// SaveCompanion records (or replaces) a player's tamed companion species.
+	SaveCompanion(name, kind string)
+	// LoadCompanion returns a player's tamed companion species; ok is false if none.
+	LoadCompanion(name string) (kind string, ok bool)
 	// FixPersonalGate records that a player has repaired a personal gate.
 	FixPersonalGate(name, gate string)
 	// LoadPersonalGates returns the personal gates a player has repaired.
@@ -159,6 +163,8 @@ func (noopStore) UnlockHat(string, int)                              {}
 func (noopStore) LoadHats(string) map[int]bool                       { return nil }
 func (noopStore) MarkSpecies(string, string)                         {}
 func (noopStore) LoadCompendium(string) map[string]bool              { return nil }
+func (noopStore) SaveCompanion(string, string)                       {}
+func (noopStore) LoadCompanion(string) (string, bool)                { return "", false }
 func (noopStore) FixPersonalGate(string, string)                     {}
 func (noopStore) LoadPersonalGates(string) map[string]bool           { return nil }
 func (noopStore) SaveGateWorld(string, int, bool)                    {}

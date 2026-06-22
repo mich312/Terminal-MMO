@@ -42,7 +42,7 @@ func TestPositionRoundTrip(t *testing.T) {
 // stores as a negative int64 and must come back as the same uint64 bits.
 func TestDiscoveryRoundTrip(t *testing.T) {
 	s := openTemp(t)
-	s.SaveDiscovery("ada", 0, 0, 0xFFFFFFFFFFFFFFFF) // full chunk
+	s.SaveDiscovery("ada", 0, 0, 0xFFFFFFFFFFFFFFFF)  // full chunk
 	s.SaveDiscovery("ada", -3, 5, 0x8000000000000001) // high + low bit
 	got := s.LoadDiscovery("ada")
 	if got[[2]int{0, 0}] != 0xFFFFFFFFFFFFFFFF {
@@ -187,5 +187,33 @@ func TestPlacementRoundTrip(t *testing.T) {
 	s.RemovePlacement(9, 2)
 	if got := s.LoadPlacements(); len(got) != 1 {
 		t.Errorf("after remove there are %d placements, want 1", len(got))
+	}
+}
+
+// A companion round-trips, an upsert replaces it, and an absent one is ok=false.
+func TestCompanionRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if _, ok := s.LoadCompanion("ada"); ok {
+		t.Fatal("no companion should exist yet")
+	}
+	s.SaveCompanion("ada", "fox")
+	if k, ok := s.LoadCompanion("ada"); !ok || k != "fox" {
+		t.Fatalf("got (%q,%v), want (fox,true)", k, ok)
+	}
+	s.SaveCompanion("ada", "deer") // one pet per player — replace
+	if k, ok := s.LoadCompanion("ada"); !ok || k != "deer" {
+		t.Fatalf("after replace got (%q,%v), want (deer,true)", k, ok)
+	}
+}
+
+// The compendium records sightings and loads them back as a set.
+func TestCompendiumRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	s.MarkSpecies("ada", "rabbit")
+	s.MarkSpecies("ada", "rabbit") // idempotent
+	s.MarkSpecies("ada", "fox")
+	got := s.LoadCompendium("ada")
+	if len(got) != 2 || !got["rabbit"] || !got["fox"] {
+		t.Fatalf("compendium = %v, want {rabbit, fox}", got)
 	}
 }

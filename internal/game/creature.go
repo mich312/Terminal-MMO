@@ -36,6 +36,8 @@ type Species struct {
 	MoveEvery  int              // steps once every N ticks (higher = calmer)
 	MaxHP      int              // strikes to catch it (hunting)
 	Drops      []Drop           // spoils rolled when it is caught
+	Tameable   bool             // can be befriended into a follower (taming)
+	Bait       string           // inventory item id that tames it
 }
 
 // speciesList is the MVP roster: a couple of common, biome-appropriate animals,
@@ -43,13 +45,13 @@ type Species struct {
 var speciesList = []Species{
 	{Kind: "rabbit", Name: "rabbit", Glyph: 'r', Hex: "#C9B79C", Prop: PropRabbit,
 		Biomes: []worldgen.Biome{worldgen.Grass, worldgen.Savanna}, FleeRadius: 5, MoveEvery: 2, MaxHP: 2,
-		Drops: []Drop{{Item: "meat", Min: 1, Max: 1}}},
+		Drops: []Drop{{Item: "meat", Min: 1, Max: 1}}, Tameable: true, Bait: "berry"},
 	{Kind: "deer", Name: "deer", Glyph: 'd', Hex: "#A6703C", Prop: PropDeer,
 		Biomes: []worldgen.Biome{worldgen.Forest, worldgen.Grass}, FleeRadius: 4, MoveEvery: 3, MaxHP: 6,
-		Drops: []Drop{{Item: "hide", Min: 1, Max: 1}, {Item: "meat", Min: 1, Max: 2}}},
+		Drops: []Drop{{Item: "hide", Min: 1, Max: 1}, {Item: "meat", Min: 1, Max: 2}}, Tameable: true, Bait: "grain"},
 	{Kind: "fox", Name: "fox", Glyph: 'f', Hex: "#E0772E", Prop: PropFox,
 		Biomes: []worldgen.Biome{worldgen.Forest, worldgen.Hill}, FleeRadius: 3, MoveEvery: 2, MaxHP: 4,
-		Drops: []Drop{{Item: "pelt", Min: 1, Max: 1}, {Item: "meat", Min: 1, Max: 1, Chance: 0.5}}},
+		Drops: []Drop{{Item: "pelt", Min: 1, Max: 1}, {Item: "meat", Min: 1, Max: 1, Chance: 0.5}}, Tameable: true, Bait: "meat"},
 	{Kind: "bird", Name: "bird", Glyph: 'v', Hex: "#6FB7D8", Prop: PropBird,
 		Biomes: []worldgen.Biome{worldgen.Grass, worldgen.Forest, worldgen.Savanna, worldgen.Hill}, FleeRadius: 6, MoveEvery: 1, MaxHP: 1,
 		Drops: []Drop{{Item: "feather", Min: 1, Max: 2}}},

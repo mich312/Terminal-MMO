@@ -4,8 +4,11 @@
 > stepper, an MVP slice of biome fauna rendered in both clients, and the
 > observe/compendium loop. ✅ Phase 2 shipped — hunting: species HP + drop
 > tables feeding the inventory, an `f`-to-strike action settled atomically so
-> two hunters can't double-loot one kill (no PvP, no player damage). ⬜ Phase 3
-> (taming / companions) remains, building on the same `Owner` field + registry.
+> two hunters can't double-loot one kill (no PvP, no player damage). ✅ Phase 3
+> shipped — taming & companions: `t` feeds bait for a chance to befriend a
+> tameable animal; the pet persists per player, follows its owner, and
+> reattaches when you return to the Wilds. The wildlife plan is fully realized
+> for the Wilds (cross-area following noted as a future extension).
 
 > How wildlife lands on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),
@@ -208,15 +211,24 @@ A genuine new system, kept minimal and non-griefy (it's a cozy world). As built:
 - **No PvP, no player damage, no aggressive mobs.** Predators that fight back
   are a later flag on `Species`.
 
-## Phase 3 — Taming & companions
+## Phase 3 — Taming & companions ✅ shipped
 
-Builds directly on the registry + ownership field:
+Builds directly on the registry + ownership field. As built:
 
-- `Species.Tameable` + `Bait` (an item id). Feeding bait near a wary creature
-  rolls a tame chance; success sets `Owner` and `State=tamed`.
-- **Follow behavior**: a tamed creature's step targets its owner's tile (greedy
-  step toward, still no real pathfinding), and it despawns/reattaches with the
-  owner across areas. This is the one place a creature persists.
+- `Species.Tameable` + `Bait` (an item id) — rabbit (a Sweet Berry), deer (a
+  Sheaf of Grain), fox (Game Meat). Pressing `t` beside a tameable animal spends
+  one bait and rolls a `tameChance`; success sets `Owner` + `State=tamed`, a miss
+  spends the bait and the animal bolts. One companion per player.
+- **Persistence** is the one place a creature is remembered: a `companion` table
+  (one row per player) stores the pet's species. The sim reattaches it — spawning
+  the pet beside its owner whenever they're in the Wilds without a live one — and
+  reclaims it when the owner leaves, so it survives disconnects and trips into
+  sub-areas, reappearing on return. (Cross-area *following* — the pet walking into
+  the cave with you — is the noted future extension; today it waits and rejoins.)
+- **Follow behavior**: a companion greedily steps toward its owner each tick
+  (rounding obstacles via the two orthogonal steps when the diagonal is blocked),
+  holds at heel within one tile, and is exempt from the wild flee/wander/despawn
+  rules. You can't hunt your own companion.
 - Companions are cosmetic-first (a fox trotting behind you), with room later for
   utility (a pack animal that extends inventory, a hound that flushes game).
 

@@ -809,6 +809,9 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		} else if key == "f" { // hunt an adjacent animal
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
 			draw()
+		} else if key == "t" { // tame an adjacent animal with bait
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+			draw()
 		} else if key == "m" { // toggle the area overview map
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 			draw()

@@ -88,7 +88,7 @@ func main() {
 	// reclaims animals when nobody is around, so the population tracks who's
 	// connected rather than the size of the infinite map.
 	wlStop := make(chan struct{})
-	go wildlife.New(w, worldgen.New(wilds.Seed)).Run(wlStop)
+	go wildlife.New(w, worldgen.New(wilds.Seed), st).Run(wlStop)
 
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),

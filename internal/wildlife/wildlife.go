@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -41,15 +42,24 @@ const (
 type Sim struct {
 	w     *world.World
 	gen   *worldgen.Generator
+	store store.Store // companion persistence; may be nil (tests, no-DB)
 	rng   *rand.Rand
 	frame int
 	seq   int // monotonic, for unique creature ids
+
+	// compCache memoizes each present player's saved companion species (""
+	// meaning none), so the reattach pass doesn't hit the store every tick. An
+	// entry is dropped when its player leaves, so a reconnect re-reads it.
+	compCache map[string]string
 }
 
 // New builds a simulation for a world over the given overworld generator (use
-// the Wilds seed so creatures spawn on the same terrain every session).
-func New(w *world.World, gen *worldgen.Generator) *Sim {
-	return &Sim{w: w, gen: gen, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
+// the Wilds seed so creatures spawn on the same terrain every session). st
+// persists tamed companions; pass nil to run without persistence (tests).
+func New(w *world.World, gen *worldgen.Generator, st store.Store) *Sim {
+	return &Sim{w: w, gen: gen, store: st,
+		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
+		compCache: map[string]string{}}
 }
 
 // Run steps the simulation at the world's 2 Hz cadence until stop is closed.
@@ -75,32 +85,112 @@ func (s *Sim) Step() {
 	creatures := s.w.CreaturesInArea(Area)
 
 	if len(players) == 0 {
-		// Nobody to watch: reclaim everything so an empty world holds no animals.
+		// Nobody to watch: reclaim everything (companions persist in the store and
+		// reattach on return) so an empty world holds no animals.
 		for _, c := range creatures {
 			s.w.DespawnCreature(c.ID)
 		}
+		s.compCache = map[string]string{}
 		return
 	}
 
+	s.reconcileCompanions(players, creatures)
+	creatures = s.w.CreaturesInArea(Area) // include any companions just reattached
 	s.despawn(players, creatures)
 	s.move(players, creatures)
-	s.spawn(players, len(creatures))
+	s.spawn(players, s.w.CountCreatures(Area))
 }
 
-// despawn reclaims creatures with no player within despawnAt tiles.
+// reconcileCompanions keeps each player's tamed pet in sync with who's present:
+// a companion whose owner has left the area is despawned (it persists and
+// reattaches later), and a present player with a saved companion but no live one
+// gets it spawned beside them.
+func (s *Sim) reconcileCompanions(players []world.Player, creatures []world.Creature) {
+	present := make(map[string]bool, len(players))
+	for _, p := range players {
+		present[p.Name] = true
+	}
+	ownedPresent := map[string]bool{}
+	for _, c := range creatures {
+		if c.Owner == "" {
+			continue
+		}
+		if !present[c.Owner] {
+			s.w.DespawnCreature(c.ID) // owner walked off / disconnected
+			delete(s.compCache, c.Owner)
+			continue
+		}
+		ownedPresent[c.Owner] = true
+	}
+	for _, p := range players {
+		if ownedPresent[p.Name] {
+			continue
+		}
+		if kind := s.companionKind(p.Name); kind != "" {
+			s.spawnCompanion(p, kind)
+		}
+	}
+}
+
+// companionKind returns a player's saved companion species (cached), "" if none.
+func (s *Sim) companionKind(name string) string {
+	if k, ok := s.compCache[name]; ok {
+		return k
+	}
+	k := ""
+	if s.store != nil {
+		if ck, ok := s.store.LoadCompanion(name); ok {
+			k = ck
+		}
+	}
+	s.compCache[name] = k
+	return k
+}
+
+// spawnCompanion places a player's tamed pet on an open tile beside them.
+func (s *Sim) spawnCompanion(p world.Player, kind string) {
+	sp, ok := game.SpeciesByKind(kind)
+	if !ok {
+		delete(s.compCache, p.Name) // unknown species id — forget it
+		return
+	}
+	for _, o := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}} {
+		nx, ny := p.X+o[0], p.Y+o[1]
+		if s.habitable(sp, nx, ny) {
+			s.seq++
+			s.w.SpawnCreature(world.Creature{
+				ID: fmt.Sprintf("%s-pet-%s-%d", kind, p.Name, s.seq), Kind: kind, Area: Area,
+				X: nx, Y: ny, Facing: world.DirS, State: "tamed", Owner: p.Name, HP: sp.MaxHP,
+			})
+			return
+		}
+	}
+}
+
+// despawn reclaims wild creatures with no player within despawnAt tiles.
+// Companions (Owner set) are exempt — they follow their owner and are managed by
+// reconcileCompanions instead.
 func (s *Sim) despawn(players []world.Player, creatures []world.Creature) {
 	for _, c := range creatures {
+		if c.Owner != "" {
+			continue
+		}
 		if nearestPlayerDist(players, c.X, c.Y) > despawnAt {
 			s.w.DespawnCreature(c.ID)
 		}
 	}
 }
 
-// move steps each creature: flee a close player, else wander on its cadence.
+// move steps each creature: a companion trails its owner; a wild animal flees a
+// close player, else wanders on its cadence.
 func (s *Sim) move(players []world.Player, creatures []world.Creature) {
 	for _, c := range creatures {
 		sp, ok := game.SpeciesByKind(c.Kind)
 		if !ok {
+			continue
+		}
+		if c.Owner != "" {
+			s.follow(c, sp, players)
 			continue
 		}
 		px, py, dist := nearestPlayer(players, c.X, c.Y)
@@ -130,6 +220,56 @@ func (s *Sim) move(players []world.Player, creatures []world.Creature) {
 			return true
 		})
 	}
+}
+
+// follow steps a companion one tile toward its owner (greedy, no pathfinding):
+// it closes the gap when it's lagging and just turns to face them when it's
+// already at heel. If the direct diagonal is blocked it tries the two orthogonal
+// steps, so a pet rounds a tree instead of getting stuck on it.
+func (s *Sim) follow(c world.Creature, sp game.Species, players []world.Player) {
+	var owner world.Player
+	found := false
+	for _, p := range players {
+		if p.Name == c.Owner {
+			owner, found = p, true
+			break
+		}
+	}
+	if !found {
+		return // owner absent — reconcileCompanions will reclaim the pet
+	}
+	dx, dy := sign(owner.X-c.X), sign(owner.Y-c.Y)
+	if chebyshev(owner.X, owner.Y, c.X, c.Y) <= 1 {
+		// At heel: hold position, just turn to face the owner.
+		if dx == 0 && dy == 0 {
+			return
+		}
+		facing := world.Facing8(dx, dy)
+		s.w.MutateCreature(c.ID, func(cc *world.Creature) bool {
+			if cc.Facing == facing {
+				return false
+			}
+			cc.Facing = facing
+			return true
+		})
+		return
+	}
+	nx, ny := c.X+dx, c.Y+dy
+	if !s.habitable(sp, nx, ny) {
+		switch {
+		case dx != 0 && s.habitable(sp, c.X+dx, c.Y):
+			ny = c.Y
+		case dy != 0 && s.habitable(sp, c.X, c.Y+dy):
+			nx = c.X
+		default:
+			return // boxed in this tick; try again next
+		}
+	}
+	facing := world.Facing8(nx-c.X, ny-c.Y)
+	s.w.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		cc.X, cc.Y, cc.Facing, cc.State = nx, ny, facing, "tamed"
+		return true
+	})
 }
 
 // spawn tops the population up toward the player-scaled budget, placing new

@@ -291,6 +291,25 @@ func (a *area) creatureAdjacent() (world.Creature, bool) {
 	return world.Creature{}, false
 }
 
+// creaturePrompt is the contextual action line for an adjacent animal: your own
+// companion just reads as such, otherwise observe/hunt, plus tame when the
+// species is tameable and you're carrying its bait.
+func (a *area) creaturePrompt(c world.Creature) string {
+	name := c.Kind
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if ok && sp.Name != "" {
+		name = sp.Name
+	}
+	if c.Owner == a.ctx.Name {
+		return "your " + name + " — a loyal companion"
+	}
+	line := "e observe · f hunt the " + name
+	if ok && sp.Tameable && c.Owner == "" && a.ctx.Inventory[sp.Bait] > 0 {
+		line += " · t tame (" + itemName(sp.Bait) + ")"
+	}
+	return line
+}
+
 // observe logs a sighting: a first sighting adds the species to the player's
 // field notes (the compendium); a repeat just acknowledges it. Persisted so the
 // compendium survives between visits.
@@ -326,6 +345,10 @@ func (a *area) noteSpecies(kind string) {
 func (a *area) hunt(c world.Creature) {
 	sp, ok := game.SpeciesByKind(c.Kind)
 	if !ok {
+		return
+	}
+	if c.Owner == a.ctx.Name {
+		a.setToast("you won't hunt your own companion")
 		return
 	}
 	a.noteSpecies(c.Kind)
@@ -367,6 +390,79 @@ func (a *area) hunt(c world.Creature) {
 	}
 	sort.Strings(parts) // stable, readable toast
 	a.setToast("you catch the " + sp.Name + " — " + strings.Join(parts, ", "))
+}
+
+// tameChance is the odds one offering of bait befriends a wary animal.
+const tameChance = 0.4
+
+// hasCompanion reports whether the player already keeps a pet — saved in the
+// store, or live in the world right now (so it holds even without persistence).
+func (a *area) hasCompanion() bool {
+	if _, ok := a.ctx.Store.LoadCompanion(a.ctx.Name); ok {
+		return true
+	}
+	for _, c := range a.ctx.World.CreaturesInArea("wilds") {
+		if c.Owner == a.ctx.Name {
+			return true
+		}
+	}
+	return false
+}
+
+// tame offers bait to an adjacent animal. It costs one bait item; on a lucky
+// roll the creature is befriended (Owner set, persisted as the player's
+// companion, and it starts following); on a miss the bait is gone and the animal
+// bolts. One companion per player.
+func (a *area) tame(c world.Creature) {
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if !ok {
+		return
+	}
+	if !sp.Tameable {
+		a.setToast("the " + sp.Name + " can't be tamed")
+		return
+	}
+	if c.Owner != "" {
+		a.setToast("the " + sp.Name + " already has a companion")
+		return
+	}
+	if a.hasCompanion() {
+		a.setToast("you already have a companion")
+		return
+	}
+	if a.ctx.Inventory[sp.Bait] <= 0 {
+		a.setToast("you need a " + itemName(sp.Bait) + " to tame the " + sp.Name)
+		return
+	}
+
+	a.ctx.Inventory[sp.Bait]--
+	if a.ctx.Inventory[sp.Bait] <= 0 {
+		delete(a.ctx.Inventory, sp.Bait)
+	}
+	a.ctx.Store.SpendItem(a.ctx.Name, sp.Bait)
+	a.noteSpecies(c.Kind)
+
+	if a.rng.Float64() > tameChance {
+		a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+			cc.State = "flee"
+			return true
+		})
+		a.setToast("the " + sp.Name + " snatches the " + itemName(sp.Bait) + " and bolts")
+		return
+	}
+	ok = a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		if cc.Owner != "" {
+			return false
+		}
+		cc.Owner, cc.State = a.ctx.Name, "tamed"
+		return true
+	})
+	if !ok {
+		a.setToast("the " + sp.Name + " slips away")
+		return
+	}
+	a.ctx.Store.SaveCompanion(a.ctx.Name, c.Kind)
+	a.setToast("the " + sp.Name + " befriends you — it'll follow along!")
 }
 
 func (a *area) portalUnder(x, y int) (string, bool) {
@@ -538,6 +634,12 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			return a, nil
 		}
+		if ks == "t" { // tame an adjacent animal with bait
+			if c, ok := a.creatureAdjacent(); ok {
+				a.tame(c)
+			}
+			return a, nil
+		}
 		if a.showMap {
 			a.showMap = false // any other key closes the map
 		}
@@ -590,11 +692,7 @@ func (a *area) Hint() string {
 		return "e — wear the " + h.name
 	}
 	if c, ok := a.creatureAdjacent(); ok {
-		name := c.Kind
-		if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
-			name = sp.Name
-		}
-		return "e observe · f hunt the " + name
+		return a.creaturePrompt(c)
 	}
 	if a.boardAdjacent() {
 		return "e — read the notice board"
@@ -624,11 +722,7 @@ func (a *area) Prompt() (string, bool) {
 		return "e — take " + it.Name, true
 	}
 	if c, ok := a.creatureAdjacent(); ok {
-		name := c.Kind
-		if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
-			name = sp.Name
-		}
-		return "e observe · f hunt the " + name, true
+		return a.creaturePrompt(c), true
 	}
 	if mx, my, ok := a.stationAdjacent(); ok {
 		if pl, ok := a.ctx.World.PlacementAt(mx, my); ok {
