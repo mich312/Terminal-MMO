@@ -95,7 +95,7 @@ func drawGlow(img *image.RGBA, cx, cy int, radius float64, col colorful.Color, i
 // torch: a faint self-lit point far off, rising to full brightness once the
 // light reaches it — so glowing finds stay spottable without carpeting the
 // night map.
-const lootSelfLit = 0.4
+const lootSelfLit = 0.15
 
 // lootEmitter reports whether a prop is a glowing *found item* (a crystal,
 // mushroom, geode or relic) as opposed to a fixed light source (campfire, lamp,
