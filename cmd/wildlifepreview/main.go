@@ -45,6 +45,20 @@ func crit(kind string, x, y int, facing world.Dir, moving bool) world.Creature {
 	return c
 }
 
+// vstack stacks two equal-width images top over bottom into one.
+func vstack(top, bot *image.RGBA) *image.RGBA {
+	w := top.Bounds().Dx()
+	th, bh := top.Bounds().Dy(), bot.Bounds().Dy()
+	out := image.NewRGBA(image.Rect(0, 0, w, th+bh))
+	for y := 0; y < th; y++ {
+		copy(out.Pix[out.PixOffset(0, y):out.PixOffset(0, y)+w*4], top.Pix[top.PixOffset(0, y):top.PixOffset(0, y)+w*4])
+	}
+	for y := 0; y < bh; y++ {
+		copy(out.Pix[out.PixOffset(0, th+y):out.PixOffset(0, th+y)+w*4], bot.Pix[bot.PixOffset(0, y):bot.PixOffset(0, y)+w*4])
+	}
+	return out
+}
+
 func saveImg(path string, img image.Image) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -114,26 +128,17 @@ func main() {
 	saveImg("wildlifeshots/direction-chart.png",
 		game.RenderRGBA(nil, dc, nil, "", 0, game.Camera{W: dc.W, H: dc.H}, game.Light{}, 0, 0, 44, false, style, dcCrits...))
 
-	// 4) Walk strip: the fox facing east across two walk frames + idle, so the
-	//    cycle is visible as stills.
-	ws := meadow(7, 3)
-	frames := []struct {
-		x     int
-		frame int
-		mv    bool
-	}{{1, 0, true}, {3, 3, true}, {5, 0, false}}
-	for _, fr := range frames {
-		ws.Tiles[1][fr.x] = grass()
+	// 4) Frame comparison: each species' side view at two animation frames stacked
+	//    (top = pose 0, bottom = pose 1) so the distinct walk/flourish poses are
+	//    visible as stills. Moving creatures at frame 0 vs frame 3 flip every pose.
+	ws := meadow(len(kinds)*2+1, 3)
+	var wsCrits []world.Creature
+	for ki, k := range kinds {
+		wsCrits = append(wsCrits, crit(k, ki*2+1, 1, world.DirE, true))
 	}
-	// Render each pose into the same strip by compositing three single renders is
-	// overkill; instead place three foxes and rely on per-creature animation being
-	// frame-global — so show one render at frame 0 with all three moving/idle.
-	wsCrits := []world.Creature{
-		crit("fox", 1, 1, world.DirE, true),
-		crit("fox", 3, 1, world.DirE, false),
-	}
-	saveImg("wildlifeshots/walk-strip.png",
-		game.RenderRGBA(nil, ws, nil, "", 0, game.Camera{W: ws.W, H: ws.H}, game.Light{}, 0, 0, 56, false, style, wsCrits...))
+	top := game.RenderRGBA(nil, ws, nil, "", 0, game.Camera{W: ws.W, H: ws.H}, game.Light{}, 0, 0, 48, false, style, wsCrits...)
+	bot := game.RenderRGBA(nil, ws, nil, "", 3, game.Camera{W: ws.W, H: ws.H}, game.Light{}, 0, 0, 48, false, style, wsCrits...)
+	saveImg("wildlifeshots/frame-compare.png", vstack(top, bot))
 
 	// 5) Night torch over the clearing.
 	night := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
@@ -142,5 +147,5 @@ func main() {
 	saveImg("wildlifeshots/wilds-fauna-night.png",
 		game.RenderRGBA(nil, cl, pl, "you", 6, game.Camera{W: cl.W, H: cl.H}, torch, 0, 0, 30, false, style, clCrits...))
 
-	fmt.Println("wrote wilds-fauna-day, companion, direction-chart, walk-strip, wilds-fauna-night")
+	fmt.Println("wrote wilds-fauna-day, companion, direction-chart, frame-compare, wilds-fauna-night")
 }

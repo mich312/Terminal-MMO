@@ -520,7 +520,7 @@ func blitCreature(img *image.RGBA, c world.Creature, frame, scale, fc, fr, origi
 	if !ok {
 		return
 	}
-	wf, moving := CreatureWalkFrame(c.LastMoved, frame)
+	wf, moving := CreatureWalkFrame(c.LastMoved, frame, c.X*7+c.Y*13)
 	bmp, ok := CreatureBitmap(c.Kind, c.Facing, wf)
 	if !ok {
 		return
