@@ -147,6 +147,28 @@ var Items = []Item{
 		Source: Crafted, Rarity: Common,
 		About: "An amber-lit lamp that casts a warm, compliant glow.",
 		Found: "Crafted from a Gold Nugget and Cave Amber; powers a Lamppost."},
+	// Tool components — rare finds that unlock a tool recipe (docs/BUILD_TOOLS_PLAN.md).
+	{ID: "axe_head", Name: "Flint Axe-head", Glyph: '⌐', Hex: "#C7BCA6",
+		Source: Forage, Rarity: Rare,
+		About: "A knapped flint head, waiting for a haft.",
+		Found: "Rare in meadows and savanna at the woodland's edge.",
+		Use:   "Craft it onto a Timber haft to make an Axe."},
+	{ID: "pick_head", Name: "Iron Pick-head", Glyph: '⌐', Hex: "#9FB0BE",
+		Source: Forage, Rarity: Rare,
+		About: "A forged iron pick-head, pitted with age.",
+		Found: "Rare in the hill country among the boulders.",
+		Use:   "Craft it onto a Timber haft to make a Pickaxe."},
+	// Tools — crafted, then owned; they enable clearing terrain (never consumed).
+	{ID: "axe", Name: "Axe", Glyph: '⚒', Hex: "#B08D57",
+		Source: Crafted, Rarity: Uncommon,
+		About: "A hafted felling axe. Compliant with woodland policy.",
+		Found: "Crafted from a Flint Axe-head and Timber.",
+		Use:   "In build mode, fell a tree to clear it and yield Timber."},
+	{ID: "pick", Name: "Pickaxe", Glyph: '⚒', Hex: "#AEB7BE",
+		Source: Crafted, Rarity: Uncommon,
+		About: "A hafted pickaxe. Breaks rock; does not break ground policy.",
+		Found: "Crafted from an Iron Pick-head and Timber.",
+		Use:   "In build mode, break a hill boulder to clear it and yield Cut Stone."},
 }
 
 var itemIndex = func() map[string]Item {

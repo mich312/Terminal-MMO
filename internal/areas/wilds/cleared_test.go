@@ -83,3 +83,46 @@ func TestClearedMakesForestBuildable(t *testing.T) {
 		}
 	}
 }
+
+// TestAxeClearsForest drives the full tool flow: owning + selecting the axe, the
+// ghost over a tree clears it and yields Timber.
+func TestAxeClearsForest(t *testing.T) {
+	w := world.New()
+	t.Cleanup(w.Close)
+	name, _ := w.Join("ada")
+	ctx := &game.Ctx{World: w, Store: store.Open(""), Name: name, Theme: ui.Default,
+		Inventory: map[string]int{"axe": 1}}
+	a := game.NewArea("wilds", ctx).(*area)
+	self, _ := w.Self(name)
+	a.Init(&self)
+
+	tx, ty, ok := findBlockingForest(a.gen)
+	if !ok {
+		t.Skip("no forest tree found")
+	}
+	a.markSeen(tx, ty)
+	a.building = true
+	for i, p := range game.Placeables {
+		if p.ID == "axe" {
+			a.buildSel = i
+		}
+	}
+	a.bx, a.by = tx, ty
+
+	// The axe should report the tree as a valid fell target.
+	pb := game.Placeables[a.buildSel]
+	if !a.canClearAt(tx, ty, pb) {
+		t.Fatal("the axe should be able to fell a tree")
+	}
+	woodBefore := ctx.Inventory["wood"]
+	a.Update(key("e")) // fell it
+	if !game.IsCleared(ctx, tx, ty) {
+		t.Error("the tree cell should be cleared after felling")
+	}
+	if got := ctx.Inventory["wood"] - woodBefore; got != 3 {
+		t.Errorf("felling yielded %d wood, want 3", got)
+	}
+	if !a.walkableAt(tx, ty) {
+		t.Error("the felled cell should now be walkable")
+	}
+}

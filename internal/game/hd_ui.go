@@ -841,7 +841,11 @@ func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool
 		if e.Hotkey > 0 {
 			badge = "[" + itoa(e.Hotkey) + "]"
 		}
-		return badge + " " + e.P.Name, PlaceableCost(e.P), "x" + itoa(e.Max)
+		cnt := "x" + itoa(e.Max)
+		if e.P.Cat == CatTool {
+			cnt = "ready" // a tool is wielded, not built
+		}
+		return badge + " " + e.P.Name, PlaceableCost(e.P), cnt
 	}
 	nameCol, costCol := 0, 0
 	rows := 0

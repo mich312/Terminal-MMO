@@ -57,19 +57,24 @@ wilds `walkableAt`/`canBuildAt`/`sample` consult the overlay and the body tends
 its own clearing on the move. (The player-facing clear *action* — a tool over a
 tree — is Step C; Step B is the overlay it writes to.)
 
-## Step C — tools: found heads, recipes, the clear action
+## Step C — tools: found heads, recipes, the clear action ✅
 
-- New finds: a **flint Axe-head** (Wilds forage, rare) and an **iron Pick-head**
-  (caves, rare). Finding one **unlocks** its recipe (head + Timber → the tool),
-  crafted at a workbench — exploration *and* the craft table, like wearables.
-- Owning a tool adds it to the palette's **Tools** group; selecting it turns the
-  ghost into a clear cursor: **Axe** over a tree → "✂ fell (Timber)", **Pick**
-  over a hill boulder → "⛏ break (Cut Stone)", writing the Step-B overlay.
-- Mountain peaks are never clearable.
+- New finds: a **flint Axe-head** (rare in meadow/savanna woodland edges) and an
+  **iron Pick-head** (rare in the hills). The recipe is **gated by the head** —
+  it consumes the head + Timber, so turning one up is what "unlocks" crafting the
+  tool. (The heads scatter in the Wilds rather than caves to keep step C self-
+  contained; caves can drop the pick-head later.)
+- Owning a tool puts it in the palette's **Tools** group (it reads "ready", no
+  cost); selecting it turns the ghost into a clear cursor — **Axe** over a tree →
+  "e — fell here (+3 Timber)", **Pickaxe** over a hill boulder → "e — break here
+  (+3 Cut Stone)" — writing the step-B overlay and paying the yield. Tools aren't
+  consumed. Mountain peaks are never clearable.
+- Items gained compendium icons; the clear ghost goes green on a valid target,
+  red otherwise.
 
-## Step D — docs
+## Step D — docs ✅
 
-Fold the shipped result into `ROADMAP.md` Phase 9.
+Folded into `ROADMAP.md` Phase 9.
 
 ## Pillar guardrails
 

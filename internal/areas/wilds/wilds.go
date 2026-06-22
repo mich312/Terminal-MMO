@@ -339,10 +339,85 @@ func (a *area) BuildPanel() (int, string, bool, bool) {
 	return a.buildSel, footer, warn, a.building
 }
 
-// buildFooter is the palette's context line under the ghost: a claim hint when
-// it hovers a settlement plot, a block reason when the cell is unbuildable, or
-// empty (the panel then shows the key legend). warn marks a block reason (amber).
+// selectedTool returns the selected placeable if it's a clearing tool.
+func (a *area) selectedTool() (game.Placeable, bool) {
+	if a.buildSel < 0 || a.buildSel >= len(game.Placeables) {
+		return game.Placeable{}, false
+	}
+	p := game.Placeables[a.buildSel]
+	return p, game.IsTool(p)
+}
+
+// canClearAt reports whether tool pb can clear the ghost cell: the right blocking
+// terrain (a tree for the axe, a hill boulder for the pick — never a mountain
+// peak), discovered, not already cleared, and where build-rights allow.
+func (a *area) canClearAt(x, y int, pb game.Placeable) bool {
+	if !a.seen(x, y) || game.IsCleared(a.ctx, x, y) {
+		return false
+	}
+	if ok, _ := game.BuildRight(a.ctx, x, y); !ok {
+		return false
+	}
+	c := a.gen.At(x, y)
+	if c.Walkable { // nothing blocking to clear
+		return false
+	}
+	switch pb.Clear {
+	case game.ClearTree:
+		return c.Biome == worldgen.Forest
+	case game.ClearRock:
+		return c.Biome == worldgen.Hill // peaks (Mountain) stay permanent
+	}
+	return false
+}
+
+// clearVerb is the action word for a tool ("fell" / "break").
+func clearVerb(k game.ClearKind) string {
+	switch k {
+	case game.ClearTree:
+		return "fell"
+	case game.ClearRock:
+		return "break"
+	default:
+		return "clear"
+	}
+}
+
+// clearUnderGhost fells/breaks the cell under the ghost with tool pb, writing the
+// cleared overlay and paying the yield into the pack. The tool isn't consumed.
+func (a *area) clearUnderGhost(pb game.Placeable) {
+	if !a.canClearAt(a.bx, a.by, pb) {
+		a.setToast("nothing to " + clearVerb(pb.Clear) + " here")
+		return
+	}
+	if !game.ClearGround(a.ctx, a.bx, a.by) {
+		a.setToast("can't clear there")
+		return
+	}
+	item, n := pb.Clear.Yield()
+	game.AddToPack(a.ctx, item, n)
+	name := item
+	if it, ok := game.ItemByID(item); ok {
+		name = it.Name
+	}
+	a.setToast(fmt.Sprintf("%sed it — +%d %s", clearVerb(pb.Clear), n, name))
+}
+
+// buildFooter is the palette's context line under the ghost: for a tool, the
+// clear hint or why it can't; otherwise a claim hint, a block reason, or empty
+// (the panel then shows the key legend). warn marks a problem (amber).
 func (a *area) buildFooter() (string, bool) {
+	if pb, ok := a.selectedTool(); ok {
+		item, n := pb.Clear.Yield()
+		name := item
+		if it, ok := game.ItemByID(item); ok {
+			name = it.Name
+		}
+		if a.canClearAt(a.bx, a.by, pb) {
+			return fmt.Sprintf("e — %s here (+%d %s)", clearVerb(pb.Clear), n, name), false
+		}
+		return "nothing to " + clearVerb(pb.Clear) + " here", true
+	}
 	if s, ok := a.ghostClaimPrompt(); ok {
 		return s, false
 	}
@@ -602,9 +677,11 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 					a.buildSel = idx
 				}
 			case "e", "enter":
-				// Over a settlement building, e deeds the plot; on open ground it
-				// places the selected structure.
-				if _, ok := a.gen.PlotAt(a.bx, a.by); ok {
+				// A tool clears; over a settlement building e deeds the plot; on open
+				// ground it places the selected structure.
+				if pb, ok := a.selectedTool(); ok {
+					a.clearUnderGhost(pb)
+				} else if _, ok := a.gen.PlotAt(a.bx, a.by); ok {
 					a.claimUnderGhost()
 				} else {
 					a.placeStructure()
@@ -941,7 +1018,11 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 			if a.building && wx == a.bx && wy == a.by {
 				pb := game.Placeables[a.buildSel]
 				hex := "#7BD88F"
-				if !a.canBuildAt(wx, wy) {
+				if game.IsTool(pb) {
+					if !a.canClearAt(wx, wy, pb) {
+						hex = "#E0604D"
+					}
+				} else if !a.canBuildAt(wx, wy) {
 					hex = "#E0604D"
 				}
 				g := row[lx]
@@ -1295,6 +1376,9 @@ func (a *area) buildPanel() string {
 			}
 			body := fmt.Sprintf("%-22s %s", e.P.Name, game.PlaceableCost(e.P))
 			cnt := fmt.Sprintf("x%d", e.Max)
+			if e.P.Cat == game.CatTool {
+				cnt = "ready"
+			}
 			marker := "  "
 			var line string
 			switch {

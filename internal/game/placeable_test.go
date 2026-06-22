@@ -8,8 +8,8 @@ import (
 
 func TestPlaceablesReferenceRealItems(t *testing.T) {
 	for _, p := range Placeables {
-		if p.Prop == PropNone {
-			t.Errorf("placeable %q has no prop sprite", p.ID)
+		if p.Prop == PropNone && !IsTool(p) {
+			t.Errorf("placeable %q has no prop sprite", p.ID) // tools clear, they don't place a sprite
 		}
 		for _, c := range p.Cost {
 			if _, ok := ItemByID(c.Item); !ok {
@@ -105,5 +105,67 @@ func TestPaletteHotkeyResolves(t *testing.T) {
 	if _, ok := PaletteHotkey(ctx, 9); ok {
 		// only 8 placeables today, so 9 has no entry
 		t.Error("hotkey 9 should be unassigned with 8 placeables")
+	}
+}
+
+func TestToolPaletteShowsOnlyWhenOwned(t *testing.T) {
+	none := &Ctx{Name: "ada", Store: store.Open(""), Inventory: map[string]int{"plank": 4}}
+	for _, g := range BuildPalette(none) {
+		if g.Cat == CatTool {
+			t.Error("a player with no tools should see no Tools group")
+		}
+	}
+	owner := &Ctx{Name: "ada", Store: store.Open(""), Inventory: map[string]int{"axe": 1}}
+	var toolNames []string
+	for _, g := range BuildPalette(owner) {
+		if g.Cat == CatTool {
+			for _, e := range g.Entries {
+				toolNames = append(toolNames, e.P.ID)
+				if !e.Afford {
+					t.Errorf("owned tool %q should read as ready (afford)", e.P.ID)
+				}
+			}
+		}
+	}
+	if len(toolNames) != 1 || toolNames[0] != "axe" {
+		t.Errorf("Tools group = %v, want just the axe", toolNames)
+	}
+	if !OwnsTool(owner, "axe") || OwnsTool(owner, "pick") {
+		t.Error("OwnsTool should track which tool items are in the pack")
+	}
+}
+
+func TestToolRecipeGatedByFoundHead(t *testing.T) {
+	var axe Recipe
+	for _, r := range Recipes {
+		if r.ID == "axe" {
+			axe = r
+		}
+	}
+	if axe.ID == "" {
+		t.Fatal("no axe recipe")
+	}
+	// Without the head: not craftable even with timber.
+	if n := Craftable(axe, map[string]int{"wood": 9}); n != 0 {
+		t.Errorf("axe craftable=%d without a head, want 0", n)
+	}
+	// With the found head + timber: craftable, and Craft yields the tool.
+	ctx := &Ctx{Name: "ada", Store: store.Open(""),
+		Inventory: map[string]int{"axe_head": 1, "wood": 2}}
+	if Craftable(axe, ctx.Inventory) != 1 {
+		t.Fatal("axe should be craftable with a head and 2 timber")
+	}
+	Craft(ctx, axe)
+	if ctx.Inventory["axe"] != 1 || ctx.Inventory["axe_head"] != 0 {
+		t.Errorf("after craft: axe=%d head=%d, want 1 and 0", ctx.Inventory["axe"], ctx.Inventory["axe_head"])
+	}
+}
+
+func TestClearYields(t *testing.T) {
+	if it, n := ClearTree.Yield(); it != "wood" || n != 3 {
+		t.Errorf("ClearTree yield = %d %s, want 3 wood", n, it)
+	}
+	if it, n := ClearRock.Yield(); it != "stone" || n != 3 {
+		t.Errorf("ClearRock yield = %d %s, want 3 stone", n, it)
 	}
 }

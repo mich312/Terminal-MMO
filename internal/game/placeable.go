@@ -17,7 +17,30 @@ const (
 	CatTool                      // clearing tools (Step C) — shown only when owned
 )
 
-// Placeable is one buildable structure.
+// ClearKind is what a tool clears (0 = not a tool).
+type ClearKind int
+
+const (
+	ClearNone ClearKind = iota
+	ClearTree           // an axe fells a forest tree
+	ClearRock           // a pick breaks a hill boulder
+)
+
+// Yield is what clearing one cell of this kind returns to the pack.
+func (k ClearKind) Yield() (item string, n int) {
+	switch k {
+	case ClearTree:
+		return "wood", 3
+	case ClearRock:
+		return "stone", 3
+	default:
+		return "", 0
+	}
+}
+
+// Placeable is one buildable structure — or, when Clear is set, a clearing tool
+// the palette lists in the Tools group (it isn't built or placed; selecting it
+// turns the ghost into a clear cursor).
 type Placeable struct {
 	ID       string
 	Name     string
@@ -25,10 +48,14 @@ type Placeable struct {
 	Prop     TileProp // HD sprite
 	Hex      string   // prop color
 	Cost     []Ingredient
-	Walkable bool     // can a player stand on it? (a sign yes; a wall no)
-	Cat      BuildCat // build-palette group
-	Blurb    string   // one deadpan line for the build picker
+	Walkable bool      // can a player stand on it? (a sign yes; a wall no)
+	Cat      BuildCat  // build-palette group
+	Clear    ClearKind // non-zero → a tool that clears terrain, not a structure
+	Blurb    string    // one deadpan line for the build picker
 }
+
+// IsTool reports whether a placeable is a clearing tool rather than a structure.
+func IsTool(p Placeable) bool { return p.Clear != ClearNone }
 
 // Placeables is the catalog, in build-picker order. Costs lean on crafted goods
 // (planks, lamps) so building gives step-1 crafting a purpose.
@@ -58,6 +85,12 @@ var Placeables = []Placeable{
 	{ID: "furnace", Name: "Ingot Synergy Furnace", Glyph: '♨', Prop: PropFurnace, Hex: "#C46A3A",
 		Cost: []Ingredient{{"stone", 8}, {"plank", 4}}, Walkable: false, Cat: CatMachine,
 		Blurb: "Synergizes raw nuggets into ingots. Glows while it works."},
+	// Tools (shown only when owned): select one to turn the ghost into a clear
+	// cursor. No cost — you craft the tool item, then wield it freely.
+	{ID: "axe", Name: "Axe", Glyph: '⚒', Hex: "#B08D57", Cat: CatTool, Clear: ClearTree,
+		Blurb: "Fell a tree: clears it to grassy ground and yields Timber."},
+	{ID: "pick", Name: "Pickaxe", Glyph: '⚒', Hex: "#AEB7BE", Cat: CatTool, Clear: ClearRock,
+		Blurb: "Break a hill boulder: clears it to open ground and yields Cut Stone."},
 }
 
 var placeableIndex = func() map[string]Placeable {
@@ -178,6 +211,9 @@ func BuildPalette(ctx *Ctx) []PaletteGroup {
 			}
 			e := PaletteEntry{Index: i, P: p, Max: affordMax(p, inv)}
 			e.Afford = e.Max > 0
+			if p.Cat == CatTool {
+				e.Afford = true // owning it (filtered in below) means it's ready to wield
+			}
 			if hot < 9 {
 				hot++
 				e.Hotkey = hot
@@ -204,9 +240,9 @@ func PaletteHotkey(ctx *Ctx, n int) (int, bool) {
 	return 0, false
 }
 
-// OwnsTool reports whether the player owns a clearing tool (Step C wires real
-// ownership; today no placeable is a tool, so this is always false).
-func OwnsTool(ctx *Ctx, id string) bool { return false }
+// OwnsTool reports whether the player owns a clearing tool — its tool item (the
+// placeable id doubles as the inventory item id, e.g. "axe") is in the pack.
+func OwnsTool(ctx *Ctx, id string) bool { return invOf(ctx)[id] > 0 }
 
 // PlaceableCost renders a placeable's cost as "4 Planks" or "1 Herb + 1 Amber".
 func PlaceableCost(p Placeable) string {

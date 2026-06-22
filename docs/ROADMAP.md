@@ -305,6 +305,18 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   releases your own; the glyph HUD names the parcel ("Anna's Workspace, Brixen")
   and both clients toast on entry. Movement is never gated — claims protect
   building, never walking.
+- ✅ **Build palette + clearing tools** (see [`BUILD_TOOLS_PLAN.md`](BUILD_TOOLS_PLAN.md)).
+  The blind `r`-cycle build picker became a **palette + 1-9 hotbar**: the catalog
+  grouped (Structures · Machines · Trade · Tools), each row with its cost, a live
+  afford count (dimmed when short), the selected blurb, and an honest block reason
+  ("can't build: trees in the way") — both renderers, non-modal. **Clearing tools**
+  let you reshape the land: a rare **Axe-head** / **Pick-head** found in the world
+  unlocks crafting an **Axe** / **Pickaxe** (head + Timber); wielding one in build
+  mode fells a tree (→ Timber) or breaks a hill boulder (→ Cut Stone), with
+  mountain peaks left permanent. Cleared cells are a third sparse stored overlay on
+  the pure-seed terrain (after placements and claims) — walkable, buildable,
+  `BuildRight`-gated — and **regrow after the owner is absent ~2 weeks**, so the
+  woods reclaim ghost towns.
 - ⬜ The parked wildlife layer comes after.
 
 ## Parked polish
