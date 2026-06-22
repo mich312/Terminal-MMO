@@ -125,6 +125,10 @@ type Ctx struct {
 	// Hats is the set of accessory indices the player has unlocked (found in the
 	// world). Index 0 ("none") is always available. Loaded at join.
 	Hats map[int]bool
+	// Compendium is the set of wildlife species ids the player has sighted (by
+	// observing, hunting, or taming). Drives the codex's Wildlife section. Loaded
+	// at join; the Wilds writes to it on a sighting.
+	Compendium map[string]bool
 	// FixedGates is the set of personal gate ids this player has repaired.
 	// Loaded at join. Co-op gate state lives in the shared World instead.
 	FixedGates map[string]bool

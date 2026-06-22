@@ -37,6 +37,12 @@ var Recipes = []Recipe{
 		In: []Ingredient{{"herb", 1}, {"mushroom", 1}}, Out: "salve", OutN: 1},
 	{ID: "lamp", Name: "Wrought Lamp", Blurb: "Amber-lit. Casts a warm, compliant glow.",
 		In: []Ingredient{{"nugget", 1}, {"amber", 1}}, Out: "lamp", OutN: 1},
+	// Hunting spoils, refined. Cook meat for provisions; cure hide into leather,
+	// which (with a pelt and down) builds a Bedroll.
+	{ID: "ration", Name: "Field Ration", Blurb: "Cured game. Shelf-stable, morale-adjacent.",
+		In: []Ingredient{{"meat", 2}}, Out: "ration", OutN: 1},
+	{ID: "leather", Name: "Cured Leather", Blurb: "Tanned to spec. Supple, compliant.",
+		In: []Ingredient{{"hide", 2}}, Out: "leather", OutN: 1},
 	// Tools — gated by a rare found head, so the recipe is "unlocked" the moment
 	// you turn one up in the world.
 	{ID: "axe", Name: "Axe", Blurb: "A flint head, a Timber haft. Fells trees.",

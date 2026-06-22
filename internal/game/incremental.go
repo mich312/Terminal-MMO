@@ -22,6 +22,7 @@ type IncrementalRenderer struct {
 	buf, scratch *image.RGBA // persistent terrain buffer + ping-pong for pan shifts
 	sig          []uint64    // per-tile appearance signature, row-major vw*vh
 	prevFeet     []tileXY    // last frame's avatar footprint tiles (world coords)
+	prevCrits    []tileXY    // last frame's creature tiles (world coords)
 	vw, vh       int
 	ox, oy       int // world coord of buf tile (0,0)
 	scale        int
@@ -79,7 +80,7 @@ func smallReachTile(t Tile) bool {
 // scratch, which also re-syncs any slow day/night drift. The returned image is
 // owned by the renderer and must not be mutated by the caller (copy it before
 // drawing UI overlays).
-func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self string, frame int, light Light, ox, oy, scale int, style *Style, forceFull bool) *image.RGBA {
+func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self string, frame int, light Light, ox, oy, scale int, style *Style, forceFull bool, creatures ...world.Creature) *image.RGBA {
 	if style == nil {
 		style = DefaultStyle()
 	}
@@ -88,12 +89,13 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 		r.style != style || r.lightRad != light.Radius
 
 	feet := footprints(players, ox, oy, vw, vh)
+	crits := creatureCells(creatures, ox, oy, vw, vh)
 	if full {
-		r.buf = RenderRGBA(nil, tm, players, self, frame, Camera{W: vw, H: vh}, light, ox, oy, scale, false, style)
+		r.buf = RenderRGBA(nil, tm, players, self, frame, Camera{W: vw, H: vh}, light, ox, oy, scale, false, style, creatures...)
 		r.scratch = image.NewRGBA(r.buf.Bounds())
 		r.sig = signatureGrid(tm, frame, light, ox, oy, style)
 		r.vw, r.vh, r.ox, r.oy, r.scale, r.style, r.lightRad = vw, vh, ox, oy, scale, style, light.Radius
-		r.prevFeet, r.have = feet, true
+		r.prevFeet, r.prevCrits, r.have = feet, crits, true
 		return r.buf
 	}
 
@@ -134,6 +136,14 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 	for _, f := range r.prevFeet {
 		mark(f.x-ox, f.y-oy)
 	}
+	// Creature sprites aren't in the signature either: redraw their tiles (they
+	// animate each frame) and the tiles they vacated since last frame.
+	for _, f := range crits {
+		mark(f.x-ox, f.y-oy)
+	}
+	for _, f := range r.prevCrits {
+		mark(f.x-ox, f.y-oy)
+	}
 
 	// Grow the dirty set by the overhang, then — if it now covers most of the
 	// frame — a plain full rasterize is cheaper than many overlapping regions.
@@ -170,6 +180,14 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 	for _, f := range r.prevFeet {
 		forceBig(f)
 	}
+	// Creatures, like avatars, overhang their tile upward — give them the wide
+	// overhang too.
+	for _, f := range crits {
+		forceBig(f)
+	}
+	for _, f := range r.prevCrits {
+		forceBig(f)
+	}
 	dil := dilate(big, vw, vh, overhangTiles)
 	for i, d := range dilate(small, vw, vh, ambientOverhang) {
 		if d {
@@ -183,28 +201,28 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 		}
 	}
 	if nDil > int(float64(vw*vh)*fullRedrawFrac) {
-		r.buf = RenderRGBA(nil, tm, players, self, frame, Camera{W: vw, H: vh}, light, ox, oy, scale, false, style)
-		r.sig, r.ox, r.oy, r.prevFeet = newSig, ox, oy, feet
+		r.buf = RenderRGBA(nil, tm, players, self, frame, Camera{W: vw, H: vh}, light, ox, oy, scale, false, style, creatures...)
+		r.sig, r.ox, r.oy, r.prevFeet, r.prevCrits = newSig, ox, oy, feet, crits
 		return r.buf
 	}
 
 	for _, rc := range dirtyRects(dil, vw, vh) {
-		r.renderRegion(tm, players, self, frame, light, ox, oy, scale, style, rc)
+		r.renderRegion(tm, players, self, frame, light, ox, oy, scale, style, rc, creatures...)
 	}
-	r.sig, r.ox, r.oy, r.prevFeet = newSig, ox, oy, feet
+	r.sig, r.ox, r.oy, r.prevFeet, r.prevCrits = newSig, ox, oy, feet, crits
 	return r.buf
 }
 
 // renderRegion re-rasterizes the tile rectangle rc (window coords) by rendering
 // it with an overhang margin — so casters just outside still composite in — and
 // copying just the rc core into the persistent buffer.
-func (r *IncrementalRenderer) renderRegion(tm *TileMap, players []world.Player, self string, frame int, light Light, ox, oy, scale int, style *Style, rc image.Rectangle) {
+func (r *IncrementalRenderer) renderRegion(tm *TileMap, players []world.Player, self string, frame int, light Light, ox, oy, scale int, style *Style, rc image.Rectangle, creatures ...world.Creature) {
 	mx0 := maxi(0, rc.Min.X-overhangTiles)
 	my0 := maxi(0, rc.Min.Y-overhangTiles)
 	mx1 := mini(tm.W, rc.Max.X+overhangTiles)
 	my1 := mini(tm.H, rc.Max.Y+overhangTiles)
 	sub := RenderRGBA(nil, tm, players, self, frame,
-		Camera{X: mx0, Y: my0, W: mx1 - mx0, H: my1 - my0}, light, ox+mx0, oy+my0, scale, false, style)
+		Camera{X: mx0, Y: my0, W: mx1 - mx0, H: my1 - my0}, light, ox+mx0, oy+my0, scale, false, style, creatures...)
 
 	// Copy the core (rc) out of sub into buf, row by row.
 	rowBytes := (rc.Max.X - rc.Min.X) * scale * 4
@@ -226,6 +244,17 @@ func footprints(players []world.Player, ox, oy, vw, vh int) []tileXY {
 					out = append(out, tileXY{x, y})
 				}
 			}
+		}
+	}
+	return out
+}
+
+// creatureCells returns the visible tiles each creature occupies (world coords).
+func creatureCells(creatures []world.Creature, ox, oy, vw, vh int) []tileXY {
+	var out []tileXY
+	for _, c := range creatures {
+		if c.X >= ox && c.X < ox+vw && c.Y >= oy && c.Y < oy+vh {
+			out = append(out, tileXY{c.X, c.Y})
 		}
 	}
 	return out

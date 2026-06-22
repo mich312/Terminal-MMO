@@ -555,6 +555,14 @@ var propArt = map[TileProp][]string{
 		"PpWppP",
 		"PppppP",
 	},
+	PropBedroll: {
+		"......",
+		".oooo.",
+		"oPLLPo",
+		"oPppPo",
+		"oLPPLo",
+		".pppp.",
+	},
 }
 
 // portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in

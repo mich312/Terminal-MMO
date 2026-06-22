@@ -8,6 +8,8 @@ package wilds
 
 import (
 	"fmt"
+	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,6 +61,7 @@ type area struct {
 	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
+	rng        *rand.Rand        // per-session stream for hunting drop rolls
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
 
@@ -95,6 +98,13 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	if a.collected == nil {
 		a.collected = map[[2]int]bool{}
 	}
+	if a.ctx.Compendium == nil {
+		a.ctx.Compendium = a.ctx.Store.LoadCompendium(a.ctx.Name)
+		if a.ctx.Compendium == nil {
+			a.ctx.Compendium = map[string]bool{}
+		}
+	}
+	a.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	if a.ctx.Inventory == nil {
 		a.ctx.Inventory = map[string]int{}
 	}
@@ -550,6 +560,196 @@ func (a *area) stationAdjacent() (int, int, bool) {
 	return 0, 0, false
 }
 
+// creatureAdjacent finds a live animal on the ring of cells bordering the
+// player's footprint, so you can observe something you stand beside (animals
+// flee, so you rarely share their cell). Returns the nearest such creature.
+func (a *area) creatureAdjacent() (world.Creature, bool) {
+	cs := a.ctx.World.CreaturesInArea("wilds")
+	if len(cs) == 0 {
+		return world.Creature{}, false
+	}
+	for _, c := range cs {
+		if iabs(c.X-a.wx) <= 1 && iabs(c.Y-a.wy) <= 1 {
+			return c, true
+		}
+	}
+	return world.Creature{}, false
+}
+
+// creaturePrompt is the contextual action line for an adjacent animal: your own
+// companion just reads as such, otherwise observe/hunt, plus tame when the
+// species is tameable and you're carrying its bait.
+func (a *area) creaturePrompt(c world.Creature) string {
+	name := c.Kind
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if ok && sp.Name != "" {
+		name = sp.Name
+	}
+	if c.Owner == a.ctx.Name {
+		return "your " + name + " — a loyal companion"
+	}
+	line := "e observe · f hunt the " + name
+	if ok && sp.Tameable && c.Owner == "" && a.ctx.Inventory[sp.Bait] > 0 {
+		line += " · t tame (" + itemName(sp.Bait) + ")"
+	}
+	return line
+}
+
+// observe logs a sighting: a first sighting adds the species to the player's
+// field notes (the compendium); a repeat just acknowledges it. Persisted so the
+// compendium survives between visits.
+func (a *area) observe(c world.Creature) {
+	name := c.Kind
+	if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
+		name = sp.Name
+	}
+	if a.ctx.Compendium[c.Kind] {
+		a.setToast("a " + name + " eyes you, then looks away")
+		return
+	}
+	a.ctx.Compendium[c.Kind] = true
+	a.ctx.Store.MarkSpecies(a.ctx.Name, c.Kind)
+	a.setToast("you spot a " + name + " — added to your field notes")
+}
+
+// noteSpecies records a species in the compendium (and persists it) the first
+// time the player encounters it — shared by observing and hunting, since you
+// learn an animal by catching it too.
+func (a *area) noteSpecies(kind string) {
+	if a.ctx.Compendium[kind] {
+		return
+	}
+	a.ctx.Compendium[kind] = true
+	a.ctx.Store.MarkSpecies(a.ctx.Name, kind)
+}
+
+// hunt strikes an adjacent creature. A strike decrements its HP atomically (so
+// two hunters can't both claim one kill); a non-killing hit just spooks it, and
+// the blow that drops it despawns the animal and rolls its spoils into the pack.
+// No PvP, no player damage — only wildlife can be hunted.
+func (a *area) hunt(c world.Creature) {
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if !ok {
+		return
+	}
+	if c.Owner == a.ctx.Name {
+		a.setToast("you won't hunt your own companion")
+		return
+	}
+	a.noteSpecies(c.Kind)
+
+	killed := false
+	changed := a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		if cc.HP <= 0 {
+			return false // already down — someone else's catch
+		}
+		cc.HP--
+		cc.State = "flee"
+		if cc.HP <= 0 {
+			killed = true
+		}
+		return true
+	})
+	if !changed {
+		a.setToast("the " + sp.Name + " is already gone")
+		return
+	}
+	if !killed {
+		a.setToast("you strike the " + sp.Name + " — it bolts")
+		return
+	}
+
+	a.ctx.World.DespawnCreature(c.ID)
+	drops := game.RollDrops(sp, a.rng)
+	if len(drops) == 0 {
+		a.setToast("you catch the " + sp.Name)
+		return
+	}
+	parts := make([]string, 0, len(drops))
+	for id, n := range drops {
+		a.ctx.Inventory[id] += n
+		for i := 0; i < n; i++ {
+			a.ctx.Store.AddItem(a.ctx.Name, id)
+		}
+		parts = append(parts, fmt.Sprintf("+%d %s", n, itemName(id)))
+	}
+	sort.Strings(parts) // stable, readable toast
+	a.setToast("you catch the " + sp.Name + " — " + strings.Join(parts, ", "))
+}
+
+// tameChance is the odds one offering of bait befriends a wary animal.
+const tameChance = 0.4
+
+// hasCompanion reports whether the player already keeps a pet — saved in the
+// store, or live in the world right now (so it holds even without persistence).
+func (a *area) hasCompanion() bool {
+	if _, ok := a.ctx.Store.LoadCompanion(a.ctx.Name); ok {
+		return true
+	}
+	for _, c := range a.ctx.World.CreaturesInArea("wilds") {
+		if c.Owner == a.ctx.Name {
+			return true
+		}
+	}
+	return false
+}
+
+// tame offers bait to an adjacent animal. It costs one bait item; on a lucky
+// roll the creature is befriended (Owner set, persisted as the player's
+// companion, and it starts following); on a miss the bait is gone and the animal
+// bolts. One companion per player.
+func (a *area) tame(c world.Creature) {
+	sp, ok := game.SpeciesByKind(c.Kind)
+	if !ok {
+		return
+	}
+	if !sp.Tameable {
+		a.setToast("the " + sp.Name + " can't be tamed")
+		return
+	}
+	if c.Owner != "" {
+		a.setToast("the " + sp.Name + " already has a companion")
+		return
+	}
+	if a.hasCompanion() {
+		a.setToast("you already have a companion")
+		return
+	}
+	if a.ctx.Inventory[sp.Bait] <= 0 {
+		a.setToast("you need a " + itemName(sp.Bait) + " to tame the " + sp.Name)
+		return
+	}
+
+	a.ctx.Inventory[sp.Bait]--
+	if a.ctx.Inventory[sp.Bait] <= 0 {
+		delete(a.ctx.Inventory, sp.Bait)
+	}
+	a.ctx.Store.SpendItem(a.ctx.Name, sp.Bait)
+	a.noteSpecies(c.Kind)
+
+	if a.rng.Float64() > tameChance {
+		a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+			cc.State = "flee"
+			return true
+		})
+		a.setToast("the " + sp.Name + " snatches the " + itemName(sp.Bait) + " and bolts")
+		return
+	}
+	ok = a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
+		if cc.Owner != "" {
+			return false
+		}
+		cc.Owner, cc.State = a.ctx.Name, "tamed"
+		return true
+	})
+	if !ok {
+		a.setToast("the " + sp.Name + " slips away")
+		return
+	}
+	a.ctx.Store.SaveCompanion(a.ctx.Name, c.Kind)
+	a.setToast("the " + sp.Name + " befriends you — it'll follow along!")
+}
+
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
@@ -718,12 +918,26 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				a.pickUp()
 			} else if _, _, _, ok := a.itemUnderBody(); ok {
 				a.pickUp()
+			} else if c, ok := a.creatureAdjacent(); ok {
+				a.observe(c)
 			} else if mx, my, ok := a.stationAdjacent(); ok {
 				a.ctx.UseStation = &[2]int{mx, my} // the client opens the right panel
 			} else if a.boardAdjacent() {
 				a.showBoard = !a.showBoard // read / dismiss the notice board
 			} else {
 				a.pickUp()
+			}
+			return a, nil
+		}
+		if ks == "f" { // hunt an adjacent animal
+			if c, ok := a.creatureAdjacent(); ok {
+				a.hunt(c)
+			}
+			return a, nil
+		}
+		if ks == "t" { // tame an adjacent animal with bait
+			if c, ok := a.creatureAdjacent(); ok {
+				a.tame(c)
 			}
 			return a, nil
 		}
@@ -783,6 +997,9 @@ func (a *area) Hint() string {
 	if h, _, _, ok := a.hatUnderBody(); ok {
 		return "e — wear the " + h.name
 	}
+	if c, ok := a.creatureAdjacent(); ok {
+		return a.creaturePrompt(c)
+	}
 	if a.boardAdjacent() {
 		return "e — read the notice board"
 	}
@@ -816,6 +1033,9 @@ func (a *area) Prompt() (string, bool) {
 	}
 	if it, _, _, ok := a.itemUnderBody(); ok {
 		return "e — take " + it.Name, true
+	}
+	if c, ok := a.creatureAdjacent(); ok {
+		return a.creaturePrompt(c), true
 	}
 	if mx, my, ok := a.stationAdjacent(); ok {
 		if pl, ok := a.ctx.World.PlacementAt(mx, my); ok {
@@ -935,6 +1155,12 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 	// Center the 2×2 body (not its top-left corner) in the window, so the avatar
 	// sits dead center in both the glyph and HD views.
 	ox, oy := a.wx-(vw-game.PlayerW)/2, a.wy-(vh-game.PlayerH)/2
+	// Live wildlife, read fresh each frame (no events — the redraw is the sync).
+	// Keyed by cell for O(1) lookup as we lay the window.
+	creatures := map[[2]int]world.Creature{}
+	for _, c := range a.ctx.World.CreaturesInArea("wilds") {
+		creatures[[2]int{c.X, c.Y}] = c
+	}
 	// Land claims overlapping this window, fetched once: their parcels get a soft
 	// ground tint so ownership reads at a glance (green yours, amber others).
 	claims := game.LiveClaimsOverlapping(a.ctx, ox, oy, ox+vw-1, oy+vh-1)
@@ -996,6 +1222,14 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex = pb.Prop, pb.Hex
 						t.Walkable = pb.Walkable
 						t.Ground = groundColor(cell.Biome)
+					}
+				}
+				// Wildlife: the glyph client draws the species letter here; the HD
+				// client draws a full animated sprite over this tile from the live
+				// creature list (passed to the renderer), so we only set Ch/Color.
+				if c, ok := creatures[[2]int{wx, wy}]; ok {
+					if sp, ok := game.SpeciesByKind(c.Kind); ok {
+						t.Ch, t.Color = sp.Glyph, sp.Hex
 					}
 				}
 				if len(claims) > 0 {

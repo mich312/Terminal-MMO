@@ -25,7 +25,9 @@ import (
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
+	"github.com/durst-group/durstworld/internal/wildlife"
 	"github.com/durst-group/durstworld/internal/world"
+	"github.com/durst-group/durstworld/internal/worldgen"
 
 	// areas register themselves with the game registry
 	_ "github.com/durst-group/durstworld/internal/areas/cave"
@@ -36,7 +38,7 @@ import (
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
 	_ "github.com/durst-group/durstworld/internal/areas/stub"
 	_ "github.com/durst-group/durstworld/internal/areas/vault"
-	_ "github.com/durst-group/durstworld/internal/areas/wilds"
+	"github.com/durst-group/durstworld/internal/areas/wilds"
 )
 
 func main() {
@@ -111,6 +113,13 @@ func main() {
 		st.RemoveCleared,
 	)
 
+	// Wildlife: one server-side stepper drives the live herd in the Wilds, on the
+	// same overworld seed every session sees. It spawns near online players and
+	// reclaims animals when nobody is around, so the population tracks who's
+	// connected rather than the size of the infinite map.
+	wlStop := make(chan struct{})
+	go wildlife.New(w, worldgen.New(wilds.Seed), st).Run(wlStop)
+
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
 		// persistent Ed25519 host key, generated on first run
@@ -146,6 +155,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
+	close(wlStop)
 	w.Close()
 	_ = st.Close()
 }
@@ -176,6 +186,7 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			Theme:      ui.NewTheme(bm.MakeRenderer(s)),
 			Inventory:  st.LoadInventory(name),
 			Hats:       st.LoadHats(name),
+			Compendium: st.LoadCompendium(name),
 			FixedGates: st.LoadPersonalGates(name),
 		}
 		m := game.NewModel(ctx, events, visit)
