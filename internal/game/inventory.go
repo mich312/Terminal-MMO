@@ -31,6 +31,7 @@ const (
 	Worksite               // harvested at a settlement worksite (field, quarry, lumber, jetty)
 	CaveFind               // mined or gathered down in the caves
 	Crafted                // made at a workbench or a machine, not gathered
+	Hunt                   // taken from wild animals (the hunting loop)
 )
 
 func (s Source) String() string {
@@ -41,6 +42,8 @@ func (s Source) String() string {
 		return "Cave"
 	case Crafted:
 		return "Crafted"
+	case Hunt:
+		return "Hunt"
 	default:
 		return "Forage"
 	}
@@ -147,6 +150,31 @@ var Items = []Item{
 		Source: Crafted, Rarity: Common,
 		About: "An amber-lit lamp that casts a warm, compliant glow.",
 		Found: "Crafted from a Gold Nugget and Cave Amber; powers a Lamppost."},
+	{ID: "ration", Name: "Field Ration", Glyph: '⌑', Hex: "#C98B5A",
+		Source: Crafted, Rarity: Common,
+		About: "Cured game, provisioned for the night shift. Shelf-stable, morale-adjacent.",
+		Found: "Cooked from Game Meat at a workbench."},
+	{ID: "leather", Name: "Cured Leather", Glyph: '▤', Hex: "#8A5A36",
+		Source: Crafted, Rarity: Common,
+		About: "A supple worked hide, tanned to Durst Group spec.",
+		Found: "Cured from Raw Hide at a workbench; builds a Bedroll."},
+	// Hunting spoils — taken from wild animals (creature.go's drop tables).
+	{ID: "meat", Name: "Game Meat", Glyph: '◖', Hex: "#C65B5B",
+		Source: Hunt, Rarity: Common,
+		About: "A fresh cut of wild game.",
+		Found: "Caught from rabbits, deer and other animals in the Wilds."},
+	{ID: "hide", Name: "Raw Hide", Glyph: '▱', Hex: "#A6764A",
+		Source: Hunt, Rarity: Common,
+		About: "A rough hide, ready for curing.",
+		Found: "Taken from deer in the Wilds."},
+	{ID: "pelt", Name: "Fox Pelt", Glyph: '▰', Hex: "#E0772E",
+		Source: Hunt, Rarity: Uncommon,
+		About: "A soft russet pelt.",
+		Found: "Taken from foxes in the forest and hills."},
+	{ID: "feather", Name: "Feather", Glyph: '✦', Hex: "#6FB7D8",
+		Source: Hunt, Rarity: Common,
+		About: "A light, banded flight feather.",
+		Found: "Gathered from birds in the Wilds."},
 	// Tool components — rare finds that unlock a tool recipe (docs/BUILD_TOOLS_PLAN.md).
 	{ID: "axe_head", Name: "Flint Axe-head", Glyph: '⌐', Hex: "#C7BCA6",
 		Source: Forage, Rarity: Rare,

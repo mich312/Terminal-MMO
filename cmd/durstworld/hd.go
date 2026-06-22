@@ -286,7 +286,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		// Incremental terrain: only tiles that actually changed are re-rasterized.
 		// The result is byte-identical to a full RenderRGBA (see IncrementalRenderer),
 		// so the on-wire delta — and what the player sees — is unchanged.
-		base := inc.Render(tm, w.PlayersInArea(areaID), name, frame, light, ox, oy, hdScale, style, full)
+		base := inc.Render(tm, w.PlayersInArea(areaID), name, frame, light, ox, oy, hdScale, style, full, w.CreaturesInArea(areaID)...)
 		// Composite UI onto a copy so overlays never bleed into the cached terrain.
 		img := frameCopy(base)
 		game.OverlayWalkable(img, tm, hdScale)  // debug: tint blocked tiles (toggle with F2)
@@ -856,6 +856,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			// build mode: 'b' toggles, 'r'/brackets cycle the placeable, 'x' demolishes
 			// under the ghost (the area reinterprets movement as ghost movement).
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			draw()
+		} else if key == "f" { // hunt an adjacent animal
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+			draw()
+		} else if key == "t" { // tame an adjacent animal with bait
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
 			draw()
 		} else if key == "m" { // toggle the area overview map
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})

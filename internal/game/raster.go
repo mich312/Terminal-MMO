@@ -27,7 +27,7 @@ import (
 // style selects the art style (sprite sets, shading, palette); a nil style uses
 // DefaultStyle. A non-nil style.Palette.Map recolors the finished frame in one
 // final pass (the basis for the monochrome / neon looks).
-func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool, style *Style) *image.RGBA {
+func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool, style *Style, creatures ...world.Creature) *image.RGBA {
 	if th == nil {
 		th = ui.Default
 	}
@@ -241,6 +241,9 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		drawCaveFauna(img, props, cam, scale, frame, originX, originY)
 	}
 
+	// Wildlife sprites: drawn over the terrain but under the players, tinted by
+	// the scene ambient + radial light so they fade into the night like props.
+	stampCreaturesRGBA(img, creatures, frame, scale, cam, originX, originY, light, amb, ambStr, style)
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
 	if m := style.Palette.Map; m != nil {
 		applyColorMap(img, m)
@@ -480,6 +483,150 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 			}
 		}
 		blitTileArt(img, ox, oy, scale, art, paint)
+	}
+}
+
+// stampCreaturesRGBA draws every visible wild animal as an animated, directional
+// sprite — the same machinery as the avatar — over the terrain but under the
+// players. Drawn south-to-north so a nearer animal overlaps one behind it. The
+// body colour is the species hue, tinted by the scene ambient + radial light so
+// wildlife fades into the dark like the rest of the world.
+func stampCreaturesRGBA(img *image.RGBA, creatures []world.Creature, frame, scale int, cam Camera, originX, originY int, light Light, amb colorful.Color, ambStr float64, style *Style) {
+	if len(creatures) == 0 {
+		return
+	}
+	sorted := make([]world.Creature, len(creatures))
+	copy(sorted, creatures)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Y != sorted[j].Y {
+			return sorted[i].Y < sorted[j].Y
+		}
+		return sorted[i].X < sorted[j].X
+	})
+	for _, c := range sorted {
+		fc, fr := c.X-originX, c.Y-originY
+		if fc < -1 || fc > cam.W || fr < -1 || fr > cam.H {
+			continue // off-window
+		}
+		blitCreature(img, c, frame, scale, fc, fr, originX, originY, light, amb, ambStr, style)
+	}
+}
+
+// blitCreature draws one animal: its directional sprite (front/back/side+mirror)
+// and walk/idle frame, centered horizontally and bottom-aligned on its tile,
+// with a soft contact shadow — mirroring blitAvatar.
+func blitCreature(img *image.RGBA, c world.Creature, frame, scale, fc, fr, originX, originY int, light Light, amb colorful.Color, ambStr float64, style *Style) {
+	sp, ok := SpeciesByKind(c.Kind)
+	if !ok {
+		return
+	}
+	wf, moving := CreatureWalkFrame(c.LastMoved, frame, c.X*7+c.Y*13)
+	bmp, ok := CreatureBitmap(c.Kind, c.Facing, wf)
+	if !ok {
+		return
+	}
+	// Species hue, shaded into the prop palette and faded by ambient + the radial
+	// light at the creature's world cell (so it dims with distance at night).
+	base := applyLight(tint(style.tint(sp.Hex), amb, ambStr), c.X, c.Y, light)
+
+	bw, bh := len([]rune(bmp[0])), len(bmp)
+	k := (PlayerH * scale) / bh
+	if k < 1 {
+		k = 1
+	}
+	destW, destH := bw*k, bh*k
+	centerX := (fc + PlayerW/2) * scale
+	bottomEdge := (fr + PlayerH) * scale
+	left := centerX - destW/2
+	top := bottomEdge - destH
+
+	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
+		float64(destW)*0.40, float64(k)*1.1, k, float64(destH))
+
+	if moving && wf == 1 { // mid-stride: lift the body a touch, like the avatar
+		bob := k / 2
+		if bob < 1 {
+			bob = 1
+		}
+		top -= bob
+	}
+
+	for sy := 0; sy < bh; sy++ {
+		runes := []rune(bmp[sy])
+		for sx := 0; sx < bw && sx < len(runes); sx++ {
+			col, opaque := creaturePixel(runes[sx], base)
+			if !opaque {
+				continue
+			}
+			fillRect(img, left+sx*k, top+sy*k, k, k, colorfulToRGBA(col))
+		}
+	}
+}
+
+// drawCreatureIcon draws a species' front-facing portrait scaled to fit box,
+// for the wildlife codex — the same sprite the world uses, tinted by the species
+// hue. Mirrors drawItemIcon: trim to the art's bounding box, integer-scale, and
+// center.
+func drawCreatureIcon(img *image.RGBA, x, y, box int, kind string) {
+	bmp, ok := CreatureBitmap(kind, world.DirS, 0)
+	if !ok {
+		return
+	}
+	sp, _ := SpeciesByKind(kind)
+	body := mustHex(sp.Hex)
+
+	minX, minY, maxX, maxY := 1<<30, 1<<30, -1, -1
+	for r, row := range bmp {
+		for c, ch := range row {
+			if ch != ' ' && ch != '.' {
+				minX, maxX = min(minX, c), max(maxX, c)
+				minY, maxY = min(minY, r), max(maxY, r)
+			}
+		}
+	}
+	if maxX < 0 {
+		return
+	}
+	bw, bh := maxX-minX+1, maxY-minY+1
+	sc := min(box/bw, box/bh)
+	if sc < 1 {
+		sc = 1
+	}
+	offX := x + (box-bw*sc)/2
+	offY := y + (box-bh*sc)/2
+	for r := minY; r <= maxY; r++ {
+		row := []rune(bmp[r])
+		for c := minX; c <= maxX && c < len(row); c++ {
+			if col, opaque := creaturePixel(row[c], body); opaque {
+				fillRect(img, offX+(c-minX)*sc, offY+(r-minY)*sc, sc, sc, colorfulToRGBA(col))
+			}
+		}
+	}
+}
+
+// creaturePixel resolves an animal sprite code to a color, shaded from the
+// species body colour. Codes: P body, p shade, D dark, o outline, L light, W
+// highlight, e eye, n nose/muzzle, '.' transparent.
+func creaturePixel(code rune, body colorful.Color) (colorful.Color, bool) {
+	switch code {
+	case 'P':
+		return body, true
+	case 'p':
+		return body.BlendLab(shadowColor, 0.34).Clamped(), true
+	case 'D':
+		return body.BlendLab(shadowColor, 0.5).Clamped(), true
+	case 'o':
+		return body.BlendLab(shadowColor, 0.72).Clamped(), true
+	case 'L':
+		return body.BlendLab(spriteWhite, 0.4).Clamped(), true
+	case 'n':
+		return body.BlendLab(spriteWhite, 0.7).Clamped(), true
+	case 'W':
+		return spriteWhite, true
+	case 'e':
+		return shadowColor, true
+	default:
+		return colorful.Color{}, false
 	}
 }
 

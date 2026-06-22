@@ -114,6 +114,10 @@ type World struct {
 	trades    map[string]*tradeState
 	pending   map[string]string
 	completed map[string]CompletedTrade
+
+	// Wildlife: live, server-owned creatures keyed by instance id. The wildlife
+	// stepper is the only writer; renderers read snapshots via CreaturesInArea.
+	creatures map[string]*Creature
 }
 
 // Placement is one player-built structure in the shared world.
@@ -138,6 +142,7 @@ func New() *World {
 		trades:     make(map[string]*tradeState),
 		pending:    make(map[string]string),
 		completed:  make(map[string]CompletedTrade),
+		creatures:  make(map[string]*Creature),
 	}
 	go w.tickLoop()
 	return w

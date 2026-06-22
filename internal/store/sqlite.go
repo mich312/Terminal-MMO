@@ -99,6 +99,15 @@ CREATE TABLE IF NOT EXISTS placements (
 	created INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (x, y)
 );
+CREATE TABLE IF NOT EXISTS compendium (
+	name TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	PRIMARY KEY (name, kind)
+);
+CREATE TABLE IF NOT EXISTS companion (
+	name TEXT PRIMARY KEY,
+	kind TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS claims (
 	plot_id    TEXT PRIMARY KEY,
 	owner      TEXT NOT NULL,
@@ -341,6 +350,58 @@ func (s *sqliteStore) UnlockHat(name string, hat int) {
 		`INSERT OR IGNORE INTO hats (name, hat) VALUES (?, ?)`, name, hat); err != nil {
 		log.Printf("store: unlock hat: %v", err)
 	}
+}
+
+// MarkSpecies records that a player has observed a wildlife species.
+func (s *sqliteStore) MarkSpecies(name, kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO compendium (name, kind) VALUES (?, ?)`, name, kind); err != nil {
+		log.Printf("store: mark species: %v", err)
+	}
+}
+
+// LoadCompendium returns the species ids a player has observed.
+func (s *sqliteStore) LoadCompendium(name string) map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT kind FROM compendium WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err == nil {
+			out[kind] = true
+		}
+	}
+	return out
+}
+
+// SaveCompanion records (or replaces) a player's tamed companion species.
+func (s *sqliteStore) SaveCompanion(name, kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO companion (name, kind) VALUES (?, ?)
+		 ON CONFLICT(name) DO UPDATE SET kind = excluded.kind`, name, kind); err != nil {
+		log.Printf("store: save companion: %v", err)
+	}
+}
+
+// LoadCompanion returns a player's tamed companion species; ok is false if none.
+func (s *sqliteStore) LoadCompanion(name string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var kind string
+	err := s.db.QueryRow(`SELECT kind FROM companion WHERE name = ?`, name).Scan(&kind)
+	if err != nil {
+		return "", false
+	}
+	return kind, true
 }
 
 // LoadHats returns the accessory indices a player owns.

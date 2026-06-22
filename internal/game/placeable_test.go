@@ -102,9 +102,13 @@ func TestPaletteHotkeyResolves(t *testing.T) {
 	if !ok || Placeables[idx].ID != "fence" {
 		t.Errorf("hotkey 1 = (%d,%v), want the fence", idx, ok)
 	}
-	if _, ok := PaletteHotkey(ctx, 9); ok {
-		// only 8 placeables today, so 9 has no entry
-		t.Error("hotkey 9 should be unassigned with 8 placeables")
+	// One hotkey past the live palette has no entry.
+	n := 0
+	for _, g := range BuildPalette(ctx) {
+		n += len(g.Entries)
+	}
+	if _, ok := PaletteHotkey(ctx, n+1); ok {
+		t.Errorf("hotkey %d should be unassigned past the %d palette entries", n+1, n)
 	}
 }
 

@@ -89,8 +89,10 @@ func TestIncrementalMatchesFull(t *testing.T) {
 			var inc IncrementalRenderer
 			px, py := 8, 6 // self world position; camera centers on it
 			nx, ny := 11, 9
+			cx, cy := 6, 10 // a wandering creature, to exercise the sprite + dirty path
 			for i, s := range steps {
 				px, py, nx, ny = px+s.dpx, py+s.dpy, nx+s.dnx, ny+s.dny
+				cx, cy = cx+s.dnx, cy-s.dpy // moves on its own track so tiles vacate
 				frame := i
 				ox, oy := px-vw/2, py-vh/2
 				light := Light{X: px, Y: py, Radius: 18}
@@ -98,9 +100,12 @@ func TestIncrementalMatchesFull(t *testing.T) {
 					{Name: "me", X: px, Y: py, Color: "#FFC861", Facing: world.DirS, LastMoved: idle},
 					{Name: "bob", X: nx, Y: ny, Color: "#7DF0FF", Facing: world.DirE, LastMoved: idle},
 				}
+				creatures := []world.Creature{
+					{Kind: "fox", Area: "wilds", X: cx, Y: cy, Facing: world.DirE, LastMoved: idle},
+				}
 				win := windowOf(ox, oy, vw, vh)
-				want := RenderRGBA(nil, win, players, "me", frame, Camera{W: vw, H: vh}, light, ox, oy, scale, false, style)
-				got := inc.Render(win, players, "me", frame, light, ox, oy, scale, style, s.forceFull)
+				want := RenderRGBA(nil, win, players, "me", frame, Camera{W: vw, H: vh}, light, ox, oy, scale, false, style, creatures...)
+				got := inc.Render(win, players, "me", frame, light, ox, oy, scale, style, s.forceFull, creatures...)
 				if !bytes.Equal(got.Pix, want.Pix) {
 					t.Fatalf("step %d (frame %d, origin %d,%d): incremental frame differs from full render at %s — %d px differ",
 						i, frame, ox, oy, name, countDiff(got, want))

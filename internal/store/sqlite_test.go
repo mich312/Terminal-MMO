@@ -190,6 +190,34 @@ func TestPlacementRoundTrip(t *testing.T) {
 	}
 }
 
+// A companion round-trips, an upsert replaces it, and an absent one is ok=false.
+func TestCompanionRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if _, ok := s.LoadCompanion("ada"); ok {
+		t.Fatal("no companion should exist yet")
+	}
+	s.SaveCompanion("ada", "fox")
+	if k, ok := s.LoadCompanion("ada"); !ok || k != "fox" {
+		t.Fatalf("got (%q,%v), want (fox,true)", k, ok)
+	}
+	s.SaveCompanion("ada", "deer") // one pet per player — replace
+	if k, ok := s.LoadCompanion("ada"); !ok || k != "deer" {
+		t.Fatalf("after replace got (%q,%v), want (deer,true)", k, ok)
+	}
+}
+
+// The compendium records sightings and loads them back as a set.
+func TestCompendiumRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	s.MarkSpecies("ada", "rabbit")
+	s.MarkSpecies("ada", "rabbit") // idempotent
+	s.MarkSpecies("ada", "fox")
+	got := s.LoadCompendium("ada")
+	if len(got) != 2 || !got["rabbit"] || !got["fox"] {
+		t.Fatalf("compendium = %v, want {rabbit, fox}", got)
+	}
+}
+
 func TestClaimRoundTrip(t *testing.T) {
 	s := openTemp(t)
 	if got := s.LoadClaims(); len(got) != 0 {
