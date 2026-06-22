@@ -101,6 +101,13 @@ type World struct {
 	claimPersist func(Claim)         // persist a claim (set by main)
 	claimDel     func(plotID string) // persist a release (set by main)
 
+	// Cleared terrain: cells felled/quarried clear with a tool, a sparse stored
+	// overlay on the pure-seed terrain (docs/BUILD_TOOLS_PLAN.md). Regrows by the
+	// game layer's lapse clock.
+	cleared  map[[2]int]Cleared
+	clearAdd func(Cleared)  // persist a clear (set by main)
+	clearDel func(x, y int) // persist a regrowth (set by main)
+
 	// Player-to-player trading: live tables keyed by both traders' names,
 	// pending incoming requests (recipient → requester), and finished trades
 	// waiting for each party to apply its half (TakeCompletedTrade).
@@ -127,6 +134,7 @@ func New() *World {
 		gateFixed:  make(map[string]bool),
 		placements: make(map[[2]int]Placement),
 		claims:     make(map[string]Claim),
+		cleared:    make(map[[2]int]Cleared),
 		trades:     make(map[string]*tradeState),
 		pending:    make(map[string]string),
 		completed:  make(map[string]CompletedTrade),

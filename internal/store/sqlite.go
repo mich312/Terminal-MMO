@@ -108,6 +108,13 @@ CREATE TABLE IF NOT EXISTS claims (
 	max_y      INTEGER NOT NULL,
 	last_touch INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS cleared (
+	x          INTEGER NOT NULL,
+	y          INTEGER NOT NULL,
+	owner      TEXT NOT NULL,
+	last_touch INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (x, y)
+);
 `
 
 type sqliteStore struct {
@@ -499,6 +506,46 @@ func (s *sqliteStore) LoadClaims() []Claim {
 	for rows.Next() {
 		var c Claim
 		if err := rows.Scan(&c.PlotID, &c.Owner, &c.MinX, &c.MinY, &c.MaxX, &c.MaxY, &c.LastTouch); err == nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// SaveCleared upserts a cleared terrain cell.
+func (s *sqliteStore) SaveCleared(c Cleared) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO cleared (x, y, owner, last_touch) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(x, y) DO UPDATE SET owner = excluded.owner, last_touch = excluded.last_touch`,
+		c.X, c.Y, c.Owner, c.LastTouch); err != nil {
+		log.Printf("store: save cleared: %v", err)
+	}
+}
+
+// RemoveCleared deletes a cleared cell (regrowth).
+func (s *sqliteStore) RemoveCleared(x, y int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM cleared WHERE x = ? AND y = ?`, x, y); err != nil {
+		log.Printf("store: remove cleared: %v", err)
+	}
+}
+
+// LoadCleared returns every cleared cell in the world.
+func (s *sqliteStore) LoadCleared() []Cleared {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT x, y, owner, last_touch FROM cleared`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Cleared
+	for rows.Next() {
+		var c Cleared
+		if err := rows.Scan(&c.X, &c.Y, &c.Owner, &c.LastTouch); err == nil {
 			out = append(out, c)
 		}
 	}

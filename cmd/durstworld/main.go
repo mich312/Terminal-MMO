@@ -97,6 +97,20 @@ func main() {
 		st.RemoveClaim,
 	)
 
+	// Restore cleared terrain (felled/quarried cells) and keep it saved as people
+	// clear ground and as it regrows.
+	cleared := make([]world.Cleared, 0)
+	for _, c := range st.LoadCleared() {
+		cleared = append(cleared, world.Cleared{X: c.X, Y: c.Y, Owner: c.Owner, LastTouch: c.LastTouch})
+	}
+	w.LoadCleared(cleared)
+	w.SetClearPersist(
+		func(c world.Cleared) {
+			st.SaveCleared(store.Cleared{X: c.X, Y: c.Y, Owner: c.Owner, LastTouch: c.LastTouch})
+		},
+		st.RemoveCleared,
+	)
+
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
 		// persistent Ed25519 host key, generated on first run

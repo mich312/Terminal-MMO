@@ -201,7 +201,20 @@ func (a *area) walkableAt(x, y int) bool {
 			return false
 		}
 	}
-	return a.gen.Walkable(x, y)
+	return a.gen.Walkable(x, y) || game.IsCleared(a.ctx, x, y)
+}
+
+// clearedTile is how a felled/quarried cell reads: walkable ground in place of
+// the tree or boulder — a grassy clearing over forest, bare dirt over rock.
+func clearedTile(cell worldgen.Cell) game.Tile {
+	switch cell.Biome {
+	case worldgen.Hill, worldgen.Mountain:
+		return game.Tile{Kind: game.TileFloor, Ch: '·', Walkable: true,
+			Color: "#9C8D67", Tex: game.TexDirt, Ground: "#9C8D67"}
+	default: // a felled forest reads as a grassy clearing
+		return game.Tile{Kind: game.TileFloor, Ch: ',', Walkable: true,
+			Color: "#5EAE63", Tex: game.TexGrass, Ground: "#5EAE63"}
+	}
 }
 
 // canBuildAt reports whether the ghost cell is a legal spot: discovered, buildable
@@ -210,8 +223,8 @@ func (a *area) canBuildAt(x, y int) bool {
 	if _, ok := a.ctx.World.PlacementAt(x, y); ok {
 		return false
 	}
-	if !a.seen(x, y) || !a.gen.Walkable(x, y) {
-		return false
+	if !a.seen(x, y) || (!a.gen.Walkable(x, y) && !game.IsCleared(a.ctx, x, y)) {
+		return false // undiscovered, or blocking terrain that hasn't been cleared
 	}
 	if _, ok := gateAtCell(x, y); ok {
 		return false
@@ -251,6 +264,17 @@ func (a *area) placeStructure() {
 	}
 	game.SpendFor(a.ctx, p)
 	a.setToast("built " + p.Name)
+}
+
+// tendCleared refreshes the regrowth clock on the player's own cleared cells
+// under and around the body, so a clearing you live in never grows back; cells
+// at the unused edges lapse first, and the woods creep in from there.
+func (a *area) tendCleared() {
+	for y := a.wy - 1; y <= a.wy+game.PlayerH; y++ {
+		for x := a.wx - 1; x <= a.wx+game.PlayerW; x++ {
+			game.TouchCleared(a.ctx, x, y)
+		}
+	}
 }
 
 // updateClaimPresence refreshes the lease while the player stands on their own
@@ -659,6 +683,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
 			a.persist()
 			a.updateClaimPresence()
+			a.tendCleared()
 		}
 	}
 	return a, nil
@@ -836,6 +861,9 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 	// Land claims overlapping this window, fetched once: their parcels get a soft
 	// ground tint so ownership reads at a glance (green yours, amber others).
 	claims := game.LiveClaimsOverlapping(a.ctx, ox, oy, ox+vw-1, oy+vh-1)
+	// Cleared cells in view, fetched once: a felled tree / broken boulder reads as
+	// walkable ground instead of the original terrain feature.
+	clearedSet := game.ActiveClearedSet(a.ctx, ox, oy, ox+vw-1, oy+vh-1)
 	tiles := make([][]game.Tile, vh)
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
@@ -844,6 +872,9 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 			if a.seen(wx, wy) {
 				cell := a.gen.At(wx, wy)
 				t := CellTile(cell)
+				if clearedSet[[2]int{wx, wy}] {
+					t = clearedTile(cell) // felled/quarried → walkable ground
+				}
 				if g, ok := gateAtCell(wx, wy); ok {
 					// Both the open gate and the broken (sealed) arch carry the name of
 					// where they lead, so the renderer can float a label above them.

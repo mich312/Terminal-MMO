@@ -43,14 +43,19 @@ Both renderers, mirroring `DrawCraftPanel`. The area exposes a tiny `BuildViewer
 interface (`BuildPanel() (sel, reason, show)`) the HD client reads, the same way
 it reads `HDMinimapper`.
 
-## Step B — cleared-cells overlay + regrowth
+## Step B — cleared-cells overlay + regrowth ✅
 
 A sparse stored overlay on the pure-seed terrain (the third rider on the
 placements/claims precedent). A cleared cell overrides forest/boulder → grass/
-ground: walkable, buildable, rendered as cleared. Each carries an owner + a
+ground: walkable, buildable, rendered as a clearing. Each carries an owner + a
 last-touch clock and **regrows** (reverts to seed terrain) once untouched past a
-lease — the same wall-clock lapse claims use, so the woods reclaim ghost towns.
-Gated by `BuildRight`, so you only clear where you may build.
+~2-week lease — the same wall-clock lapse claims use, so the woods reclaim ghost
+towns. Gated by `BuildRight`, so you only clear where you may build. Shipped:
+`world.{ClearCell,ClearedAt,ClearedOverlapping,TouchCleared,Regrow}` + persistence;
+`game.{ClearGround,IsCleared,ClearedActive,ActiveClearedSet,TouchCleared}`; the
+wilds `walkableAt`/`canBuildAt`/`sample` consult the overlay and the body tends
+its own clearing on the move. (The player-facing clear *action* — a tool over a
+tree — is Step C; Step B is the overlay it writes to.)
 
 ## Step C — tools: found heads, recipes, the clear action
 
