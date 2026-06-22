@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS placements (
 	created INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (x, y)
 );
+CREATE TABLE IF NOT EXISTS compendium (
+	name TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	PRIMARY KEY (name, kind)
+);
 `
 
 type sqliteStore struct {
@@ -325,6 +330,35 @@ func (s *sqliteStore) UnlockHat(name string, hat int) {
 		`INSERT OR IGNORE INTO hats (name, hat) VALUES (?, ?)`, name, hat); err != nil {
 		log.Printf("store: unlock hat: %v", err)
 	}
+}
+
+// MarkSpecies records that a player has observed a wildlife species.
+func (s *sqliteStore) MarkSpecies(name, kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO compendium (name, kind) VALUES (?, ?)`, name, kind); err != nil {
+		log.Printf("store: mark species: %v", err)
+	}
+}
+
+// LoadCompendium returns the species ids a player has observed.
+func (s *sqliteStore) LoadCompendium(name string) map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT kind FROM compendium WHERE name = ?`, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err == nil {
+			out[kind] = true
+		}
+	}
+	return out
 }
 
 // LoadHats returns the accessory indices a player owns.

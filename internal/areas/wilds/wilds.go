@@ -55,10 +55,11 @@ type area struct {
 	wx, wy     int // absolute world position (top-left of the body's footprint)
 	frame      int
 	showMap    bool
-	showBoard  bool // the notice board panel is open
+	showBoard  bool              // the notice board panel is open
 	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
 	dirty      map[[2]int]bool   // chunks changed since the last persist
 	collected  map[[2]int]bool   // world cells whose item this player has taken
+	compendium map[string]bool   // wildlife species this player has observed
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
 
@@ -92,6 +93,10 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	a.collected = a.ctx.Store.LoadCollected(a.ctx.Name)
 	if a.collected == nil {
 		a.collected = map[[2]int]bool{}
+	}
+	a.compendium = a.ctx.Store.LoadCompendium(a.ctx.Name)
+	if a.compendium == nil {
+		a.compendium = map[string]bool{}
 	}
 	if a.ctx.Inventory == nil {
 		a.ctx.Inventory = map[string]int{}
@@ -266,6 +271,39 @@ func (a *area) stationAdjacent() (int, int, bool) {
 	return 0, 0, false
 }
 
+// creatureAdjacent finds a live animal on the ring of cells bordering the
+// player's footprint, so you can observe something you stand beside (animals
+// flee, so you rarely share their cell). Returns the nearest such creature.
+func (a *area) creatureAdjacent() (world.Creature, bool) {
+	cs := a.ctx.World.CreaturesInArea("wilds")
+	if len(cs) == 0 {
+		return world.Creature{}, false
+	}
+	for _, c := range cs {
+		if iabs(c.X-a.wx) <= 1 && iabs(c.Y-a.wy) <= 1 {
+			return c, true
+		}
+	}
+	return world.Creature{}, false
+}
+
+// observe logs a sighting: a first sighting adds the species to the player's
+// field notes (the compendium); a repeat just acknowledges it. Persisted so the
+// compendium survives between visits.
+func (a *area) observe(c world.Creature) {
+	name := c.Kind
+	if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
+		name = sp.Name
+	}
+	if a.compendium[c.Kind] {
+		a.setToast("a " + name + " eyes you, then looks away")
+		return
+	}
+	a.compendium[c.Kind] = true
+	a.ctx.Store.MarkSpecies(a.ctx.Name, c.Kind)
+	a.setToast("you spot a " + name + " — added to your field notes")
+}
+
 func (a *area) portalUnder(x, y int) (string, bool) {
 	for dy := 0; dy < game.PlayerH; dy++ {
 		for dx := 0; dx < game.PlayerW; dx++ {
@@ -418,6 +456,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 				a.pickUp()
 			} else if _, _, _, ok := a.itemUnderBody(); ok {
 				a.pickUp()
+			} else if c, ok := a.creatureAdjacent(); ok {
+				a.observe(c)
 			} else if mx, my, ok := a.stationAdjacent(); ok {
 				a.ctx.UseStation = &[2]int{mx, my} // the client opens the right panel
 			} else if a.boardAdjacent() {
@@ -504,6 +544,13 @@ func (a *area) Prompt() (string, bool) {
 	}
 	if it, _, _, ok := a.itemUnderBody(); ok {
 		return "e — take " + it.Name, true
+	}
+	if c, ok := a.creatureAdjacent(); ok {
+		name := c.Kind
+		if sp, ok := game.SpeciesByKind(c.Kind); ok && sp.Name != "" {
+			name = sp.Name
+		}
+		return "e — observe the " + name, true
 	}
 	if mx, my, ok := a.stationAdjacent(); ok {
 		if pl, ok := a.ctx.World.PlacementAt(mx, my); ok {
@@ -623,6 +670,12 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 	// Center the 2×2 body (not its top-left corner) in the window, so the avatar
 	// sits dead center in both the glyph and HD views.
 	ox, oy := a.wx-(vw-game.PlayerW)/2, a.wy-(vh-game.PlayerH)/2
+	// Live wildlife, read fresh each frame (no events — the redraw is the sync).
+	// Keyed by cell for O(1) lookup as we lay the window.
+	creatures := map[[2]int]world.Creature{}
+	for _, c := range a.ctx.World.CreaturesInArea("wilds") {
+		creatures[[2]int{c.X, c.Y}] = c
+	}
 	tiles := make([][]game.Tile, vh)
 	for ly := 0; ly < vh; ly++ {
 		row := make([]game.Tile, vw)
@@ -675,6 +728,18 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Prop, t.PropHex = pb.Prop, pb.Hex
 						t.Walkable = pb.Walkable
 						t.Ground = groundColor(cell.Biome)
+					}
+				}
+				// Wildlife sits on top of the ground (under the player, who is stamped
+				// last by the renderer). Keep the biome ground so HD draws the animal
+				// as a sprite over its terrain, not as a solid block.
+				if c, ok := creatures[[2]int{wx, wy}]; ok {
+					if sp, ok := game.SpeciesByKind(c.Kind); ok {
+						t.Ch, t.Color = sp.Glyph, sp.Hex
+						t.Prop, t.PropHex = sp.Prop, sp.Hex
+						if t.Ground == "" || t.Ground == fogColor {
+							t.Ground = groundColor(cell.Biome)
+						}
 					}
 				}
 				row[lx] = t

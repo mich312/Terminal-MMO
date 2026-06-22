@@ -243,3 +243,78 @@ Builds directly on the registry + ownership field:
 - **Breaking the "deterministic & offline" feel** → fauna *placement* stays
   seeded so the world reads as authored; only motion is live, and only near
   players who are there to see it.
+
+---
+
+## Performance impact analysis
+
+The honest summary: **Phase 1 adds a single low-frequency goroutine and a few
+small per-frame reads, and deliberately adds zero new network fan-out.** The
+costs are bounded by the number of *online players*, not by the (infinite) map,
+and they sit comfortably inside the headroom the existing 2 Hz tick already
+assumes.
+
+### Baseline (what runs today)
+
+- One global `tickLoop` at **2 Hz** broadcasts `EventTick` to every glyph
+  subscriber (`world.go:293`).
+- Each glyph session redraws on tick; the HD client *polls* world state at its
+  own frame cadence and is excluded from the tick/move stream
+  (`MarkPoller`, `world.go:359`).
+- **One mutex** guards all world state (`world.go:71`). Every read
+  (`PlayersInArea`) and write (`Move`) takes it briefly.
+
+### What Phase 1 adds
+
+**1. The stepper — one goroutine, O(creatures) per 500 ms.**
+Per tick it does a player census, a bounded spawn pass, one step per creature,
+and a despawn sweep. Each creature step is a handful of cheap pure-noise
+`gen.At`/`Walkable` calls plus one short locked `MutateCreature`. With the
+population capped (see knobs), this is on the order of *tens of short critical
+sections per half-second* — negligible CPU, and it never touches disk (live
+creatures are ephemeral).
+
+**2. Lock traffic — the one thing to watch.**
+The stepper contends with rendering and movement on the single world mutex.
+Mitigations already baked in: snapshot-then-act, and critical sections that do
+nothing but a map read/write. At MVP caps this is far below contention that
+would show up as input lag. **Tuning lever:** if a future profile shows lock
+churn, collapse the per-creature `MutateCreature` calls into one
+`StepCreatures` batch under a single lock — turning *C* lock cycles per tick
+into one.
+
+**3. Rendering — O(1) per tile, one extra snapshot per frame.**
+`sample()` gains one `CreaturesInArea` call (a locked snapshot + slice alloc)
+and an O(visible-tiles) overlay using an O(1) position map. For the glyph
+client that's 2×/sec; for HD it's per polled frame. The only real cost is the
+per-frame slice allocation from `CreaturesInArea` — bounded by the cap, and
+skippable with an early `if len(creatures)==0` guard when none are near.
+
+**4. Network — unchanged. This is the big win.**
+We render creatures by **reading live state in the existing redraw**, not by
+broadcasting moves. The naive design — an `EventCreatureMoved` per creature per
+tick, fanned to every subscriber in the area — would multiply event-channel
+traffic by *C × subscribers* and risk evicting chat/trade events from the
+64-deep buffers. By piggybacking on the tick (glyph) and poll (HD) loops that
+already run, Phase 1 adds **no new events and no new fan-out.** (Events return
+only in Phase 2, for discrete one-shot interactions like a strike — rare, not
+per-tick.)
+
+**5. Memory — trivial and bounded.** Each `Creature` is a small flat struct;
+the cap puts a hard ceiling on the live set, and nothing persists.
+
+### Scaling
+
+With *P* online players and *C ≈ min(k·P, maxTotal)* creatures: per-tick CPU is
+**O(C)**, per-frame render overhead is **O(visible tiles + C)**, network is
+**O(0)** beyond today. Because spawning is gated on nearby players and despawn
+is aggressive, an empty region costs nothing and a crowded one is capped — the
+infinite map never inflates the bill.
+
+### Tuning knobs (all constants in `internal/wildlife`)
+
+`maxPerPlayer`, `maxTotal` (population ceiling) · `MoveEvery` per species
+(stagger cadence so not all creatures step on the same tick) · spawn/despawn
+radii · the optional `len==0` render guard · the optional batched
+`StepCreatures` lock. Start conservative; raise `maxTotal` only after a profile
+under real concurrency.

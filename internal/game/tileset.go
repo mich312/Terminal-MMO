@@ -555,6 +555,47 @@ var propArt = map[TileProp][]string{
 		"PpWppP",
 		"PppppP",
 	},
+	// Wildlife: small single-tile silhouettes, colored live by the species hue.
+	PropRabbit: {
+		"....P.",
+		".P..P.",
+		".PPPP.",
+		"PPPPPp",
+		".PppP.",
+		".p..p.",
+	},
+	PropDeer: {
+		"P.P.P.",
+		".PPP..",
+		".PPP..",
+		"PPPPPP",
+		".P..P.",
+		".P..P.",
+	},
+	PropFox: {
+		".P...P",
+		".PPPPP",
+		"PPPPPp",
+		".P..P.",
+		"......",
+		"......",
+	},
+	PropBird: {
+		"......",
+		"...PP.",
+		"..PPPp",
+		".pPPp.",
+		"..p.p.",
+		"......",
+	},
+	PropFishWild: {
+		"......",
+		"...P..",
+		"PPPPp.",
+		"PPPPPP",
+		"PPPPp.",
+		"...P..",
+	},
 }
 
 // portalArt is a freestanding 2×2-tile gate (12×12 art-pixels): a ring (R) in
