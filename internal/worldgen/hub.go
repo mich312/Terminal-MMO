@@ -8,7 +8,7 @@ import "math"
 // with a noise-ragged tree line; worn dirt trails radiate out to the outlying
 // buildings — smithy, market hall, chapel — each tucked in its own small glade,
 // and on to the gates. The portal/gate coordinates (see Landmarks and Gates)
-// are unchanged, and the forced trails keep every door reachable just as before.
+// are unchanged, and the trails keep every door reachable just as before.
 //
 // Everything renders through the existing settlement palette (meadow, dirt
 // trail, well, stall, brazier, building anchor/body), so both the glyph and HD
@@ -41,12 +41,12 @@ var hubBldgs = []hubBldg{
 // the trees. The central green (origin) is handled separately.
 var hubGlades = [][2]int{{16, 0}, {-16, 0}, {0, 12}, {22, 0}, {0, 18}}
 
-// Hamlet furniture, placed asymmetrically on the green (all clear of the axial
-// trails and of every spawn footprint). A well, a little west-side market, and a
-// scatter of street lamps.
+// Hamlet furniture, placed asymmetrically on the green and clear of both trail
+// bows (all cells have |x|>=4 and |y|>=4, so a meandering trail never runs onto
+// them). A well, a little west-side market, and a scatter of street lamps.
 var (
-	hubWell   = [2]int{4, 3}
-	hubStalls = [][2]int{{-5, 3}, {-5, 4}, {-4, 5}}
+	hubWell   = [2]int{4, 4}
+	hubStalls = [][2]int{{-4, 5}, {-5, 4}, {-5, 5}}
 	hubLamps  = [][2]int{{-4, 4}, {4, -4}, {-4, -4}}
 )
 
@@ -58,13 +58,8 @@ func (g *Generator) hubCell(x, y int) (Cell, bool) {
 	if c, ok := hubBuilding(x, y); ok {
 		return c, true
 	}
-	onTrail := onPath(x, y)
-	fx, fy := float64(x), float64(y)
-	d, inClear := g.inHubClearing(x, y)
-	if !inClear && !onTrail {
-		return Cell{}, false
-	}
-	// Hamlet furniture on the green.
+	// Hamlet furniture always wins its cell, regardless of where the ragged
+	// clearing rim falls, so a lamp/well/stall never goes missing.
 	if x == hubWell[0] && y == hubWell[1] {
 		return Cell{Biome: Grass, Glyph: 'W', Color: "#9AA7B0"}, true // village well (blocks)
 	}
@@ -78,13 +73,18 @@ func (g *Generator) hubCell(x, y int) (Cell, bool) {
 			return Cell{Biome: Grass, Glyph: 's', Color: "#C24A3A"}, true // market stall (blocks)
 		}
 	}
+	onTrail, edge := g.trailAt(x, y)
+	d, inClear := g.inHubClearing(x, y)
+	if !inClear && !onTrail {
+		return Cell{}, false
+	}
 	// Worn dirt trails wind through the green and out to every door. Their
-	// shoulders (the band's edge rows) let the green encroach where the noise
-	// says so, so a trail reads as a worn desire-path rather than a ruler line.
+	// shoulders let the green encroach where the noise says so, so a trail reads
+	// as a trodden desire-path rather than a ruler line.
 	if onTrail {
-		shoulder := (abs(y) == 1 && x >= -16 && x <= 22) || (abs(x) == 1 && y >= 0 && y <= 18)
-		if shoulder && g.fbmAt(fx, fy, 0x51A7, 0.6, 2) > 0.56 {
-			return g.hubMeadow(x, y, d), true // grass reclaims the shoulder
+		fx, fy := float64(x), float64(y)
+		if edge && g.fbmAt(fx, fy, 0x51A7, 0.6, 2) > 0.56 {
+			return g.hubMeadow(x, y, d, false), true // grass reclaims the shoulder (no canopy on a trail)
 		}
 		c := Cell{Biome: Path, Glyph: '·', Color: "#8C7A56", Walkable: true}
 		if g.prop(x, y) < 0.12 {
@@ -92,19 +92,61 @@ func (g *Generator) hubCell(x, y int) (Cell, bool) {
 		}
 		return c, true
 	}
-	// The green itself: natural meadow.
-	return g.hubMeadow(x, y, d), true
+	// The green itself: natural meadow, with a few shade trees for canopy.
+	return g.hubMeadow(x, y, d, true), true
 }
 
 // hubMeadow is the hamlet's grassy ground: natural meadow scatter (flowers,
-// tufts, the odd bush), kept clear of blocking props right around the spawn
-// heart so a body can always step out onto the green.
-func (g *Generator) hubMeadow(x, y int, d float64) Cell {
+// tufts, the odd bush) plus, when canopy is set, the occasional shade tree or
+// old stump so the commons isn't a bare lawn. The ground is kept clear of
+// blocking props right around the spawn heart so a body can always step out.
+func (g *Generator) hubMeadow(x, y int, d float64, canopy bool) Cell {
+	if canopy && d > hubApronR+1 {
+		switch r := g.prop2(x, y); {
+		case r < 0.030:
+			return Cell{Biome: Grass, Glyph: 'Y', Color: "#2F7D4F"} // a shade tree (blocks)
+		case r < 0.050:
+			return Cell{Biome: Grass, Glyph: 'u', Color: "#6B4A2B", Walkable: true} // an old stump
+		}
+	}
 	c := grassCell(g, x, y)
 	if d <= hubApronR && !c.Walkable {
 		c = Cell{Biome: Grass, Glyph: '·', Color: "#5EAE63", Walkable: true}
 	}
 	return c
+}
+
+// trailAt reports whether (x,y) lies on a forced trail, and whether it is the
+// trail's edge row. The centreline bows gently inside the green (tapered to zero
+// at the heart and at the rim, see trailOffset) so the path curves through the
+// commons, then runs dead straight out through the forest to each door — keeping
+// the 2×2 body's passage guaranteed everywhere.
+func (g *Generator) trailAt(x, y int) (on, edge bool) {
+	if x >= -16 && x <= 22 {
+		if dy := abs(y - g.trailOffset(float64(x), 0x7A11)); dy <= 1 {
+			on, edge = true, dy == 1
+		}
+	}
+	if !on && y >= 0 && y <= 18 {
+		if dx := abs(x - g.trailOffset(float64(y), 0x9B22)); dx <= 1 {
+			on, edge = true, dx == 1
+		}
+	}
+	return
+}
+
+// trailOffset is the trail centreline's lateral wander at position `along` the
+// arm. A low-frequency noise gives the bow; a sine window tapers it to zero at
+// the origin and at the green's rim, so the curve lives entirely inside the
+// walkable commons and the forest segments stay straight (and never pinch).
+func (g *Generator) trailOffset(along float64, salt uint64) int {
+	a := math.Abs(along)
+	if a >= hubGreenR {
+		return 0
+	}
+	taper := math.Sin(math.Pi * a / hubGreenR)
+	n := g.fbmAt(along, 0, salt, 0.45, 2)*2 - 1 // [-1,1]
+	return int(math.Round(2.2 * taper * n))
 }
 
 // inHubClearing reports whether (x,y) falls in the central green or one of the

@@ -315,18 +315,6 @@ func swampCell(g *Generator, x, y int) Cell {
 	return c
 }
 
-// onPath reports whether (x,y) lies on a forced trail: a 3-wide walkable band
-// along the axes between the origin (Durst HQ) and each landmark, so the spawn
-// plaza is always connected to every wing's door regardless of seed.
-func onPath(x, y int) bool {
-	if abs(y) <= 1 && x >= -16 && x <= 22 { // HQ ↔ Kraftwerk / Presentation / Whispering Gate
-		return true
-	}
-	if abs(x) <= 1 && y >= 0 && y <= 18 { // HQ ↔ Demo Center / Sunken Gate
-		return true
-	}
-	return false
-}
 
 func hillCell(g *Generator, x, y int) Cell {
 	switch r := g.prop(x, y); {
