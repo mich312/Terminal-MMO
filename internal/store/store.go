@@ -33,6 +33,25 @@ type Placement struct {
 	Created int64  // unix seconds
 }
 
+// Claim is one player's deed over a settlement plot (docs/CLAIMS_PLAN.md): the
+// worldgen plot id, the holder, the parcel's bounding box, and the wall-clock of
+// the owner's last presence (which drives lapse).
+type Claim struct {
+	PlotID                 string
+	Owner                  string
+	MinX, MinY, MaxX, MaxY int
+	LastTouch              int64 // unix seconds
+}
+
+// Cleared is one terrain cell a player has cleared with a tool (a felled tree or
+// broken boulder — docs/BUILD_TOOLS_PLAN.md): the cell, who cleared it, and the
+// wall-clock of the last touch (which drives regrowth when the owner is absent).
+type Cleared struct {
+	X, Y      int
+	Owner     string
+	LastTouch int64 // unix seconds
+}
+
 // DeckRecord is a persisted presentation deck (owned by a user).
 type DeckRecord struct {
 	ID      string
@@ -109,6 +128,19 @@ type Store interface {
 	RemovePlacement(x, y int)
 	// LoadPlacements returns every placement in the world (a small, shared set).
 	LoadPlacements() []Placement
+	// SaveClaim upserts a player's land claim, keyed by plot id (the shared
+	// claims layer — see docs/CLAIMS_PLAN.md).
+	SaveClaim(c Claim)
+	// RemoveClaim deletes the claim on a plot (a release or lapse).
+	RemoveClaim(plotID string)
+	// LoadClaims returns every land claim in the world (a small, shared set).
+	LoadClaims() []Claim
+	// SaveCleared upserts a cleared terrain cell (the regrowable clearing overlay).
+	SaveCleared(c Cleared)
+	// RemoveCleared deletes a cleared cell (a regrowth or undo).
+	RemoveCleared(x, y int)
+	// LoadCleared returns every cleared cell in the world.
+	LoadCleared() []Cleared
 	Close() error
 }
 
@@ -159,6 +191,12 @@ func (noopStore) SaveGateWorld(string, int, bool)                    {}
 func (noopStore) AddPlacement(Placement)                             {}
 func (noopStore) RemovePlacement(int, int)                           {}
 func (noopStore) LoadPlacements() []Placement                        { return nil }
+func (noopStore) SaveClaim(Claim)                                    {}
+func (noopStore) RemoveClaim(string)                                 {}
+func (noopStore) LoadClaims() []Claim                                { return nil }
+func (noopStore) SaveCleared(Cleared)                                {}
+func (noopStore) RemoveCleared(int, int)                             {}
+func (noopStore) LoadCleared() []Cleared                             { return nil }
 func (noopStore) LoadGateWorld() (map[string]int, map[string]bool) {
 	return map[string]int{}, map[string]bool{}
 }

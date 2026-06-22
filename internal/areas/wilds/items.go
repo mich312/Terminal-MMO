@@ -10,11 +10,11 @@ import (
 // beach, crystals in the snow, nuggets in the hills.
 var biomeItems = map[worldgen.Biome][]string{
 	worldgen.Forest:  {"berry", "mushroom"},
-	worldgen.Grass:   {"herb", "berry"},
-	worldgen.Savanna: {"herb", "nugget"},
+	worldgen.Grass:   {"herb", "berry", "axe_head"},
+	worldgen.Savanna: {"herb", "nugget", "axe_head"},
 	worldgen.Sand:    {"shell"},
 	worldgen.Snow:    {"crystal"},
-	worldgen.Hill:    {"nugget", "crystal"},
+	worldgen.Hill:    {"nugget", "crystal", "pick_head"},
 	worldgen.Swamp:   {"mushroom", "herb"},
 }
 

@@ -5,8 +5,11 @@
 > panel in both clients, with `/sell` and `/collect` as the authoring path. A
 > stocked stall trades to others while the owner is away. ✅ Polish: owners
 > `x`-remove a mislisted offer (refunding its stock) from the panel, and
-> demolishing a stall returns its stock + till. ⬜ Phase 4's remaining bit is
-> in-panel offer *creation* (a keyboard form beyond `/sell`).
+> demolishing a stall returns its stock + till. ✅ Phase 4's last bit landed:
+> in-panel offer *creation* — `n` at your own stall opens a keyboard composer
+> (give/ask items + per-sale counts, live stock readout, `e` to post), the UI
+> twin of `/sell` and the only authoring path in HD. Shared `OfferDraft` logic
+> (`internal/game/offer_compose.go`) drives both clients.
 
 > How player-to-player trade lands on the cozy-frontier foundation
 > ([`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),

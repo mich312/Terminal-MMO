@@ -7,6 +7,10 @@ package game
 // IsWorkbench reports whether a placeable id is a crafting bench.
 func IsWorkbench(kind string) bool { return kind == "workbench" }
 
+// AddToPack credits n of an item to the player's pack (live + store) — exported
+// for the clearing yield in the wilds area.
+func AddToPack(ctx *Ctx, item string, n int) { addToPack(ctx, item, n) }
+
 // addToPack credits n of an item to the player's pack (live + store).
 func addToPack(ctx *Ctx, item string, n int) {
 	if n <= 0 || item == "" {

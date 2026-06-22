@@ -1,6 +1,9 @@
 package worldgen
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // Settlements — villages scattered across the Wilds. Like everything in worldgen
 // they are a pure function of the seed: a settlement is never "placed" or
@@ -1700,8 +1703,156 @@ func (g *Generator) settlementAt(x, y int) (Cell, bool) {
 	return g.connectingRoad(x, y)
 }
 
-// connectingRoad draws the road leaving a village toward its nearest neighbour;
-// far neighbours dwindle to a faded trail rather than a solid road.
+// ── claimable plots ──────────────────────────────────────────────────────────
+
+// Plot identifies a claimable building parcel inside a settlement: one of the
+// town's pre-drawn buildings, keyed stably by its settlement and its anchor so a
+// stored claim (docs/CLAIMS_PLAN.md) can re-find the same ground deterministically
+// across runs. It reports structure only — the build-rights margin around a plot
+// is the game layer's policy, not worldgen's.
+type Plot struct {
+	ID         string // "<settlement-hex>:<ax>,<ay>" — stable across runs
+	Settlement string // settlement identity hex, for grouping / naming
+	Town       bool   // a stone city (vs a timber village)
+	Kind       string // building kind, e.g. "Cottage", "Townhouse", "Church"
+	AX, AY     int    // anchor (north-west corner) world coords
+	W, H       int    // footprint size in tiles
+}
+
+// PlotAt returns the building plot whose footprint covers (x,y), if any. It scans
+// the same ±1 macro neighbourhood as settlementAt (a building can belong to a
+// neighbouring macro-cell's layout) and recovers the building's anchor — so a
+// query on any footprint cell, anchor or body, yields the same plot. ok is false
+// for open ground, roads, walls, worksites or anywhere outside a settlement.
+func (g *Generator) PlotAt(x, y int) (Plot, bool) {
+	mx, my := floorDiv(x, settleCell), floorDiv(y, settleCell)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			s := g.settlementFor(mx+dx, my+dy)
+			if !s.valid {
+				continue
+			}
+			l := g.layoutOf(s)
+			gx, gy := x-l.ox, y-l.oy
+			if !l.in(gx, gy) {
+				continue
+			}
+			if k := l.at(gx, gy).kind; k != lBuildAnchor && k != lBuildBody {
+				continue
+			}
+			agx, agy, bt, ok := anchorCovering(l, gx, gy)
+			if !ok {
+				continue
+			}
+			w, h := footprint(bt)
+			ax, ay := l.ox+agx, l.oy+agy
+			return Plot{
+				ID:         fmt.Sprintf("%x:%d,%d", s.id, ax, ay),
+				Settlement: settlementName(s.id),
+				Town:       s.town,
+				Kind:       buildTypeName(bt),
+				AX:         ax, AY: ay,
+				W: w, H: h,
+			}, true
+		}
+	}
+	return Plot{}, false
+}
+
+// SettlementNameAt returns the name of the settlement covering (x,y), if the
+// cell lies within one — for the claim HUD ("…, Brixen"). It mirrors the ±1
+// macro scan settlementAt uses to decide coverage.
+func (g *Generator) SettlementNameAt(x, y int) (string, bool) {
+	mx, my := floorDiv(x, settleCell), floorDiv(y, settleCell)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			s := g.settlementFor(mx+dx, my+dy)
+			if !s.valid {
+				continue
+			}
+			l := g.layoutOf(s)
+			gx, gy := x-l.ox, y-l.oy
+			if l.in(gx, gy) && l.at(gx, gy).kind != lEmpty {
+				return settlementName(s.id), true
+			}
+		}
+	}
+	return "", false
+}
+
+// settlementName derives a stable, pronounceable place-name from a settlement's
+// identity hash — an onset plus a tail, so towns read like "Brixen", "Morwick",
+// "Aldford". Deterministic: the same settlement is always the same name.
+func settlementName(id uint64) string {
+	onset := []string{"Bri", "Mor", "Ald", "Wen", "Tor", "Hal", "Fen", "Gar", "Dun",
+		"Kel", "Ash", "Win", "Stein", "Vel", "Lor", "Brenn"}
+	tail := []string{"xen", "wick", "ford", "ton", "dale", "moor", "heim", "burg",
+		"stead", "fell", "mar", "gard", "holt", "wend", "by", "thal"}
+	o := onset[id%uint64(len(onset))]
+	t := tail[(id/0x9E3779B1)%uint64(len(tail))]
+	return o + t
+}
+
+// anchorCovering finds the building anchor whose footprint covers grid cell
+// (gx,gy). The anchor is the north-west corner and footprints never overlap, so a
+// small window scan (bounded by the largest footprint) finds the one match.
+func anchorCovering(l *layout, gx, gy int) (ax, ay int, bt buildType, ok bool) {
+	const maxW, maxH = 3, 4 // the cathedral, the biggest footprint, is 3×4
+	for cy := gy - (maxH - 1); cy <= gy; cy++ {
+		for cx := gx - (maxW - 1); cx <= gx; cx++ {
+			if !l.in(cx, cy) {
+				continue
+			}
+			c := l.at(cx, cy)
+			if c.kind != lBuildAnchor {
+				continue
+			}
+			w, h := footprint(c.bt)
+			if gx >= cx && gx < cx+w && gy >= cy && gy < cy+h {
+				return cx, cy, c.bt, true
+			}
+		}
+	}
+	return 0, 0, btNone, false
+}
+
+// buildTypeName is the display name for a building kind (for a claim's address).
+func buildTypeName(bt buildType) string {
+	switch bt {
+	case btCottage:
+		return "Cottage"
+	case btHouse:
+		return "House"
+	case btLonghouse:
+		return "Longhouse"
+	case btBarn:
+		return "Barn"
+	case btChurch:
+		return "Church"
+	case btKeep:
+		return "Keep"
+	case btCathedral:
+		return "Cathedral"
+	case btTownhouse:
+		return "Townhouse"
+	case btMarketHall:
+		return "Market Hall"
+	case btSmithy:
+		return "Smithy"
+	case btTavern:
+		return "Tavern"
+	case btRowhouse:
+		return "Rowhouse"
+	case btNarrowhouse:
+		return "Narrow House"
+	case btDeephouse:
+		return "Deep House"
+	default:
+		return "Building"
+	}
+}
+
+// connectingRoad draws the road leaving a village toward its nearest neighbour;// far neighbours dwindle to a faded trail rather than a solid road.
 func (g *Generator) connectingRoad(x, y int) (Cell, bool) {
 	mx, my := floorDiv(x, settleCell), floorDiv(y, settleCell)
 	for dy := -2; dy <= 2; dy++ {
