@@ -87,6 +87,12 @@ type World struct {
 	gateFixed   map[string]bool
 	gatePersist func(gate string, pool int, fixed bool) // set by main
 
+	// Shared placements: player-built structures keyed by absolute (x,y),
+	// overlaid on the deterministic Wilds. Everyone sees the same set.
+	placements   map[[2]int]Placement
+	placementAdd func(Placement) // persist a placement (set by main)
+	placementDel func(x, y int)  // persist a removal (set by main)
+
 	// Player-to-player trading: live tables keyed by both traders' names,
 	// pending incoming requests (recipient → requester), and finished trades
 	// waiting for each party to apply its half (TakeCompletedTrade).
@@ -95,20 +101,139 @@ type World struct {
 	completed map[string]CompletedTrade
 }
 
+// Placement is one player-built structure in the shared world.
+type Placement struct {
+	X, Y  int
+	Kind  string // a game.Placeable id
+	Owner string
+	State string // opaque JSON: machine buffers + wall-clock; "" for static props
+}
+
 func New() *World {
 	w := &World{
-		players:   make(map[string]*Player),
-		subs:      make(map[string]chan Event),
-		pollers:   make(map[string]bool),
-		stop:      make(chan struct{}),
-		gatePool:  make(map[string]int),
-		gateFixed: make(map[string]bool),
-		trades:    make(map[string]*tradeState),
-		pending:   make(map[string]string),
-		completed: make(map[string]CompletedTrade),
+		players:    make(map[string]*Player),
+		subs:       make(map[string]chan Event),
+		pollers:    make(map[string]bool),
+		stop:       make(chan struct{}),
+		gatePool:   make(map[string]int),
+		gateFixed:  make(map[string]bool),
+		placements: make(map[[2]int]Placement),
+		trades:     make(map[string]*tradeState),
+		pending:    make(map[string]string),
+		completed:  make(map[string]CompletedTrade),
 	}
 	go w.tickLoop()
 	return w
+}
+
+// LoadPlacements seeds the shared placement set from persistence (called once at
+// startup). SetPlacementPersist wires saving back.
+func (w *World) LoadPlacements(ps []Placement) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, p := range ps {
+		w.placements[[2]int{p.X, p.Y}] = p
+	}
+}
+
+// SetPlacementPersist registers callbacks to persist a placement and a removal.
+func (w *World) SetPlacementPersist(add func(Placement), del func(x, y int)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.placementAdd, w.placementDel = add, del
+}
+
+// PlacementAt returns the structure placed at (x,y), if any.
+func (w *World) PlacementAt(x, y int) (Placement, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.placements[[2]int{x, y}]
+	return p, ok
+}
+
+// Place adds a structure at p.X,p.Y for everyone, persists it, and broadcasts an
+// EventPlaced to the area. It refuses (returns false) if the cell is occupied.
+func (w *World) Place(area string, p Placement) bool {
+	w.mu.Lock()
+	if _, taken := w.placements[[2]int{p.X, p.Y}]; taken {
+		w.mu.Unlock()
+		return false
+	}
+	w.placements[[2]int{p.X, p.Y}] = p
+	if w.placementAdd != nil {
+		w.placementAdd(p)
+	}
+	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area,
+		X: p.X, Y: p.Y, Detail: p.Kind})
+	w.mu.Unlock()
+	return true
+}
+
+// Unplace removes whatever is placed at (x,y), persists the removal and
+// broadcasts. Returns the removed placement and whether anything was there.
+func (w *World) Unplace(area string, x, y int) (Placement, bool) {
+	w.mu.Lock()
+	p, ok := w.placements[[2]int{x, y}]
+	if !ok {
+		w.mu.Unlock()
+		return Placement{}, false
+	}
+	delete(w.placements, [2]int{x, y})
+	if w.placementDel != nil {
+		w.placementDel(x, y)
+	}
+	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area, X: x, Y: y})
+	w.mu.Unlock()
+	return p, true
+}
+
+// MutatePlacement runs fn against the placement at (x,y) under the world mutex,
+// for an atomic read-modify-write of its opaque State — the safe way to settle a
+// race like two buyers hitting one stall at once. fn receives the current State
+// and returns the new State plus whether it changed anything; the change is
+// persisted and broadcast only when fn reports true. fn must stay pure (decode,
+// decide, encode) and must not call back into the world. Returns false if
+// nothing is placed there or fn made no change.
+func (w *World) MutatePlacement(area string, x, y int, fn func(state string) (string, bool)) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.placements[[2]int{x, y}]
+	if !ok {
+		return false
+	}
+	ns, changed := fn(p.State)
+	if !changed {
+		return false
+	}
+	p.State = ns
+	w.placements[[2]int{x, y}] = p
+	if w.placementAdd != nil {
+		w.placementAdd(p)
+	}
+	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area,
+		X: x, Y: y, Detail: p.Kind})
+	return true
+}
+
+// UpdatePlacementState rewrites the opaque State of the placement at (x,y)
+// (a machine ticking, refueling or being collected), persists it and nudges a
+// redraw. No-op (false) if nothing is placed there.
+func (w *World) UpdatePlacementState(area string, x, y int, state string) bool {
+	w.mu.Lock()
+	p, ok := w.placements[[2]int{x, y}]
+	if !ok {
+		w.mu.Unlock()
+		return false
+	}
+	p.State = state
+	w.placements[[2]int{x, y}] = p
+	if w.placementAdd != nil {
+		w.placementAdd(p)
+	}
+	w.broadcastToArea(area, Event{Type: EventPlaced, Player: p.Owner, Area: area,
+		X: x, Y: y, Detail: p.Kind})
+	w.mu.Unlock()
+	return true
 }
 
 // LoadGates seeds the shared co-op gate state from persistence (called once at

@@ -28,6 +28,11 @@ const (
 	// EventDeck: a presentation deck was created or edited, so the Presentation
 	// Wing should rebuild its stages. Detail holds the deck id.
 	EventDeck
+	// EventPlaced: a player placed or removed a structure in the shared world.
+	// X,Y is the cell, Player the owner, Detail the placeable kind ("" on
+	// removal). Both clients re-read placements from the world, so this just
+	// nudges a redraw.
+	EventPlaced
 	// EventTrade: a player-to-player trade changed state. Target is the other
 	// party (from the recipient's view) and Detail is the phase:
 	// "request", "open", "update", "done", "cancel", or "declined".

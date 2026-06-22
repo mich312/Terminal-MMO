@@ -122,6 +122,14 @@ const (
 	PropRelic      // a half-buried relic in deep ruins (a found treasure, glows)
 	PropGeode      // a cracked-open geode, crystal core aglow (the deep cache prize)
 	PropChasm      // a hole in the cave floor — a lit stone rim around a black drop
+
+	// Cozy-frontier production props (the craft/build/automate loop). Player-
+	// placed, so they ride the stored placements layer rather than worldgen.
+	PropWorkbench // a crafting bench — the "Crafting (Self-Service)" station
+	PropSawmill   // a machine with a circular blade: timber → planks (runs offline)
+	PropMill      // a windmill: grain → flour (runs offline)
+	PropFurnace   // a forge with a glowing mouth: nuggets → ingots (glows, offline)
+	PropChest     // a storage chest — "Cold Storage" input/output buffer
 )
 
 // Tile is one cell of a parsed map.

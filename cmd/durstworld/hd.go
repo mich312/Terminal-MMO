@@ -58,6 +58,9 @@ const (
 	hdPanelHelp
 	hdPanelWho
 	hdPanelMenu
+	hdPanelCraft
+	hdPanelMachine
+	hdPanelStall
 	hdPanelTrade
 )
 
@@ -235,6 +238,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		uiPanel    = hdPanelNone // which on-frame UI panel is open
 		uiField    int           // selected field in the character panel
 		menuSel    int           // selected row in the Tab menu
+		craftSel   int           // selected recipe in the crafting panel
+		machineXY  [2]int        // the machine whose panel is open
+		awayOut    int           // output a machine made while away (panel banner)
+		awayIn     int           // input it consumed while away
+		stallXY    [2]int        // the trade stall whose panel is open
+		stallSel   int           // selected offer in the stall panel
 		compScroll int           // first visible line in the compendium panel
 		tradeSel   int           // selected pack slot in the trade panel
 		tradeReq   string        // latest player who asked us to trade (for /accept)
@@ -277,7 +286,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		base := inc.Render(tm, w.PlayersInArea(areaID), name, frame, light, ox, oy, hdScale, style, full)
 		// Composite UI onto a copy so overlays never bleed into the cached terrain.
 		img := frameCopy(base)
-		game.OverlayWalkable(img, tm, hdScale) // debug: tint blocked tiles (toggle with F2)
+		game.OverlayWalkable(img, tm, hdScale)  // debug: tint blocked tiles (toggle with F2)
 		game.DrawPortalLabels(img, tm, hdScale) // float each gate's destination name above it
 
 		// Draw an area's on-screen text (a presentation slide) into the frame —
@@ -330,6 +339,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			game.DrawWhoPanel(img, ctx)
 		case hdPanelMenu:
 			game.DrawMenuPanel(img, menuSel)
+		case hdPanelCraft:
+			game.DrawCraftPanel(img, ctx, craftSel)
+		case hdPanelMachine:
+			game.DrawMachinePanel(img, ctx, machineXY[0], machineXY[1], awayOut, awayIn)
+		case hdPanelStall:
+			game.DrawStallPanel(img, ctx, stallXY[0], stallXY[1], stallSel)
 		case hdPanelTrade:
 			if v, ok := game.TradeViewFor(ctx, tradeSel); ok {
 				game.DrawTradePanel(img, v)
@@ -380,10 +395,12 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case 0:
 			uiPanel, compScroll = hdPanelCompendium, 0
 		case 1:
-			uiPanel, uiField = hdPanelChar, 0
+			uiPanel, craftSel = hdPanelCraft, 0
 		case 2:
-			uiPanel = hdPanelWho
+			uiPanel, uiField = hdPanelChar, 0
 		case 3:
+			uiPanel = hdPanelWho
+		case 4:
 			uiPanel = hdPanelHelp
 		}
 	}
@@ -394,6 +411,13 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		case "i":
 			compScroll = 0
 			return toggle(hdPanelCompendium)
+		case "k":
+			if uiPanel == hdPanelCraft {
+				uiPanel = hdPanelNone
+			} else {
+				uiPanel, craftSel = hdPanelCraft, 0
+			}
+			return true
 		case "?":
 			return toggle(hdPanelHelp)
 		case "tab":
@@ -416,6 +440,65 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			case "\r", "\n":
 				openMenuSel()
 			case "q":
+				uiPanel = hdPanelNone
+			}
+			return true
+		}
+		// Crafting is interactive: arrows pick a recipe, e crafts the selection.
+		if uiPanel == hdPanelCraft {
+			n := len(game.Recipes)
+			switch key {
+			case "up":
+				craftSel = (craftSel + n - 1) % n
+			case "down":
+				craftSel = (craftSel + 1) % n
+			case "e", "\r", "\n":
+				if craftSel >= 0 && craftSel < n {
+					game.Craft(ctx, game.Recipes[craftSel])
+				}
+			case "q":
+				uiPanel = hdPanelNone
+			}
+			return true
+		}
+		// Machine panel: e collects, f refuels, q closes.
+		if uiPanel == hdPanelMachine {
+			switch key {
+			case "e", "\r", "\n":
+				game.CollectMachine(ctx, machineXY[0], machineXY[1])
+				awayOut, awayIn = 0, 0
+			case "f":
+				game.RefuelMachine(ctx, machineXY[0], machineXY[1])
+			case "q":
+				uiPanel = hdPanelNone
+			}
+			return true
+		}
+		// Trade stall: arrows pick an offer, e buys, owner f collects, q closes.
+		if uiPanel == hdPanelStall {
+			if st, ok := game.StallSnapshot(ctx, stallXY[0], stallXY[1]); ok {
+				n := len(st.Offers)
+				switch key {
+				case "up":
+					if n > 0 {
+						stallSel = (stallSel + n - 1) % n
+					}
+				case "down":
+					if n > 0 {
+						stallSel = (stallSel + 1) % n
+					}
+				case "e", "\r", "\n":
+					game.AcceptOffer(ctx, stallXY[0], stallXY[1], stallSel)
+				case "f":
+					game.CollectTill(ctx, stallXY[0], stallXY[1])
+				case "x":
+					if game.RemoveOffer(ctx, stallXY[0], stallXY[1], stallSel) && stallSel > 0 {
+						stallSel--
+					}
+				case "q":
+					uiPanel = hdPanelNone
+				}
+			} else {
 				uiPanel = hdPanelNone
 			}
 			return true
@@ -697,8 +780,28 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			} else {
 				havePending = true
 			}
-		} else if key == "e" { // pick up an item under the player
+		} else if key == "e" { // pick up an item, or open a station beside you
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			if ctx.UseStation != nil { // the area asked to open a panel
+				xy := *ctx.UseStation
+				ctx.UseStation = nil
+				pl, _ := w.PlacementAt(xy[0], xy[1])
+				switch {
+				case game.IsStall(pl.Kind):
+					stallXY, stallSel, uiPanel = xy, 0, hdPanelStall
+				case game.IsWorkbench(pl.Kind):
+					craftSel, uiPanel = 0, hdPanelCraft
+				default:
+					machineXY = xy
+					_, awayOut, awayIn, _ = game.OpenMachine(ctx, xy[0], xy[1])
+					uiPanel = hdPanelMachine
+				}
+			}
+			draw()
+		} else if key == "b" || key == "r" || key == "[" || key == "]" || key == "x" {
+			// build mode: 'b' toggles, 'r'/brackets cycle the placeable, 'x' demolishes
+			// under the ghost (the area reinterprets movement as ghost movement).
+			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 			draw()
 		} else if key == "m" { // toggle the area overview map
 			area, _ = area.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})

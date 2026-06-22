@@ -3,3 +3,10 @@
 /data/
 /.ssh/
 /nightshots/
+
+mechshots/
+uishots/
+buildshots/
+/uipreview
+/mechpreview
+/nightpreview

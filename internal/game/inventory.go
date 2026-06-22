@@ -30,6 +30,7 @@ const (
 	Forage   Source = iota // scattered on biome ground, gathered by walking over it
 	Worksite               // harvested at a settlement worksite (field, quarry, lumber, jetty)
 	CaveFind               // mined or gathered down in the caves
+	Crafted                // made at a workbench or a machine, not gathered
 )
 
 func (s Source) String() string {
@@ -38,6 +39,8 @@ func (s Source) String() string {
 		return "Worksite"
 	case CaveFind:
 		return "Cave"
+	case Crafted:
+		return "Crafted"
 	default:
 		return "Forage"
 	}
@@ -122,6 +125,28 @@ var Items = []Item{
 		Source: CaveFind, Rarity: Uncommon,
 		About: "A bead of fossil amber, honey-warm.",
 		Found: "Prised from the walls of amber caves."},
+	// Crafted goods — made at a workbench (recipes.go) or produced by a machine,
+	// never foraged. They group under "Crafted" in the compendium.
+	{ID: "plank", Name: "Planks", Glyph: '‡', Hex: "#C9A86A",
+		Source: Crafted, Rarity: Common,
+		About: "Dimensioned boards, dressed to Durst facility standard.",
+		Found: "Crafted from Timber at a workbench, or milled by a Sawmill."},
+	{ID: "flour", Name: "Sack of Flour", Glyph: '∴', Hex: "#E8DEC0",
+		Source: Crafted, Rarity: Common,
+		About: "Finely milled flour, ground fresh on-prem.",
+		Found: "Crafted from Grain, or ground by a Mill."},
+	{ID: "ingot", Name: "Gold Ingot", Glyph: '▰', Hex: "#FFD24A",
+		Source: Crafted, Rarity: Uncommon,
+		About: "A tidy bar of synergized gold. Fungible.",
+		Found: "Crafted from Gold Nuggets, or smelted by a Furnace."},
+	{ID: "salve", Name: "Field Salve", Glyph: '✚', Hex: "#7BD88F",
+		Source: Crafted, Rarity: Common,
+		About: "A herbal salve. Not evaluated by the guild apothecary.",
+		Found: "Crafted from a Wild Herb and a Mushroom at a workbench."},
+	{ID: "lamp", Name: "Wrought Lamp", Glyph: '☼', Hex: "#FFC861", Glow: true,
+		Source: Crafted, Rarity: Common,
+		About: "An amber-lit lamp that casts a warm, compliant glow.",
+		Found: "Crafted from a Gold Nugget and Cave Amber; powers a Lamppost."},
 }
 
 var itemIndex = func() map[string]Item {

@@ -83,9 +83,18 @@ type Model struct {
 	showInfo    bool // generic info panel (/help, /who, /compendium)
 	infoTitle   string
 	infoLines   []string
-	infoScroll  int    // first visible body line, for panels taller than the screen
-	showChar    bool   // interactive character panel (/character)
-	charField   int    // selected field in the character panel: 0 style, 1 color, 2 hat
+	infoScroll  int  // first visible body line, for panels taller than the screen
+	showChar    bool // interactive character panel (/character)
+	charField   int  // selected field in the character panel: 0 style, 1 color, 2 hat
+	showCraft   bool // interactive crafting panel (/craft)
+	craftSel    int  // selected recipe in the crafting panel
+	showMachine bool // a machine's offline-production panel
+	machineXY   [2]int
+	awayOut     int  // output a machine made while away (panel banner)
+	awayIn      int  // input it consumed while away
+	showStall   bool // a trade Concession panel
+	stallXY     [2]int
+	stallSel    int    // selected offer in the stall panel
 	showTrade   bool   // live trade table (modal: keys drive the offer)
 	tradeSel    int    // selected pack slot in the trade panel
 	tradeReq    string // latest player who asked to trade with us (for /accept)
@@ -320,6 +329,268 @@ func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// handleCraftKey drives the interactive crafting panel: ↑↓ pick a recipe, e (or
+// enter) crafts the selection, esc/q close.
+func (m *Model) handleCraftKey(msg tea.KeyMsg) tea.Cmd {
+	n := len(Recipes)
+	switch msg.String() {
+	case "esc", "q":
+		m.showCraft = false
+	case "up", "k":
+		if n > 0 {
+			m.craftSel = (m.craftSel + n - 1) % n
+		}
+	case "down", "j", "tab":
+		if n > 0 {
+			m.craftSel = (m.craftSel + 1) % n
+		}
+	case "e", "enter":
+		if m.craftSel >= 0 && m.craftSel < n {
+			r := Recipes[m.craftSel]
+			if Craft(m.ctx, r) {
+				m.addSystemLine("crafted " + r.Name)
+			} else {
+				m.addSystemLine("not enough materials for " + r.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// craftPanel renders the interactive Crafting (Self-Service) station: a recipe
+// list with a live craftable count, the selected recipe's inputs (green when the
+// pack can afford each, amber when short) and its yield.
+func (m *Model) craftPanel() string {
+	inv := m.ctx.Inventory
+	rows := []string{m.theme.PanelTitle.Render("Crafting") + m.theme.Dim.Render("  (Self-Service)"), ""}
+	for i, r := range Recipes {
+		can := Craftable(r, inv)
+		count := m.theme.Accent.Render(fmt.Sprintf("×%d", can))
+		if can == 0 {
+			count = m.theme.Dim.Render("×0")
+		}
+		name := padRight(r.Name, 14)
+		if i == m.craftSel {
+			rows = append(rows, fmt.Sprintf("%s %s %s %s",
+				m.theme.Accent.Render("►"), m.theme.Bright.Render(name),
+				m.theme.Dim.Render(padRight(RecipeNeeds(r), 26)), count))
+		} else {
+			rows = append(rows, fmt.Sprintf("  %s %s %s",
+				m.theme.ChatText.Render(name),
+				m.theme.Dim.Render(padRight(RecipeNeeds(r), 26)), count))
+		}
+	}
+
+	// Detail for the selection: blurb, inputs with affordability, yield.
+	if m.craftSel >= 0 && m.craftSel < len(Recipes) {
+		cur := Recipes[m.craftSel]
+		rows = append(rows, "", "  "+m.theme.Dim.Render("\""+cur.Blurb+"\""))
+		var needs []string
+		for _, in := range cur.In {
+			it, _ := ItemByID(in.Item)
+			seg := fmt.Sprintf("%d %s", in.N, it.Name)
+			if inv[in.Item] < in.N {
+				needs = append(needs, m.theme.Warn.Render(seg))
+			} else {
+				needs = append(needs, m.theme.Fg(lipgloss.Color("#7BD88F")).Render(seg))
+			}
+		}
+		out, _ := ItemByID(cur.Out)
+		rows = append(rows, "  "+m.theme.Dim.Render("needs ")+strings.Join(needs, m.theme.Dim.Render(" + ")))
+		rows = append(rows, "  "+m.theme.Dim.Render("yields ")+
+			m.theme.ChatText.Render(fmt.Sprintf("%s ×%d", out.Name, cur.OutN)))
+	}
+	rows = append(rows, "", m.theme.Dim.Render("↑↓ choose · e craft · esc close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
+// handleMachineKey drives the machine panel: e collects the output buffer into
+// your pack, f refuels from your pack, esc/q close.
+func (m *Model) handleMachineKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q":
+		m.showMachine = false
+	case "e", "enter":
+		v, _ := MachineSnapshot(m.ctx, m.machineXY[0], m.machineXY[1])
+		if n := CollectMachine(m.ctx, m.machineXY[0], m.machineXY[1]); n > 0 {
+			name := v.Kind.Out
+			if it, ok := ItemByID(v.Kind.Out); ok {
+				name = it.Name
+			}
+			m.addSystemLine(fmt.Sprintf("collected %d %s", n, name))
+		}
+		m.awayOut, m.awayIn = 0, 0
+	case "f":
+		if n := RefuelMachine(m.ctx, m.machineXY[0], m.machineXY[1]); n > 0 {
+			m.addSystemLine(fmt.Sprintf("loaded %d", n))
+		} else {
+			m.addSystemLine("nothing to load")
+		}
+	}
+	return nil
+}
+
+// machinePanel renders a machine's offline-production readout for the glyph
+// client: buffers, the "while you were away" delta, time-to-next and actions.
+func (m *Model) machinePanel() string {
+	v, ok := MachineSnapshot(m.ctx, m.machineXY[0], m.machineXY[1])
+	if !ok {
+		return ""
+	}
+	k := v.Kind
+	inName, outName := k.In, k.Out
+	if it, ok := ItemByID(k.In); ok {
+		inName = it.Name
+	}
+	if it, ok := ItemByID(k.Out); ok {
+		outName = it.Name
+	}
+	status := m.theme.Dim.Render("idle")
+	switch {
+	case v.Running:
+		status = m.theme.Fg(lipgloss.Color("#7BD88F")).Render("running")
+	case v.State.Out >= k.Cap:
+		status = m.theme.Warn.Render("output full")
+	case v.State.In < k.InPer:
+		status = m.theme.Warn.Render("needs fuel")
+	}
+	rows := []string{
+		m.theme.PanelTitle.Render(k.Name), "",
+		m.theme.Dim.Render("status  ") + status,
+		m.theme.Dim.Render("input   ") + m.theme.ChatText.Render(fmt.Sprintf("%s ×%d", inName, v.State.In)),
+		m.theme.Dim.Render("output  ") + m.theme.ChatText.Render(fmt.Sprintf("%s ×%d / %d", outName, v.State.Out, k.Cap)),
+	}
+	if m.awayOut > 0 || m.awayIn > 0 {
+		rows = append(rows, "", m.theme.Accent.Render(fmt.Sprintf("while away: +%d %s  -%d %s",
+			m.awayOut, outName, m.awayIn, inName)))
+	}
+	if v.Running {
+		rows = append(rows, m.theme.Dim.Render("next in "+fmtSecs(v.NextSec)))
+	}
+	rows = append(rows, "", m.theme.Dim.Render("e collect · f refuel · esc close"))
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
+// fmtSecs renders seconds as "6m05s" or "42s".
+func fmtSecs(sec int) string {
+	if sec < 60 {
+		return fmt.Sprintf("%ds", sec)
+	}
+	return fmt.Sprintf("%dm%02ds", sec/60, sec%60)
+}
+
+// closePanels dismisses every modal overlay (so opening one starts clean).
+func (m *Model) closePanels() {
+	m.showInfo, m.showPlayers, m.showChar = false, false, false
+	m.showCraft, m.showMachine, m.showStall, m.showTrade = false, false, false, false
+}
+
+// handleStallKey drives the Concession panel: ↑↓ pick an offer, e buys it, the
+// owner can f collect the till; esc/q close.
+func (m *Model) handleStallKey(msg tea.KeyMsg) tea.Cmd {
+	st, ok := StallSnapshot(m.ctx, m.stallXY[0], m.stallXY[1])
+	if !ok {
+		m.showStall = false
+		return nil
+	}
+	switch msg.String() {
+	case "esc", "q":
+		m.showStall = false
+	case "up", "k":
+		if len(st.Offers) > 0 {
+			m.stallSel = (m.stallSel + len(st.Offers) - 1) % len(st.Offers)
+		}
+	case "down", "j", "tab":
+		if len(st.Offers) > 0 {
+			m.stallSel = (m.stallSel + 1) % len(st.Offers)
+		}
+	case "e", "enter":
+		if o, ok := AcceptOffer(m.ctx, m.stallXY[0], m.stallXY[1], m.stallSel); ok {
+			give, ask := o.GiveItem, o.AskItem
+			if it, ok := ItemByID(o.GiveItem); ok {
+				give = it.Name
+			}
+			if it, ok := ItemByID(o.AskItem); ok {
+				ask = it.Name
+			}
+			m.addSystemLine(fmt.Sprintf("bought %d %s for %d %s", o.GiveN, give, o.AskN, ask))
+		} else {
+			m.addSystemLine("can't buy that — sold out or you can't afford it")
+		}
+	case "f":
+		if StallOwner(m.ctx, m.stallXY[0], m.stallXY[1]) {
+			if n := CollectTill(m.ctx, m.stallXY[0], m.stallXY[1]); n > 0 {
+				m.addSystemLine(fmt.Sprintf("collected %d from the till", n))
+			} else {
+				m.addSystemLine("the till is empty")
+			}
+		}
+	case "x":
+		if StallOwner(m.ctx, m.stallXY[0], m.stallXY[1]) {
+			if RemoveOffer(m.ctx, m.stallXY[0], m.stallXY[1], m.stallSel) {
+				m.addSystemLine("offer removed — stock returned to your pack")
+				if m.stallSel > 0 {
+					m.stallSel--
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// stallPanel renders a Concession for the glyph client: the offer list with
+// stock and affordability, and (for the owner) the till.
+func (m *Model) stallPanel() string {
+	st, ok := StallSnapshot(m.ctx, m.stallXY[0], m.stallXY[1])
+	if !ok {
+		return ""
+	}
+	owner := StallOwner(m.ctx, m.stallXY[0], m.stallXY[1])
+	title := "Concession"
+	if pl, ok := m.ctx.World.PlacementAt(m.stallXY[0], m.stallXY[1]); ok && !owner {
+		title = pl.Owner + "'s stall"
+	}
+	rows := []string{m.theme.PanelTitle.Render(title), ""}
+	if len(st.Offers) == 0 {
+		rows = append(rows, m.theme.Dim.Render("(no offers yet — /sell to post one)"))
+	}
+	name := func(id string) string {
+		if it, ok := ItemByID(id); ok {
+			return it.Name
+		}
+		return id
+	}
+	for i, o := range st.Offers {
+		give := fmt.Sprintf("%d %s", o.GiveN, name(o.GiveItem))
+		ask := fmt.Sprintf("%d %s", o.AskN, name(o.AskItem))
+		stock := m.theme.Dim.Render(fmt.Sprintf("(x%d)", o.Stock/max(o.GiveN, 1)))
+		line := fmt.Sprintf("%s ⇄ %s %s", m.theme.ChatText.Render(give),
+			m.theme.ChatText.Render(ask), stock)
+		marker := "  "
+		if i == m.stallSel {
+			marker = m.theme.Accent.Render("► ")
+			if CanAcceptOffer(o, m.ctx.Inventory) {
+				line = m.theme.Bright.Render(give) + " ⇄ " +
+					m.theme.Fg(lipgloss.Color("#7BD88F")).Render(ask) + " " + stock
+			} else {
+				line = m.theme.Bright.Render(give) + " ⇄ " + m.theme.Warn.Render(ask) + " " + stock
+			}
+		}
+		rows = append(rows, marker+line)
+	}
+	if owner {
+		till := 0
+		for _, n := range st.Till {
+			till += n
+		}
+		rows = append(rows, "", m.theme.Dim.Render(fmt.Sprintf("till: %d items waiting — f collect", till)))
+		rows = append(rows, m.theme.Dim.Render("↑↓ offer · f collect · x remove · /sell to post · esc close"))
+	} else {
+		rows = append(rows, "", m.theme.Dim.Render("↑↓ offer · e buy · esc close"))
+	}
+	return m.theme.Panel.Render(strings.Join(rows, "\n"))
+}
+
 // updateArea runs the area's Update and handles a possible transition.
 func (m *Model) updateArea(msg tea.Msg) tea.Cmd {
 	next, cmd := m.area.Update(msg)
@@ -426,6 +697,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleCharKey(msg)
 	}
 
+	if m.showCraft {
+		return m, m.handleCraftKey(msg)
+	}
+
+	if m.showMachine {
+		return m, m.handleMachineKey(msg)
+	}
+
+	if m.showStall {
+		return m, m.handleStallKey(msg)
+	}
+
 	if m.showPlayers {
 		m.showPlayers = false
 		if msg.Type == tea.KeyTab {
@@ -455,7 +738,28 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m, m.updateArea(msg)
+	cmd := m.updateArea(msg)
+	// The area asks to open a station panel by setting Ctx.UseStation on an e
+	// press; the kind decides which panel (a machine or a trade stall).
+	if m.ctx.UseStation != nil {
+		xy := *m.ctx.UseStation
+		m.ctx.UseStation = nil
+		pl, _ := m.ctx.World.PlacementAt(xy[0], xy[1])
+		switch {
+		case IsStall(pl.Kind):
+			m.closePanels()
+			m.stallXY, m.stallSel, m.showStall = xy, 0, true
+		case IsWorkbench(pl.Kind):
+			m.closePanels()
+			m.showCraft, m.craftSel = true, 0
+		default:
+			m.closePanels()
+			m.machineXY = xy
+			_, m.awayOut, m.awayIn, _ = OpenMachine(m.ctx, xy[0], xy[1])
+			m.showMachine = true
+		}
+	}
+	return m, cmd
 }
 
 // ─── View ────────────────────────────────────────────────────────────────
@@ -590,6 +894,21 @@ func (m *Model) playView() string {
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
 	} else if m.showChar {
 		panel := m.charPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showCraft {
+		panel := m.craftPanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showMachine {
+		panel := m.machinePanel()
+		pw := lipgloss.Width(panel)
+		ph := lipgloss.Height(panel)
+		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)
+	} else if m.showStall {
+		panel := m.stallPanel()
 		pw := lipgloss.Width(panel)
 		ph := lipgloss.Height(panel)
 		view = ui.Overlay(view, panel, (m.width-pw)/2, (m.height-ph)/2)

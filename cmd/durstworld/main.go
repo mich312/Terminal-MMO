@@ -68,6 +68,19 @@ func main() {
 	w.LoadGates(st.LoadGateWorld())
 	w.SetGatePersist(st.SaveGateWorld)
 
+	// Restore the shared placements layer (player-built structures) and keep it
+	// saved as people build and demolish.
+	for _, p := range st.LoadPlacements() {
+		w.LoadPlacements([]world.Placement{{X: p.X, Y: p.Y, Kind: p.Kind, Owner: p.Owner, State: p.State}})
+	}
+	w.SetPlacementPersist(
+		func(p world.Placement) {
+			st.AddPlacement(store.Placement{X: p.X, Y: p.Y, Kind: p.Kind, Owner: p.Owner,
+				State: p.State, Created: time.Now().Unix()})
+		},
+		st.RemovePlacement,
+	)
+
 	srv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort("0.0.0.0", port)),
 		// persistent Ed25519 host key, generated on first run

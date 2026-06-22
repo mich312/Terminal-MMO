@@ -157,3 +157,35 @@ func TestRecordAreaVisitPreservesCorruptBlob(t *testing.T) {
 		t.Errorf("corrupt blob was overwritten to %q", got)
 	}
 }
+
+func TestPlacementRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if got := s.LoadPlacements(); len(got) != 0 {
+		t.Fatalf("fresh store has %d placements, want 0", len(got))
+	}
+	s.AddPlacement(Placement{X: 3, Y: -4, Kind: "fence", Owner: "ada", Created: 100})
+	s.AddPlacement(Placement{X: 9, Y: 2, Kind: "chest", Owner: "bob", Created: 200})
+
+	got := s.LoadPlacements()
+	if len(got) != 2 {
+		t.Fatalf("loaded %d placements, want 2", len(got))
+	}
+
+	// Upsert: same cell, new kind/owner replaces.
+	s.AddPlacement(Placement{X: 3, Y: -4, Kind: "workbench", Owner: "cy", Created: 300})
+	byCell := map[[2]int]Placement{}
+	for _, p := range s.LoadPlacements() {
+		byCell[[2]int{p.X, p.Y}] = p
+	}
+	if len(byCell) != 2 {
+		t.Fatalf("after upsert there are %d cells, want 2", len(byCell))
+	}
+	if p := byCell[[2]int{3, -4}]; p.Kind != "workbench" || p.Owner != "cy" {
+		t.Errorf("upsert kept %+v; want the workbench from cy", p)
+	}
+
+	s.RemovePlacement(9, 2)
+	if got := s.LoadPlacements(); len(got) != 1 {
+		t.Errorf("after remove there are %d placements, want 1", len(got))
+	}
+}
