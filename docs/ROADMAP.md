@@ -284,8 +284,14 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   to your pack — owner-gated, so nobody tears down someone else's Workspace; a
   placed **workbench opens crafting** when you press `e` beside it (the build →
   craft loop made literal); and a stall owner can `x` **remove a mislisted
-  offer**, refunding its stock. ⬜ In-panel offer *authoring* (beyond `/sell`) is
-  the last bit.
+  offer**, refunding its stock.
+- ✅ **In-panel offer authoring:** the Concession panel now composes a new offer
+  in place (`n` at your stall) — pick the give/ask items and per-sale counts with
+  the arrows, watch a live "stocks N (M sales)" readout, and `e` to post. It's the
+  UI twin of `/sell` (which still works), routed through the same `AddOffer`, and
+  it's the only way to post in HD, which has no command line. A shared composer
+  (`OfferDraft` + `CycleOfferField`/`PostDraft` in `internal/game/offer_compose.go`)
+  drives both clients identically, the way the character panel shares its cycling.
 - ⬜ Settlement claims and the parked wildlife layer come after.
 
 ## Parked polish

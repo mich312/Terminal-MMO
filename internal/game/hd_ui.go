@@ -573,13 +573,18 @@ func DrawMachinePanel(img *image.RGBA, ctx *Ctx, x, y, awayOut, awayIn int) {
 
 // DrawStallPanel draws a Durst Group Concession: the offer list (give ⇄ ask)
 // with stock and a green/amber affordability mark, plus the till for the owner.
-// sel is the highlighted offer.
-func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
+// sel is the highlighted offer. When compose is set (owners only), the panel
+// shows the in-panel offer composer driven by d instead of the list.
+func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int, compose bool, d OfferDraft) {
 	st, ok := StallSnapshot(ctx, x, y)
 	if !ok {
 		return
 	}
 	owner := StallOwner(ctx, x, y)
+	if compose && owner {
+		drawStallComposer(img, ctx, d)
+		return
+	}
 	name := func(id string) string {
 		if it, ok := ItemByID(id); ok {
 			return it.Name
@@ -595,7 +600,7 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 	title := "DURST GROUP CONCESSION"
 	footer := "up/down offer   e buy   q close"
 	if owner {
-		footer = "up/down offer   f collect   x remove   q close"
+		footer = "up/down offer   n new   f collect   x remove   q close"
 	}
 
 	type row struct {
@@ -649,7 +654,11 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 	yy := oy + pad + lh + lh/2
 
 	if len(rows) == 0 {
-		pixel.DrawText(img, xx, yy, s, "no offers yet — /sell to post one", hudDim)
+		hint := "no offers yet"
+		if owner {
+			hint = "no offers yet — press n to post one"
+		}
+		pixel.DrawText(img, xx, yy, s, hint, hudDim)
 	}
 	askX := xx + box + 4*s + giveCol + pixel.TextWidth("  <->  ", s)
 	for i, r := range rows {
@@ -687,6 +696,90 @@ func DrawStallPanel(img *image.RGBA, ctx *Ctx, x, y, sel int) {
 		yy += lh / 4
 		pixel.DrawText(img, xx, yy, s, "till: "+itoa(till)+" items waiting", hudGood)
 	}
+	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
+}
+
+// drawStallComposer renders the in-panel offer authoring form (the HD twin of
+// /sell): four editable rows — give item, give count, ask item, ask count — with
+// the selected field marked, plus a live "stocks N (M sales)" line and a
+// validity-tinted post hint.
+func drawStallComposer(img *image.RGBA, ctx *Ctx, d OfferDraft) {
+	name := func(id string) string {
+		if it, ok := ItemByID(id); ok {
+			return it.Name
+		}
+		return id
+	}
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	s := hudScale(W)
+	lh := 16 * s
+	pad := 10 * s
+	box := 9 * s
+
+	title := "POST AN OFFER"
+	footer := "up/down field   left/right change   e post   q back"
+
+	type frow struct {
+		label, val string
+		swatch     string // item hex for a leading gem, "" for none
+	}
+	rows := []frow{
+		{label: "Give", val: name(d.GiveItem), swatch: mustItemHex(d.GiveItem)},
+		{label: "Per sale", val: itoa(d.GiveN)},
+		{label: "For", val: name(d.AskItem), swatch: mustItemHex(d.AskItem)},
+		{label: "Per sale", val: itoa(d.AskN)},
+	}
+
+	units, sales := DraftStock(ctx, d)
+	stockLine := "stocks " + itoa(units) + " " + name(d.GiveItem) + " (" + itoa(sales) + " sales)"
+
+	labelCol := 0
+	for _, r := range rows {
+		if w := pixel.TextWidth(r.label, s); w > labelCol {
+			labelCol = w
+		}
+	}
+	rowW := 2*s + labelCol + 8*s + box + 6*s + pixel.TextWidth("Glittering Geode", s)
+	contentW := rowW
+	for _, t := range []string{title, footer, stockLine} {
+		if w := pixel.TextWidth(t, s); w > contentW {
+			contentW = w
+		}
+	}
+
+	ph := pad*2 + lh + lh/2 + OfferFields*lh + lh/2 + lh + lh/2 + lh
+	ox, oy, pw := panelBox(W, H, contentW+pad*2, ph)
+	pixel.DrawPanel(img, ox, oy, pw, ph)
+	xx := ox + pad
+
+	pixel.DrawText(img, xx, oy+pad, s, title, hudAccent)
+	yy := oy + pad + lh + lh/2
+	valX := xx + 2*s + labelCol + 8*s
+	for i, r := range rows {
+		if i == d.Field {
+			pixel.Shade(img, xx-2*s, yy-2*s, pw-2*pad+4*s, lh, 0.3)
+			pixel.DrawText(img, xx-s, yy, s, ">", hudAccent)
+		}
+		lc := hudDim
+		if i == d.Field {
+			lc = hudWhite
+		}
+		pixel.DrawText(img, xx+2*s, yy, s, r.label, lc)
+		vx := valX
+		if r.swatch != "" {
+			itemSwatch(img, vx, yy, box, r.swatch)
+			vx += box + 6*s
+		}
+		pixel.DrawText(img, vx, yy, s, r.val, hudWhite)
+		yy += lh
+	}
+
+	yy += lh / 2
+	sc := hudGood
+	if !DraftValid(ctx, d) {
+		sc = hudWarn
+	}
+	pixel.DrawText(img, xx, yy, s, stockLine, sc)
 	pixel.DrawText(img, xx, oy+ph-pad-lh+lh/4, s, footer, hudDim)
 }
 
