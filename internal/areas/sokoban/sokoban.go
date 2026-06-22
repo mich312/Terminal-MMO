@@ -63,12 +63,12 @@ type pt = [2]int
 
 type area struct {
 	game.Walker
-	idx     int         // current level
-	walls   map[pt]bool // immovable wall cells
-	goals   map[pt]bool // target pads
-	boxes   map[pt]bool // crate positions (the mutable state)
-	exit    pt          // the door back to the Arcade
-	w, h    int         // level bounds
+	idx      int         // current level
+	walls    map[pt]bool // immovable wall cells
+	goals    map[pt]bool // target pads
+	boxes    map[pt]bool // crate positions (the mutable state)
+	exit     pt          // the door back to the Arcade
+	w, h     int         // level bounds
 	moves    int         // steps taken this level
 	pushes   int         // crates shoved this level
 	cleared  int         // levels solved this visit

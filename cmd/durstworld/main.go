@@ -31,15 +31,18 @@ import (
 
 	// areas register themselves with the game registry
 	_ "github.com/durst-group/durstworld/internal/areas/arcade"
+	_ "github.com/durst-group/durstworld/internal/areas/breakout"
 	_ "github.com/durst-group/durstworld/internal/areas/cave"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
 	_ "github.com/durst-group/durstworld/internal/areas/grove"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/maze"
+	_ "github.com/durst-group/durstworld/internal/areas/pong"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
 	_ "github.com/durst-group/durstworld/internal/areas/snake"
 	_ "github.com/durst-group/durstworld/internal/areas/sokoban"
+	_ "github.com/durst-group/durstworld/internal/areas/tetris"
 	_ "github.com/durst-group/durstworld/internal/areas/vault"
 	"github.com/durst-group/durstworld/internal/areas/wilds"
 )

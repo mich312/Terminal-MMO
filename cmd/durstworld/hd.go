@@ -287,7 +287,11 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 		// Incremental terrain: only tiles that actually changed are re-rasterized.
 		// The result is byte-identical to a full RenderRGBA (see IncrementalRenderer),
 		// so the on-wire delta — and what the player sees — is unchanged.
-		base := inc.Render(tm, w.PlayersInArea(areaID), name, frame, light, ox, oy, hdScale, style, full, w.CreaturesInArea(areaID)...)
+		players := w.PlayersInArea(areaID)
+		if h, ok := area.(game.AvatarHider); ok && h.HideAvatars() {
+			players = nil // board games (Pong, Tetris…) draw no avatars over the board
+		}
+		base := inc.Render(tm, players, name, frame, light, ox, oy, hdScale, style, full, w.CreaturesInArea(areaID)...)
 		// Composite UI onto a copy so overlays never bleed into the cached terrain.
 		img := frameCopy(base)
 		game.OverlayWalkable(img, tm, hdScale)  // debug: tint blocked tiles (toggle with F2)

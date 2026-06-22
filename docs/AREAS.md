@@ -21,21 +21,23 @@ destination (building it from the registry with `game.NewArea`).
    worldgen.Landmarks  │   │    │    │   │
       ⌂(0,0)    P(16,0) K(-16,0) D(0,12) A(-22,0)
         │         │      │       │       │
-   ┌────▼───┐ ┌──▼──┐ ┌──▼──┐ ┌──▼─┐ ┌───▼──────────────────┐
-   │ LOBBY  │ │ PRES│ │KRAFT│ │DEMO│ │       ARCADE         │
-   │  (HQ)  │ │ WING│ │WERK │ │CTR │ │  neon hall, cabinets │
-   └─┬──────┘ └──┬──┘ └──┬──┘ └─┬──┘ └─┬────┬────┬────┬──────┘
- '4' │ guestbook │'0'    │'0'   │'0'   │ S  │ M  │ N  │ c (spare)
-     │           │       │      │      │    │    │    │
-     └───────────┴───────┴──────┘      │    │    │    │
-        every hall's '0' door          │    │    │    │
-        → "wilds" (return to hub)    cabinets are portals
-                                        │    │    │
-                              ┌─────────▼┐ ┌─▼────┐ ┌▼──────┐
-                              │ SOKOBAN  │ │ MAZE │ │ SNAKE │
-                              │ door → ──┼─┼─→arc.│ │ x → ──┼─→ arcade
-                              └──────────┘ └──────┘ └───────┘
+   ┌────▼───┐ ┌──▼──┐ ┌──▼──┐ ┌──▼─┐ ┌───▼────────────────────────┐
+   │ LOBBY  │ │ PRES│ │KRAFT│ │DEMO│ │           ARCADE           │
+   │  (HQ)  │ │ WING│ │WERK │ │CTR │ │     neon hall, cabinets     │
+   └─┬──────┘ └──┬──┘ └──┬──┘ └─┬──┘ └─┬──┬──┬──┬──┬──┬──┬─────────┘
+ '4' │ guestbook │'0'    │'0'   │'0'   │S │M │N │T │P │B │ c (spare)
+     │           │       │      │      ▼  ▼  ▼  ▼  ▼  ▼
+     └───────────┴───────┴──────┘   each cabinet is a portal into a game:
+        every hall's '0' door        Sokoban Maze Snake Tetris Pong Breakout
+        → "wilds" (return to hub)     — each has a door/key back to the Arcade,
+                                        and the Arcade's ◈ door → the Wilds.
 ```
+
+Games split two ways: **keypress** (Sokoban, Maze) advance only on input;
+**real-time** (Snake, Tetris, Pong, Breakout) implement `game.Ticker` and run on
+the wall clock. The board games (Tetris, Pong, Breakout) also implement
+`game.AvatarHider` — the player isn't a token on the grid, so the camera frames
+the board and no "you" avatar is drawn.
 
 ## The four kinds of link, in code
 
@@ -64,8 +66,9 @@ Areas return a `View(w,h) string` for the **glyph** client and a tile window
 (`HDViewer.HDView`, free when you embed `game.Walker`) for the **HD pixel**
 client. Walls/floors/props in the tilemap drive both. Optional area interfaces:
 `Hinter`/`Prompter` (status hints), `Toaster` (transient messages),
-`HDLighter` (a torch circle, used by Maze), and `Ticker` (a real-time clock —
-see below).
+`HDLighter` (a torch circle, used by Maze), `Ticker` (a real-time clock — see
+below), and `AvatarHider` (board games suppress the "you" avatar and frame the
+board with the camera).
 
 ## Minigames: keypress vs. real-time
 

@@ -96,6 +96,15 @@ type Ticker interface {
 	GameTick() Area
 }
 
+// AvatarHider lets an area suppress drawing player avatars over its map. Board
+// games (Pong, Breakout, Tetris, Chess…) aren't a walk-around token: the player
+// controls a paddle or a falling piece, not a body on the grid, so a centered
+// "you" marker would just sit in the play area. Such areas frame the board with
+// the camera and return true here so the renderers skip the avatar pass.
+type AvatarHider interface {
+	HideAvatars() bool
+}
+
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The
 // Presentation Wing uses it to show the current slide on screen in HD (there
 // are no terminal cells in HD, so the markdown is rendered into the image). It
