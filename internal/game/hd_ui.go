@@ -861,10 +861,11 @@ func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool
 			}
 		}
 	}
-	rowW := nameCol + 8*s + costCol + 8*s + pixel.TextWidth("x000", s)
+	gap := 5 * s
+	rowW := nameCol + gap + costCol + gap + pixel.TextWidth("x000", s)
 	contentW := rowW
 	for _, t := range []string{title, keys, blurb, footer} {
-		if w := pixel.TextWidth(t, s); w > contentW {
+		if w := pixel.TextWidth(asciiOnly(t), s); w > contentW {
 			contentW = w
 		}
 	}
@@ -881,13 +882,16 @@ func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool
 	if oy < 2 {
 		oy = 2
 	}
-	pixel.DrawPanel(img, ox, oy, pw, ph)
+	// Translucent backing (not an opaque card) so the ghost and player stay visible
+	// through the palette while you aim — build mode keeps the world live.
+	pixel.Shade(img, ox, oy, pw, ph, 0.7)
+	pixel.Frame(img, ox, oy, pw, ph)
 	x := ox + pad
 	right := ox + pw - pad
 
 	pixel.DrawText(img, x, oy+pad, s, title, hudAccent)
 	y := oy + pad + lh + lh/2
-	costX := x + nameCol + 8*s
+	costX := x + nameCol + gap
 	for _, g := range groups {
 		pixel.DrawText(img, x, y, s, g.Name, hudDim)
 		y += lh
@@ -917,9 +921,9 @@ func DrawBuildPanel(img *image.RGBA, ctx *Ctx, sel int, footer string, warn bool
 	y += lh
 	switch {
 	case footer != "" && warn:
-		pixel.DrawText(img, x, y, s, footer, hudWarn)
+		pixel.DrawText(img, x, y, s, hudLine(footer), hudWarn)
 	case footer != "":
-		pixel.DrawText(img, x, y, s, footer, hudAccent)
+		pixel.DrawText(img, x, y, s, hudLine(footer), hudAccent)
 	default:
 		pixel.DrawText(img, x, y, s, keys, hudDim)
 	}
@@ -1591,6 +1595,10 @@ func drawAvatarInto(img *image.RGBA, x, y, scale, style, accessory int, col lipg
 
 // asciiOnly strips non-ASCII runes so basicfont (ASCII-only) renders cleanly;
 // glyph-renderer strings sometimes carry box/arrow runes the HD font lacks.
+// hudLine prepares a UI string for the ASCII basicfont: the em-dash used in
+// prompts (nice in the glyph terminal) becomes a hyphen rather than vanishing.
+func hudLine(s string) string { return asciiOnly(strings.ReplaceAll(s, "—", "-")) }
+
 func asciiOnly(s string) string {
 	var b strings.Builder
 	for _, r := range s {
