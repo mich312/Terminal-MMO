@@ -1,5 +1,7 @@
 package world
 
+import "time"
+
 // Creature is one live, server-owned wild animal. Unlike players (a session
 // each) and unlike the deterministic terrain/items, creatures are simulated:
 // the wildlife stepper spawns, moves and despawns them under the world mutex,
@@ -10,14 +12,15 @@ package world
 // guards them, but never interprets Kind/State/HP/Owner — the wildlife
 // simulation (and later the interaction code) owns that meaning.
 type Creature struct {
-	ID     string // stable instance id, unique while alive
-	Kind   string // species id; resolved to a look + behavior elsewhere
-	Area   string // area id (Phase 1: only "wilds")
-	X, Y   int
-	Facing Dir
-	State  string // opaque: "wander" | "flee" | "graze" | … (Phase 2+: "tamed")
-	HP     int    // 0 until hunting (Phase 2); world never reads it
-	Owner  string // "" until taming (Phase 3); the companion's player
+	ID        string // stable instance id, unique while alive
+	Kind      string // species id; resolved to a look + behavior elsewhere
+	Area      string // area id (Phase 1: only "wilds")
+	X, Y      int
+	Facing    Dir
+	State     string    // opaque: "wander" | "flee" | "graze" | … (Phase 2+: "tamed")
+	HP        int       // 0 until hunting (Phase 2); world never reads it
+	Owner     string    // "" until taming (Phase 3); the companion's player
+	LastMoved time.Time // for the renderer's walk/idle animation, like a player
 }
 
 // CreaturesInArea returns snapshots of every live creature in an area — the

@@ -216,7 +216,7 @@ func (s *Sim) move(players []world.Player, creatures []world.Creature) {
 		id := c.ID
 		facing := world.Facing8(dx, dy)
 		s.w.MutateCreature(id, func(cc *world.Creature) bool {
-			cc.X, cc.Y, cc.Facing, cc.State = nx, ny, facing, state
+			cc.X, cc.Y, cc.Facing, cc.State, cc.LastMoved = nx, ny, facing, state, time.Now()
 			return true
 		})
 	}
@@ -267,7 +267,7 @@ func (s *Sim) follow(c world.Creature, sp game.Species, players []world.Player) 
 	}
 	facing := world.Facing8(nx-c.X, ny-c.Y)
 	s.w.MutateCreature(c.ID, func(cc *world.Creature) bool {
-		cc.X, cc.Y, cc.Facing, cc.State = nx, ny, facing, "tamed"
+		cc.X, cc.Y, cc.Facing, cc.State, cc.LastMoved = nx, ny, facing, "tamed", time.Now()
 		return true
 	})
 }

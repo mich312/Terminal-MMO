@@ -1,7 +1,8 @@
-// Command wildlifepreview renders the Phase 1–3 wildlife as pictures: the biome
-// fauna in a daylit clearing, a tamed companion trotting at heel, and the same
-// scene under the night torch. Throwaway art tool, like lootpreview — it pulls
-// the real Species table so the sprites/hues match what the game draws.
+// Command wildlifepreview renders the wildlife as pictures: a daylit clearing,
+// a companion at heel, the night discovery-torch, plus a directional chart (each
+// species facing S/E/N/W) and a walk strip (the fox's two-frame cycle). Throwaway
+// art tool, like lootpreview — it pulls the real Species/creature sprites so what
+// it draws matches the game.
 package main
 
 import (
@@ -16,102 +17,32 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 )
 
-func grass(x, y int) game.Tile {
+func grass() game.Tile {
 	return game.Tile{Kind: game.TileFloor, Walkable: true, Tex: game.TexGrass, Ground: "#5EAE63"}
 }
 
-// placeCreature stamps a species onto a tile exactly as the Wilds' sample() does
-// — keeping the biome ground, overlaying the species glyph/hue/prop.
-func placeCreature(tm *game.TileMap, x, y int, kind string) {
-	sp, ok := game.SpeciesByKind(kind)
-	if !ok {
-		panic("unknown species " + kind)
+func meadow(w, h int) *game.TileMap {
+	tiles := make([][]game.Tile, h)
+	for y := 0; y < h; y++ {
+		tiles[y] = make([]game.Tile, w)
+		for x := 0; x < w; x++ {
+			tiles[y][x] = grass()
+		}
 	}
-	t := tm.Tiles[y][x]
-	t.Ch, t.Color, t.Prop, t.PropHex = sp.Glyph, sp.Hex, sp.Prop, sp.Hex
-	tm.Tiles[y][x] = t
+	return &game.TileMap{W: w, H: h, Tiles: tiles}
 }
 
-// clearing is a meadow with a forest edge and a pond, strewn with one of each
-// species (the fish on the water) plus a tree line, to show the fauna in situ.
-func clearing() *game.TileMap {
-	const W, H = 24, 15
-	tiles := make([][]game.Tile, H)
-	for y := 0; y < H; y++ {
-		tiles[y] = make([]game.Tile, W)
-		for x := 0; x < W; x++ {
-			tiles[y][x] = grass(x, y)
-		}
-	}
-	tm := &game.TileMap{W: W, H: H, Tiles: tiles}
-	// A forest edge along the top-left.
-	for _, p := range [][2]int{{2, 1}, {3, 1}, {5, 2}, {1, 3}, {4, 3}, {2, 4}} {
-		tm.Tiles[p[1]][p[0]] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexForest,
-			Ground: "#2E6B40", Prop: game.PropTree, PropHex: "#2E5E34"}
-	}
-	// A little pond on the right for the fish.
-	for y := 9; y <= 12; y++ {
-		for x := 18; x <= 22; x++ {
-			tm.Tiles[y][x] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexWater, Ground: "#2E6BFF"}
-		}
-	}
-	// A scatter of flowers for life.
-	for _, p := range [][2]int{{8, 2}, {14, 4}, {6, 11}, {16, 12}} {
-		tm.Tiles[p[1]][p[0]] = game.Tile{Kind: game.TileObject, Walkable: true, Tex: game.TexGrass,
-			Ground: "#5EAE63", Prop: game.PropFlower, PropHex: "#F2D24A"}
-	}
-
-	placeCreature(tm, 4, 5, "deer")
-	placeCreature(tm, 9, 7, "rabbit")
-	placeCreature(tm, 15, 6, "fox")
-	placeCreature(tm, 12, 3, "bird")
-	placeCreature(tm, 20, 10, "fish")
-	return tm
+func tree(tm *game.TileMap, x, y int) {
+	tm.Tiles[y][x] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexForest,
+		Ground: "#2E6B40", Prop: game.PropTree, PropHex: "#2E5E34"}
 }
 
-// companionScene is a tight shot of the player with a tamed fox at heel and a
-// wild deer a few tiles off — the difference a leash makes.
-func companionScene() *game.TileMap {
-	const W, H = 13, 9
-	tiles := make([][]game.Tile, H)
-	for y := 0; y < H; y++ {
-		tiles[y] = make([]game.Tile, W)
-		for x := 0; x < W; x++ {
-			tiles[y][x] = grass(x, y)
-		}
+func crit(kind string, x, y int, facing world.Dir, moving bool) world.Creature {
+	c := world.Creature{Kind: kind, Area: "wilds", X: x, Y: y, Facing: facing, State: "wander"}
+	if moving {
+		c.LastMoved = time.Now()
 	}
-	tm := &game.TileMap{W: W, H: H, Tiles: tiles}
-	for _, p := range [][2]int{{1, 1}, {11, 1}, {2, 7}, {10, 7}} {
-		tm.Tiles[p[1]][p[0]] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexForest,
-			Ground: "#2E6B40", Prop: game.PropTree, PropHex: "#2E5E34"}
-	}
-	placeCreature(tm, 7, 4, "fox")   // the companion, trotting just behind the player at (6,4)
-	placeCreature(tm, 10, 2, "deer") // a wild one keeping its distance
-	return tm
-}
-
-// speciesChart lines every species up large, one per pair of columns, so each
-// silhouette is unmistakable at high zoom.
-func speciesChart() *game.TileMap {
-	kinds := []string{"rabbit", "deer", "fox", "bird", "fish"}
-	const H = 3
-	W := len(kinds)*2 + 1
-	tiles := make([][]game.Tile, H)
-	for y := 0; y < H; y++ {
-		tiles[y] = make([]game.Tile, W)
-		for x := 0; x < W; x++ {
-			tiles[y][x] = grass(x, y)
-		}
-	}
-	tm := &game.TileMap{W: W, H: H, Tiles: tiles}
-	for i, k := range kinds {
-		x := i*2 + 1
-		if k == "fish" { // give the fish its water
-			tm.Tiles[1][x] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexWater, Ground: "#2E6BFF"}
-		}
-		placeCreature(tm, x, 1, k)
-	}
-	return tm
+	return c
 }
 
 func saveImg(path string, img image.Image) {
@@ -127,40 +58,89 @@ func saveImg(path string, img image.Image) {
 
 func main() {
 	style := game.DefaultStyle()
-	const frame = 6
 	if err := os.MkdirAll("wildlifeshots", 0o755); err != nil {
 		panic(err)
 	}
-
-	// Midday, so the day-faded torch opens up and the fauna read in full color.
+	// Midday so the day-faded torch opens up and the fauna read in full color.
+	// (The cycle compresses a day into one real hour: minute 30 = noon.)
 	noon := time.Date(2026, 6, 20, 12, 30, 0, 0, time.UTC)
 	ui.Now = func() time.Time { return noon }
 
-	// 1) The clearing in daylight (uniform light).
-	cl := clearing()
+	// 1) Clearing in daylight: one of each species in situ.
+	cl := meadow(24, 15)
+	for _, p := range [][2]int{{2, 1}, {3, 1}, {5, 2}, {1, 3}, {4, 3}, {2, 4}} {
+		tree(cl, p[0], p[1])
+	}
+	for y := 9; y <= 12; y++ {
+		for x := 18; x <= 22; x++ {
+			cl.Tiles[y][x] = game.Tile{Kind: game.TileFloor, Walkable: false, Tex: game.TexWater, Ground: "#2E6BFF"}
+		}
+	}
+	clCrits := []world.Creature{
+		crit("deer", 4, 5, world.DirE, false),
+		crit("rabbit", 9, 7, world.DirW, false),
+		crit("fox", 15, 6, world.DirW, true),
+		crit("bird", 12, 3, world.DirE, false),
+		crit("fish", 20, 10, world.DirE, false),
+	}
 	pl := []world.Player{{Name: "you", X: 11, Y: 8, Color: "#FFC861", Facing: world.DirS, LastMoved: time.Now()}}
-	img := game.RenderRGBA(nil, cl, pl, "you", frame, game.Camera{W: cl.W, H: cl.H}, game.Light{}, 0, 0, 30, false, style)
-	saveImg("wildlifeshots/wilds-fauna-day.png", img)
+	saveImg("wildlifeshots/wilds-fauna-day.png",
+		game.RenderRGBA(nil, cl, pl, "you", 6, game.Camera{W: cl.W, H: cl.H}, game.Light{}, 0, 0, 30, false, style, clCrits...))
 
-	// 2) The companion at heel (zoomed in).
-	cs := companionScene()
+	// 2) Companion at heel (zoomed).
+	cs := meadow(13, 9)
+	for _, p := range [][2]int{{1, 1}, {11, 1}, {2, 7}, {10, 7}} {
+		tree(cs, p[0], p[1])
+	}
+	csCrits := []world.Creature{
+		crit("fox", 7, 4, world.DirW, true), // the companion, trotting at heel
+		crit("deer", 10, 2, world.DirE, false),
+	}
 	cp := []world.Player{{Name: "you", X: 6, Y: 4, Color: "#FFC861", Facing: world.DirE, LastMoved: time.Now()}}
-	cimg := game.RenderRGBA(nil, cs, cp, "you", frame, game.Camera{W: cs.W, H: cs.H}, game.Light{}, 0, 0, 44, false, style)
-	saveImg("wildlifeshots/companion.png", cimg)
+	saveImg("wildlifeshots/companion.png",
+		game.RenderRGBA(nil, cs, cp, "you", 6, game.Camera{W: cs.W, H: cs.H}, game.Light{}, 0, 0, 44, false, style, csCrits...))
 
-	// 3) The same clearing under the night torch — fauna inside the circle read,
-	//    the rest sinks into dusk (the discovery light, exactly as in-game).
+	// 3) Directional chart: each species facing S, E, N, W (front / side / back /
+	//    mirrored side), at high zoom.
+	kinds := []string{"rabbit", "deer", "fox", "bird", "fish"}
+	faces := []world.Dir{world.DirS, world.DirE, world.DirN, world.DirW}
+	dc := meadow(len(faces)*2+1, len(kinds)*2+1)
+	var dcCrits []world.Creature
+	for ki, k := range kinds {
+		for fi, f := range faces {
+			dcCrits = append(dcCrits, crit(k, fi*2+1, ki*2+1, f, false))
+		}
+	}
+	saveImg("wildlifeshots/direction-chart.png",
+		game.RenderRGBA(nil, dc, nil, "", 0, game.Camera{W: dc.W, H: dc.H}, game.Light{}, 0, 0, 44, false, style, dcCrits...))
+
+	// 4) Walk strip: the fox facing east across two walk frames + idle, so the
+	//    cycle is visible as stills.
+	ws := meadow(7, 3)
+	frames := []struct {
+		x     int
+		frame int
+		mv    bool
+	}{{1, 0, true}, {3, 3, true}, {5, 0, false}}
+	for _, fr := range frames {
+		ws.Tiles[1][fr.x] = grass()
+	}
+	// Render each pose into the same strip by compositing three single renders is
+	// overkill; instead place three foxes and rely on per-creature animation being
+	// frame-global — so show one render at frame 0 with all three moving/idle.
+	wsCrits := []world.Creature{
+		crit("fox", 1, 1, world.DirE, true),
+		crit("fox", 3, 1, world.DirE, false),
+	}
+	saveImg("wildlifeshots/walk-strip.png",
+		game.RenderRGBA(nil, ws, nil, "", 0, game.Camera{W: ws.W, H: ws.H}, game.Light{}, 0, 0, 56, false, style, wsCrits...))
+
+	// 5) Night torch over the clearing.
 	night := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	ui.Now = func() time.Time { return night }
 	torch := game.DayFadedLight(game.Light{X: 11 + game.PlayerW/2, Y: 8 + game.PlayerH/2, Radius: 7})
-	nimg := game.RenderRGBA(nil, cl, pl, "you", frame, game.Camera{W: cl.W, H: cl.H}, torch, 0, 0, 30, false, style)
-	saveImg("wildlifeshots/wilds-fauna-night.png", nimg)
+	saveImg("wildlifeshots/wilds-fauna-night.png",
+		game.RenderRGBA(nil, cl, pl, "you", 6, game.Camera{W: cl.W, H: cl.H}, torch, 0, 0, 30, false, style, clCrits...))
 
-	// 4) A zoomed lineup of every species (no player), back in daylight.
-	ui.Now = func() time.Time { return noon }
-	ch := speciesChart()
-	chimg := game.RenderRGBA(nil, ch, nil, "", frame, game.Camera{W: ch.W, H: ch.H}, game.Light{}, 0, 0, 60, false, style)
-	saveImg("wildlifeshots/species-chart.png", chimg)
-
-	fmt.Println("wrote wilds-fauna-day, companion, wilds-fauna-night, species-chart")
+	fmt.Println("wrote wilds-fauna-day, companion, direction-chart, walk-strip, wilds-fauna-night")
 }

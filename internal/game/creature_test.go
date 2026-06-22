@@ -3,6 +3,8 @@ package game
 import (
 	"math/rand"
 	"testing"
+
+	"github.com/durst-group/durstworld/internal/world"
 )
 
 func TestRollDropsRanges(t *testing.T) {
@@ -57,6 +59,45 @@ func TestDropItemsExist(t *testing.T) {
 		for _, d := range sp.Drops {
 			if _, ok := ItemByID(d.Item); !ok {
 				t.Errorf("species %q drops unknown item %q", sp.Kind, d.Item)
+			}
+		}
+	}
+}
+
+// Every creature sprite must be a clean 12×10 grid across all three views and
+// both walk frames — a mis-sized row would skew or clip the animal.
+func TestCreatureSpritesWellFormed(t *testing.T) {
+	const w, h = 12, 10
+	for _, sp := range SpeciesList() {
+		cs, ok := creatureSprites[sp.Kind]
+		if !ok {
+			t.Errorf("species %q has no sprite", sp.Kind)
+			continue
+		}
+		for vname, view := range map[string][2][]string{"front": cs.front, "back": cs.back, "side": cs.side} {
+			for f := 0; f < 2; f++ {
+				rows := view[f]
+				if len(rows) != h {
+					t.Errorf("%s %s frame %d: %d rows, want %d", sp.Kind, vname, f, len(rows), h)
+					continue
+				}
+				for r, row := range rows {
+					if n := len([]rune(row)); n != w {
+						t.Errorf("%s %s frame %d row %d: width %d, want %d (%q)", sp.Kind, vname, f, r, n, w, row)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Every species resolves to a bitmap for all eight facings.
+func TestCreatureBitmapAllFacings(t *testing.T) {
+	dirs := []world.Dir{world.DirN, world.DirNE, world.DirE, world.DirSE, world.DirS, world.DirSW, world.DirW, world.DirNW}
+	for _, sp := range SpeciesList() {
+		for _, d := range dirs {
+			if _, ok := CreatureBitmap(sp.Kind, d, 0); !ok {
+				t.Errorf("%s has no bitmap for facing %v", sp.Kind, d)
 			}
 		}
 	}

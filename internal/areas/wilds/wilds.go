@@ -257,12 +257,6 @@ func iabs(n int) int {
 	return n
 }
 
-// facingWest reports whether a heading points left, so the renderer mirrors a
-// creature's side-view sprite (drawn facing east by default) to match it.
-func facingWest(d world.Dir) bool {
-	return d == world.DirW || d == world.DirNW || d == world.DirSW
-}
-
 // stationAdjacent finds an interactable placement (a machine or a trade stall)
 // on the ring of cells bordering the 2×2 body, so you can "use" something you're
 // standing next to (they're solid, so you never stand on one).
@@ -908,17 +902,12 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Ground = groundColor(cell.Biome)
 					}
 				}
-				// Wildlife sits on top of the ground (under the player, who is stamped
-				// last by the renderer). Keep the biome ground so HD draws the animal
-				// as a sprite over its terrain, not as a solid block.
+				// Wildlife: the glyph client draws the species letter here; the HD
+				// client draws a full animated sprite over this tile from the live
+				// creature list (passed to the renderer), so we only set Ch/Color.
 				if c, ok := creatures[[2]int{wx, wy}]; ok {
 					if sp, ok := game.SpeciesByKind(c.Kind); ok {
 						t.Ch, t.Color = sp.Glyph, sp.Hex
-						t.Prop, t.PropHex = sp.Prop, sp.Hex
-						t.Flip = facingWest(c.Facing) // mirror the side-view sprite to face its heading
-						if t.Ground == "" || t.Ground == fogColor {
-							t.Ground = groundColor(cell.Biome)
-						}
 					}
 				}
 				row[lx] = t

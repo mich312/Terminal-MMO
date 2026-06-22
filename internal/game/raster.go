@@ -27,7 +27,7 @@ import (
 // style selects the art style (sprite sets, shading, palette); a nil style uses
 // DefaultStyle. A non-nil style.Palette.Map recolors the finished frame in one
 // final pass (the basis for the monochrome / neon looks).
-func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool, style *Style) *image.RGBA {
+func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, frame int, cam Camera, light Light, originX, originY, scale int, smooth bool, style *Style, creatures ...world.Creature) *image.RGBA {
 	if th == nil {
 		th = ui.Default
 	}
@@ -51,13 +51,11 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 	texs := make([][]TileTex, cam.H)
 	props := make([][]TileProp, cam.H)
 	propCols := make([][]colorful.Color, cam.H)
-	flips := make([][]bool, cam.H)
 	for y := 0; y < cam.H; y++ {
 		cols[y] = make([]colorful.Color, cam.W)
 		texs[y] = make([]TileTex, cam.W)
 		props[y] = make([]TileProp, cam.W)
 		propCols[y] = make([]colorful.Color, cam.W)
-		flips[y] = make([]bool, cam.W)
 		for x := 0; x < cam.W; x++ {
 			if c := grid[y][x]; c.blank {
 				cols[y][x] = shadowColor
@@ -71,7 +69,6 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 			t := tm.Tiles[ty][tx]
 			texs[y][x] = t.Tex
 			props[y][x] = t.Prop
-			flips[y][x] = t.Flip
 			// A prop's ground is colored separately from the glyph's color so the
 			// flower-glyph stays red in the text renderer while HD draws grass.
 			if t.Ground != "" {
@@ -185,8 +182,6 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 					drawCanopy(img, vx, vy, scale, propCols[vy][vx], art, originX+vx, originY+vy, amb, ambStr)
 				} else if vs, ok := buildingArtFor(props[vy][vx]); ok {
 					drawBuilding(img, vx, vy, originX+vx, originY+vy, scale, propCols[vy][vx], vs, frame, props[vy][vx])
-				} else if art, ok := creatureArt[props[vy][vx]]; ok {
-					drawCreature(img, vx, vy, scale, propCols[vy][vx], art, flips[vy][vx])
 				}
 			}
 		}
@@ -246,6 +241,9 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		drawCaveFauna(img, props, cam, scale, frame, originX, originY)
 	}
 
+	// Wildlife sprites: drawn over the terrain but under the players, tinted by
+	// the scene ambient + radial light so they fade into the night like props.
+	stampCreaturesRGBA(img, creatures, frame, scale, cam, originX, originY, light, amb, ambStr, style)
 	stampSpritesRGBA(img, players, self, frame, scale, originX, originY)
 	if m := style.Palette.Map; m != nil {
 		applyColorMap(img, m)
@@ -488,70 +486,106 @@ func paintTile(img *image.RGBA, ox, oy, scale int, base colorful.Color, tex Tile
 	}
 }
 
-// drawCreature renders a wildlife sprite (a detailed side-view animal) centered
-// on tile (vx,vy) and bottom-aligned, at the avatar's pixel density (12 art-
-// pixels across a tile) so it reads as a proper figure rather than a 6×6 blob.
-// flip mirrors it horizontally for a creature facing west. A soft contact shadow
-// plants it on the ground. Codes: P body, p shade, o outline, L light, W
-// highlight, D dark, e eye, n nose/muzzle.
-func drawCreature(img *image.RGBA, vx, vy, scale int, col colorful.Color, art []string, flip bool) {
-	bw := len([]rune(art[0]))
-	bh := len(art)
-	// Two art-pixels per ground-tile pixel — the avatar's density. The sprite is
-	// bw=12 wide, so destW lands at ~2 tiles; clamp it to one tile so a creature
-	// stays within its cell (incremental-safe) and reads at the right scale.
-	apx := scale / bw
-	if apx < 1 {
-		apx = 1
+// stampCreaturesRGBA draws every visible wild animal as an animated, directional
+// sprite — the same machinery as the avatar — over the terrain but under the
+// players. Drawn south-to-north so a nearer animal overlaps one behind it. The
+// body colour is the species hue, tinted by the scene ambient + radial light so
+// wildlife fades into the dark like the rest of the world.
+func stampCreaturesRGBA(img *image.RGBA, creatures []world.Creature, frame, scale int, cam Camera, originX, originY int, light Light, amb colorful.Color, ambStr float64, style *Style) {
+	if len(creatures) == 0 {
+		return
 	}
-	destW, destH := bw*apx, bh*apx
-	left := vx*scale + (scale-destW)/2
-	top := (vy+1)*scale - destH
+	sorted := make([]world.Creature, len(creatures))
+	copy(sorted, creatures)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Y != sorted[j].Y {
+			return sorted[i].Y < sorted[j].Y
+		}
+		return sorted[i].X < sorted[j].X
+	})
+	for _, c := range sorted {
+		fc, fr := c.X-originX, c.Y-originY
+		if fc < -1 || fc > cam.W || fr < -1 || fr > cam.H {
+			continue // off-window
+		}
+		blitCreature(img, c, frame, scale, fc, fr, originX, originY, light, amb, ambStr, style)
+	}
+}
 
-	body := colorfulToRGBA(col)
-	shade := colorfulToRGBA(col.BlendLab(shadowColor, 0.34).Clamped())
-	dark := colorfulToRGBA(col.BlendLab(shadowColor, 0.5).Clamped())
-	outline := colorfulToRGBA(col.BlendLab(shadowColor, 0.7).Clamped())
-	light := colorfulToRGBA(col.BlendLab(spriteWhite, 0.4).Clamped())
-	white := colorfulToRGBA(col.BlendLab(spriteWhite, 0.75).Clamped())
-	eye := colorfulToRGBA(col.BlendLab(shadowColor, 0.85).Clamped())
+// blitCreature draws one animal: its directional sprite (front/back/side+mirror)
+// and walk/idle frame, centered horizontally and bottom-aligned on its tile,
+// with a soft contact shadow — mirroring blitAvatar.
+func blitCreature(img *image.RGBA, c world.Creature, frame, scale, fc, fr, originX, originY int, light Light, amb colorful.Color, ambStr float64, style *Style) {
+	sp, ok := SpeciesByKind(c.Kind)
+	if !ok {
+		return
+	}
+	wf, moving := CreatureWalkFrame(c.LastMoved, frame)
+	bmp, ok := CreatureBitmap(c.Kind, c.Facing, wf)
+	if !ok {
+		return
+	}
+	// Species hue, shaded into the prop palette and faded by ambient + the radial
+	// light at the creature's world cell (so it dims with distance at night).
+	base := applyLight(tint(style.tint(sp.Hex), amb, ambStr), c.X, c.Y, light)
 
-	// Soft contact shadow at the feet, kept inside the tile.
-	drawShadow(img, float64(vx*scale+scale/2), float64((vy+1)*scale)-float64(apx),
-		float64(destW)*0.40, float64(apx)*1.1, apx, float64(destH))
+	bw, bh := len([]rune(bmp[0])), len(bmp)
+	k := (PlayerH * scale) / bh
+	if k < 1 {
+		k = 1
+	}
+	destW, destH := bw*k, bh*k
+	centerX := (fc + PlayerW/2) * scale
+	bottomEdge := (fr + PlayerH) * scale
+	left := centerX - destW/2
+	top := bottomEdge - destH
 
-	for ay := 0; ay < bh; ay++ {
-		runes := []rune(art[ay])
-		for ax := 0; ax < bw && ax < len(runes); ax++ {
-			var c color.RGBA
-			ok := true
-			switch runes[ax] {
-			case 'P':
-				c = body
-			case 'p':
-				c = shade
-			case 'D':
-				c = dark
-			case 'o':
-				c = outline
-			case 'L':
-				c = light
-			case 'W', 'n':
-				c = white
-			case 'e':
-				c = eye
-			default:
-				ok = false // '.' transparent
-			}
-			if !ok {
+	drawShadow(img, float64(centerX), float64(bottomEdge)-float64(k)*0.6,
+		float64(destW)*0.40, float64(k)*1.1, k, float64(destH))
+
+	if moving && wf == 1 { // mid-stride: lift the body a touch, like the avatar
+		bob := k / 2
+		if bob < 1 {
+			bob = 1
+		}
+		top -= bob
+	}
+
+	for sy := 0; sy < bh; sy++ {
+		runes := []rune(bmp[sy])
+		for sx := 0; sx < bw && sx < len(runes); sx++ {
+			col, opaque := creaturePixel(runes[sx], base)
+			if !opaque {
 				continue
 			}
-			dx := ax
-			if flip {
-				dx = bw - 1 - ax
-			}
-			fillRect(img, left+dx*apx, top+ay*apx, apx, apx, c)
+			fillRect(img, left+sx*k, top+sy*k, k, k, colorfulToRGBA(col))
 		}
+	}
+}
+
+// creaturePixel resolves an animal sprite code to a color, shaded from the
+// species body colour. Codes: P body, p shade, D dark, o outline, L light, W
+// highlight, e eye, n nose/muzzle, '.' transparent.
+func creaturePixel(code rune, body colorful.Color) (colorful.Color, bool) {
+	switch code {
+	case 'P':
+		return body, true
+	case 'p':
+		return body.BlendLab(shadowColor, 0.34).Clamped(), true
+	case 'D':
+		return body.BlendLab(shadowColor, 0.5).Clamped(), true
+	case 'o':
+		return body.BlendLab(shadowColor, 0.72).Clamped(), true
+	case 'L':
+		return body.BlendLab(spriteWhite, 0.4).Clamped(), true
+	case 'n':
+		return body.BlendLab(spriteWhite, 0.7).Clamped(), true
+	case 'W':
+		return spriteWhite, true
+	case 'e':
+		return shadowColor, true
+	default:
+		return colorful.Color{}, false
 	}
 }
 
