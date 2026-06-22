@@ -62,7 +62,19 @@ type Player struct {
 	Style     int // avatar sprite style index
 	Accessory int // avatar accessory index (0 = none)
 	LastMoved time.Time
+
+	// Combat (docs/WEAPON_PLAN.md). Live session state, never persisted — you
+	// always reconnect at full health. The world owns atomicity and delivery
+	// (Strike/Respawn); the game layer owns the numbers (weapon damage, how long
+	// a knock-out lasts) and where you respawn.
+	HP          int       // current health; == MaxHP when full
+	MaxHP       int       // cap (DefaultMaxHP for now; gear/food may lift it later)
+	DownedUntil time.Time // > now ⇒ knocked out: immune, can't act, awaiting respawn
+	LastHurt    time.Time // last time this player took damage (gates regen / "in combat" UI)
 }
+
+// DefaultMaxHP is every player's starting and full health.
+const DefaultMaxHP = 10
 
 const eventBuffer = 64
 
@@ -381,6 +393,8 @@ func (w *World) Join(desired string) (string, <-chan Event) {
 	w.players[name] = &Player{
 		Name:  name,
 		Color: ui.AvatarColor(name),
+		HP:    DefaultMaxHP,
+		MaxHP: DefaultMaxHP,
 	}
 	ch := make(chan Event, eventBuffer)
 	w.subs[name] = ch
