@@ -140,6 +140,15 @@ const (
 	PropFox      // a low, long-tailed prowler
 	PropBird     // a little ground bird
 	PropFishWild // a fish breaking the water (a live animal, vs. PropFish the catch)
+
+	// Chess pieces (in-tile sprites; PropHex sets the side — light vs dark — so
+	// one silhouette reads for both armies). Used by the arcade chess cabinet.
+	PropChessPawn
+	PropChessKnight
+	PropChessBishop
+	PropChessRook
+	PropChessQueen
+	PropChessKing
 )
 
 // Tile is one cell of a parsed map.

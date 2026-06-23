@@ -114,6 +114,15 @@ func TestGotoValidTransitions(t *testing.T) {
 	}
 }
 
+func TestGotoNoArgListsAreas(t *testing.T) {
+	m := playingModel(t)
+	m.runChatLine("/goto")
+	if !m.showInfo || len(m.infoLines) == 0 {
+		t.Fatalf("/goto with no args should open the area list panel; showInfo=%v lines=%d",
+			m.showInfo, len(m.infoLines))
+	}
+}
+
 func TestGotoUnknown(t *testing.T) {
 	m := playingModel(t)
 	m.runChatLine("/goto narnia")

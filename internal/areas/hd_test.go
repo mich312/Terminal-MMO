@@ -8,11 +8,21 @@ import (
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
 
+	_ "github.com/durst-group/durstworld/internal/areas/arcade"
+	_ "github.com/durst-group/durstworld/internal/areas/bomberman"
+	_ "github.com/durst-group/durstworld/internal/areas/breakout"
+	_ "github.com/durst-group/durstworld/internal/areas/chess"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
+	_ "github.com/durst-group/durstworld/internal/areas/doom"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
+	_ "github.com/durst-group/durstworld/internal/areas/maze"
+	_ "github.com/durst-group/durstworld/internal/areas/pong"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
-	_ "github.com/durst-group/durstworld/internal/areas/stub"
+	_ "github.com/durst-group/durstworld/internal/areas/snake"
+	_ "github.com/durst-group/durstworld/internal/areas/sokoban"
+	_ "github.com/durst-group/durstworld/internal/areas/tetris"
+	_ "github.com/durst-group/durstworld/internal/areas/twenty48"
 	_ "github.com/durst-group/durstworld/internal/areas/wilds"
 )
 
@@ -21,7 +31,7 @@ import (
 // lets HD mode work in all worlds, not just the Wilds.
 func TestAreasHDRenderable(t *testing.T) {
 	const vw, vh, scale = 40, 24, 8
-	for _, id := range []string{"wilds", "lobby", "kraftwerk", "democenter", "presentation"} {
+	for _, id := range []string{"wilds", "lobby", "kraftwerk", "democenter", "presentation", "arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout", "bomberman", "2048", "chess", "doom"} {
 		t.Run(id, func(t *testing.T) {
 			w := world.New()
 			defer w.Close()
@@ -48,17 +58,5 @@ func TestAreasHDRenderable(t *testing.T) {
 				t.Fatalf("HD frame %dx%d, want %dx%d", img.Bounds().Dx(), img.Bounds().Dy(), vw*scale, vh*scale)
 			}
 		})
-	}
-}
-
-// The Arcade stub is a panel-only "coming soon" area with no walkable map, so it
-// is intentionally not HD-renderable — HD falls back to the lobby for it.
-func TestStubNotHDRenderable(t *testing.T) {
-	w := world.New()
-	defer w.Close()
-	name, _ := w.Join("z")
-	ctx := &game.Ctx{World: w, Name: name}
-	if _, ok := game.NewArea("arcade", ctx).(game.HDViewer); ok {
-		t.Error("arcade stub unexpectedly implements HDViewer")
 	}
 }
