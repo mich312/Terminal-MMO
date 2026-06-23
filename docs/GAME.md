@@ -6,19 +6,40 @@
 
 ## The one-liner
 
-Durst World is a small, persistent, multiplayer terminal "world" for Durst
-Group employees, played **entirely over SSH**. There is no client to install:
-you `ssh` in and your SSH username *is* your character. People walk around a
-shared, generative overworld, bump into each other in real time, chat (only
-those standing near you hear it), forage items, and step through portals into
-hand-built areas — a lobby, a presentation hall, a machine room, a demo center,
-and riddle-gated secret rooms.
+Durst World is a persistent, multiplayer terminal "world" for Durst Group
+employees, played **entirely over SSH**. There is no client to install: you
+`ssh` in and your SSH username *is* your character. People walk a shared,
+generative overworld, bump into each other in real time, chat (only those
+standing near you hear it), forage and hunt, craft and build, automate machines
+that keep working while they're logged off, and trade — then step through
+portals into hand-built areas (a lobby, a presentation hall, a machine room, a
+demo center, an arcade) and riddle-gated reward rooms.
 
 ```
 ssh -p 2222 yourname@durstworld.example.com
 ```
 
-No password, no account, no AI/NPCs. The world is deterministic and offline.
+No password, no account: your SSH username is your identity. The **terrain** is
+a deterministic, offline function of a seed — but the world is no longer *only*
+that: it now has server-simulated **wildlife**, **building** you persist, and
+**light, opt-in danger** (hunting and zone-gated PvP) out past the settled
+frontier. The pillars below mark what's bedrock and what's changed.
+
+## What it is (the north star)
+
+**A persistent cozy-frontier world you build with your colleagues — gather,
+craft, automate, and trade on shared land — with light, *opt-in* danger
+(hunting and zone-gated PvP) out past the settled frontier.** The cozy, social,
+build-together spine is the point; combat is spice, not substance. The hub,
+settlements, and every hand-built area are sanctuaries; the open Wilds is the
+only place a colleague can knock you out — a cozy knock-out, no item loss,
+revive at HQ.
+
+> Reconciled with the shipped game. Earlier drafts billed Durst World as "no
+> combat, no danger, no AI/NPCs" — that described the original social *place*,
+> not the game it became (see [`DESIGN_MECHANICS.md`](DESIGN_MECHANICS.md),
+> [`WILDLIFE_PLAN.md`](WILDLIFE_PLAN.md), [`WEAPON_PLAN.md`](WEAPON_PLAN.md)).
+> The pillars below are what stayed bedrock through that growth.
 
 ## Design pillars (the things that must stay true)
 
@@ -34,9 +55,16 @@ No password, no account, no AI/NPCs. The world is deterministic and offline.
 4. **Persist between visits, not during.** Live state is in memory. SQLite is
    the memory *between* visits (where you stood, what you've explored, your
    pack, your hats, guestbook, decks). Chat is deliberately ephemeral.
-5. **Deterministic & offline.** The overworld is a pure function of a seed — no
-   stored chunks, no server-side randomness that drifts between sessions, no
-   network calls, no NPC AI.
+5. **Seeded terrain; a small, bounded live layer.** The *overworld terrain* is a
+   pure function of a seed — no stored chunks, no server-side randomness that
+   drifts between sessions, no network calls. Everything mutable rides on top as
+   sparse, explicit layers: player-built **placements**, **claims**, and
+   **cleared cells** persisted in SQLite, plus **server-simulated wildlife** —
+   the one autonomous thing, kept live and ephemeral, spawned only near online
+   players and capped, never stored. The bedrock invariant holds (*terrain*
+   never drifts), but the original "no AI/NPCs, deterministic and offline" no
+   longer does: wildlife and the player/creature damage model are deliberate,
+   bounded exceptions, not seeded determinism.
 
 ## Two renderers (important context)
 

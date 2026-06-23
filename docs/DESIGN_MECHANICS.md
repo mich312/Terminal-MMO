@@ -22,14 +22,22 @@ Two facts decide the next chapter:
 
 ## Direction (decided)
 
-**Genre: Cozy frontier.** Gather → craft → build → automate → trade. No combat,
-no death, no danger. This extends the world's current cozy/social tone and fits
-**every** design pillar — most importantly "persist between visits, not during",
-which turns offline automation into a feature rather than a problem.
+**Genre: Cozy frontier — with light, opt-in danger layered on later.** Gather →
+craft → build → automate → trade is the spine, and it stays the point: it
+extends the world's cozy/social tone and fits **every** design pillar — most
+importantly "persist between visits, not during", which turns offline
+automation into a feature rather than a problem.
 
-Survival/combat (wildlife, weapons, enemies) is **parked**, not cancelled — see
-"Parked: light danger" below. The cozy systems are designed so it *can* layer on
-later, but nothing built now depends on it.
+> **Amended (shipped).** This section originally read "no combat, no death, no
+> danger," with survival/combat **parked**. That call was later reversed for
+> *light* danger: server-simulated **wildlife** and hunting
+> ([`WILDLIFE_PLAN.md`](WILDLIFE_PLAN.md)), then a shared damage model and
+> **consensual, zone-gated PvP** ([`WEAPON_PLAN.md`](WEAPON_PLAN.md)). The cozy
+> build-together loop stays primary; danger is opt-in and confined to the open
+> Wilds — the hub, settlements, and every hand-built area are sanctuaries, and
+> defeat is a cozy knock-out with no item loss. The "Parked: light danger"
+> section below is the original framing, kept for the record but now superseded
+> (its closing note tracks where the decision turned).
 
 **Flavor: corporate × medieval.** Deadpan satire of the world's existing tension
 — Durst HQ and "Demo Center" sitting next to cathedrals and palisades. The
@@ -132,7 +140,11 @@ claims, building tiers, wildlife — layers onto these three.
 | Persist between visits, not during | ✅ **machines are built on exactly this** |
 | Deterministic & offline | ⚠️ terrain stays pure-seed; **placements are a stored sparse layer** — same precedent as guestbook/decks/gate-pool. Machines fast-forward by elapsed time, no per-tick RNG. |
 
-## Parked: light danger (the optional later layer)
+## Parked: light danger (the optional later layer) — ✅ shipped, superseded
+
+> Kept for the record. This was the "if we ever" framing; it has since shipped —
+> wildlife, hunting, weapons, and zone-gated PvP are live. See the closing note
+> for where the decision turned, and WILDLIFE_PLAN / WEAPON_PLAN for what landed.
 
 If we ever want "animals / weapons / enemies" without breaking determinism or
 the cozy tone:
