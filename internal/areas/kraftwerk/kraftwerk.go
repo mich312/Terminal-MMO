@@ -37,7 +37,7 @@ var rows = []string{
 }
 
 var legend = map[rune]game.LegendEntry{
-	'0': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "lobby", Label: "Lobby"},
+	'0': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds"},
 	// Metal-plate floor and walls.
 	'.': {Kind: game.TileFloor, Ch: '·', Walkable: true, Tex: game.TexMetal, Ground: "#23272E"},
 	'#': {Kind: game.TileWall, Ch: '█', Tex: game.TexMetal, Ground: "#3A424C"},

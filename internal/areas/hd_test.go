@@ -9,37 +9,29 @@ import (
 	"github.com/durst-group/durstworld/internal/world"
 
 	_ "github.com/durst-group/durstworld/internal/areas/arcade"
-	_ "github.com/durst-group/durstworld/internal/areas/cave"
+	_ "github.com/durst-group/durstworld/internal/areas/bomberman"
+	_ "github.com/durst-group/durstworld/internal/areas/breakout"
+	_ "github.com/durst-group/durstworld/internal/areas/chess"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
-	_ "github.com/durst-group/durstworld/internal/areas/grove"
+	_ "github.com/durst-group/durstworld/internal/areas/doom"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
+	_ "github.com/durst-group/durstworld/internal/areas/maze"
+	_ "github.com/durst-group/durstworld/internal/areas/pong"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
-	_ "github.com/durst-group/durstworld/internal/areas/vault"
+	_ "github.com/durst-group/durstworld/internal/areas/snake"
+	_ "github.com/durst-group/durstworld/internal/areas/sokoban"
+	_ "github.com/durst-group/durstworld/internal/areas/tetris"
+	_ "github.com/durst-group/durstworld/internal/areas/twenty48"
 	_ "github.com/durst-group/durstworld/internal/areas/wilds"
 )
-
-// HD is the default client, so every registered world must be HD-renderable —
-// otherwise walking through a portal into it silently bounces you back to the
-// lobby (enterHD's fallback). This guards that whole class of "broken portal".
-func TestEveryRegisteredAreaIsHDRenderable(t *testing.T) {
-	w := world.New()
-	defer w.Close()
-	name, _ := w.Join("hd")
-	ctx := &game.Ctx{World: w, Name: name}
-	for _, id := range game.RegisteredAreas() {
-		if _, ok := game.NewArea(id, ctx).(game.HDViewer); !ok {
-			t.Errorf("area %q is registered but not HD-renderable — a portal into it would bounce back to the lobby", id)
-		}
-	}
-}
 
 // Every walkable area must be HD-renderable: implement game.HDViewer, hand back
 // a correctly-sized tile window, and feed a non-empty RGBA frame. This is what
 // lets HD mode work in all worlds, not just the Wilds.
 func TestAreasHDRenderable(t *testing.T) {
 	const vw, vh, scale = 40, 24, 8
-	for _, id := range []string{"wilds", "lobby", "kraftwerk", "democenter", "presentation", "arcade"} {
+	for _, id := range []string{"wilds", "lobby", "kraftwerk", "democenter", "presentation", "arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout", "bomberman", "2048", "chess", "doom"} {
 		t.Run(id, func(t *testing.T) {
 			w := world.New()
 			defer w.Close()

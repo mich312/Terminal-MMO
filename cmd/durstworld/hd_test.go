@@ -4,25 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
 )
-
-// panelArea is a panel-only area (no walkable map): it implements game.Area but
-// not game.HDViewer, standing in for any future "coming soon" screen.
-type panelArea struct{}
-
-func (panelArea) Name() string                          { return "Panel" }
-func (panelArea) Init(*world.Player) tea.Cmd            { return nil }
-func (p panelArea) Update(tea.Msg) (game.Area, tea.Cmd) { return p, nil }
-func (panelArea) View(int, int) string                  { return "coming soon" }
-
-func init() {
-	game.Register("paneltest", "Panel", func(*game.Ctx) game.Area { return panelArea{} })
-}
 
 // moveKeyMsg accepts every movement key and rejects everything else, and the
 // KeyMsg it builds must drive the areas' MoveKey the same way the raw name does
@@ -65,21 +50,26 @@ func TestCmdWantsClassic(t *testing.T) {
 	}
 }
 
-// A portal into a panel-only area (one that can't render in HD) makes enterHD
-// fall back to the lobby rather than strand the player on a blank screen.
-func TestEnterHDFallsBackForPanelArea(t *testing.T) {
-	w := world.New()
-	defer w.Close()
-	name, _ := w.Join("p")
-	st := store.Open(filepath.Join(t.TempDir(), "x.db"))
-	defer st.Close()
-	ctx := &game.Ctx{World: w, Store: st, Name: name}
+// The Arcade and its minigames are walkable, HD-renderable rooms, so entering
+// them in HD keeps the requested area (rather than falling back to the lobby,
+// which is what enterHD does only for an area that can't draw in pixels).
+func TestEnterHDArcadeAndGames(t *testing.T) {
+	for _, id := range []string{"arcade", "sokoban", "maze", "snake", "tetris", "pong", "breakout", "bomberman", "2048", "chess", "doom"} {
+		t.Run(id, func(t *testing.T) {
+			w := world.New()
+			defer w.Close()
+			name, _ := w.Join("p")
+			st := store.Open(filepath.Join(t.TempDir(), "x.db"))
+			defer st.Close()
+			ctx := &game.Ctx{World: w, Store: st, Name: name}
 
-	id, area, hv := enterHD(ctx, "lobby", "paneltest")
-	if id != "lobby" {
-		t.Fatalf("panel area should fall back to lobby, got %q", id)
-	}
-	if area == nil || hv == nil {
-		t.Fatal("enterHD returned nil area/viewer")
+			got, area, hv := enterHD(ctx, "lobby", id)
+			if got != id {
+				t.Fatalf("entering %q in HD landed in %q", id, got)
+			}
+			if area == nil || hv == nil {
+				t.Fatal("enterHD returned nil area/viewer")
+			}
+		})
 	}
 }

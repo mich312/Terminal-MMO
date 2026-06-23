@@ -4,7 +4,8 @@ A small multiplayer terminal world for Durst Group employees, played over
 SSH. Walk around the ASCII lobby of Durst HQ, bump into colleagues in real
 time, chat (proximity-based — gossip stays local), sign the guestbook, and
 step through portals into the Presentation Wing, Kraftwerk, Demo Center and
-the (coming-soon) Arcade.
+the Arcade — a hall of cabinets, each a minigame (Sokoban, Maze, Snake,
+Tetris, Pong, Breakout, Bomberman, 2048, Chess, Doom).
 
 ```
 ssh -p 2222 yourname@durstworld.example.com
@@ -89,8 +90,9 @@ Background and rationale: [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
 
 You spawn in **the Wilds**, the open-air hub. Walk to the landmark doors near
 spawn — `⌂` Durst HQ (the lobby), `P` Presentation, `K` Kraftwerk, `D` Demo
-Center — to enter each area. Players are multi-tile half-block avatars in their
-own color, drawn over a 2×2 footprint.
+Center, and `A` Arcade (out west past Kraftwerk) — to enter each area. Stepping
+back out of any area returns you to the Wilds beside the door you used, so the
+open world stays the hub. Players are half-block avatars in their own color.
 
 The overworld starts **hidden** — only a circle of terrain around you is lit;
 the rest is fog. Walking uncovers new ground, which then stays visible (dimmed)
@@ -196,10 +198,45 @@ Build with `make build` (or `go build -o durstworld ./cmd/durstworld`) and
 copy the binary to `/opt/durstworld/`. The host key and DB live next to it
 in `.ssh/` and `data/`.
 
+### The Arcade & minigames
+
+Out past Kraftwerk on the high street stands the `A` **Arcade** (also reachable
+from the lobby) — a neon hall of cabinets, each a portal into a self-contained
+**minigame**:
+
+- **Sokoban** (`◊`) — shove every crate onto a glowing pad to clear a level,
+  then on to the next. `r` resets the current puzzle.
+- **Maze** (`◊`) — feel your way by torchlight to the green `◈` exit; solve it
+  and a bigger maze is carved. `r` carves a fresh one.
+- **Snake** (`◊`) — steer a growing snake around a walled pit, eat the `◆`
+  pellets, don't hit the wall or yourself. `r` restarts, `x` leaves.
+- **Tetris** (`◊`) — rotate and slot falling tetrominoes to clear lines (←→
+  move, ↑ rotate, ↓ soft-drop). `r` restarts, `x` leaves.
+- **Pong** (`◊`) — you vs. the house AI, first to 7 (W/S move). `r` rematch.
+- **Breakout** (`◊`) — bounce the ball off your paddle to clear the bricks
+  (A/D move). `r` restarts.
+- **Bomberman** (`◊`) — drop bombs (`e`) to blow up blocks and the roaming
+  foes; mind the blast. `r` restarts.
+- **2048** (`◊`) — slide and merge the numbered tiles to reach 2048
+  (arrows/WASD). `r` restarts.
+- **Chess** (`◊`) — you (White) vs. a house AI, full legal moves with check &
+  mate (cursor + `e` to select/move). `r` new game.
+- **Doom** (`◊`) — a first-person raycaster maze; find the exit (W/S walk, A/D
+  turn). Drawn as real pixels in HD, ASCII in the glyph client. `r` resets.
+
+Most minigames are **keypress-driven** (the HD client only forwards key events to
+an area, never a clock), so they play identically in both clients. Real-time
+ones like Snake implement `game.Ticker`, which both clients drive off a
+wall-clock cadence — the shared foundation for anything that moves on its own.
+Each game has a door back to the Arcade; the Arcade's `◈` door returns you to the
+Wilds. To dock a new game, add a package under `internal/areas/`, register it,
+and point a new cabinet tile in `internal/areas/arcade` at it (the `c` cabinet is
+the next free slot). See [`docs/AREAS.md`](docs/AREAS.md) for the full map.
+
 ## Adding a new area (or mini-game)
 
-Areas are isolated packages that implement a four-method interface — the
-Arcade stub (`internal/areas/stub`) is the minimal template.
+Areas are isolated packages that implement a four-method interface;
+`internal/areas/maze` is a compact worked example.
 
 1. Create `internal/areas/yourarea/` and implement `game.Area`:
 
@@ -207,7 +244,7 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
    type Area interface {
        Name() string
        Init(player *world.Player) tea.Cmd
-       Update(msg tea.Msg) (Area, tea.Cmd) // return game.Transition{To: "lobby"} to leave
+       Update(msg tea.Msg) (Area, tea.Cmd) // return game.Transition{To: "wilds"} to leave
        View(width, height int) string
    }
    ```
@@ -219,9 +256,10 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
    the worked example.
 
    For anything with its own interaction (the lobby's guestbook, the
-   Presentation Wing's slides), embed `game.Walker` and implement `Area`
-   yourself. `Walker.HandleCommon` gives you movement, wall collision,
-   portal triggering and the portal pulse for free.
+   Presentation Wing's slides, the minigames), embed `game.Walker` and
+   implement `Area` yourself. `Walker.HandleCommon` gives you movement, wall
+   collision, portal triggering and the portal pulse for free; for an
+   HD-renderable scene, return a tile window (Walker does this automatically).
 
 2. Self-register in `init()`:
 
@@ -235,9 +273,10 @@ Arcade stub (`internal/areas/stub`) is the minimal template.
 
 3. Import the package for its side effect in `cmd/durstworld/main.go`.
 
-4. Point a portal at it: add a tile to the lobby map and a legend entry
+4. Point a portal at it: add a tile + legend entry
    `{Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "yourarea",
-   Label: "Your Area"}`.
+   Label: "Your Area"}` to a map that leads there (a hall, the Arcade, or — for
+   a door in the open world — a `worldgen.Landmark`).
 
 Optional extras: implement `game.Hinter` for a contextual status-bar hint,
 `game.InputCapturer` to grab all keys while a panel is open, and use

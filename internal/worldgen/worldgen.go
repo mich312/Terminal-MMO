@@ -88,6 +88,9 @@ var Landmarks = []Landmark{
 	{16, 0, "presentation", "Presentation Wing", 'P', "#FFC861", 3},
 	{-16, 0, "kraftwerk", "Kraftwerk", 'K', "#56E1FF", 3},
 	{0, 12, "democenter", "Demo Center", 'D', "#C792EA", 3},
+	// The Arcade sits out past the power hall at the west end of the high street;
+	// the trail is extended to reach it (see hub.go).
+	{-22, 0, "arcade", "Arcade", 'A', "#FFD166", 2},
 }
 
 // Gates are sealed portals out past the hub — optional, riddle/offering-gated

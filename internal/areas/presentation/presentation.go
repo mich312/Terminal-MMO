@@ -27,7 +27,7 @@ const (
 // legend drives both renderers: Ch/Color/Anim are the glyph look; Tex/Ground/
 // Prop are the HD pixel look.
 var legend = map[rune]game.LegendEntry{
-	'0': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "lobby", Label: "Lobby"},
+	'0': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds"},
 	'.': {Kind: game.TileFloor, Ch: '·', Walkable: true, Tex: game.TexFloor, Ground: "#23262E"},
 	'#': {Kind: game.TileWall, Ch: '█', Tex: game.TexBrick, Ground: "#3A3550"},
 	// Carpet aisle (walkable, deep violet).

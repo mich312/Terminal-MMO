@@ -114,8 +114,11 @@ portals.
 | `P` | **Presentation Wing** | A concourse of stages for player-authored talks. |
 | `K` | **Kraftwerk** | A dim machine hall (animated machines, coolant, lamps). |
 | `D` | **Demo Center** | A showcase room. |
-| — | **Arcade** | Coming soon (a `stub` placeholder area). |
+| `A` | **Arcade** | A neon hall of cabinets, each a portal into a minigame (Sokoban, Maze, Snake, Tetris, Pong, Breakout, Bomberman, 2048, Chess, Doom). Out west past Kraftwerk; also off the lobby. See [`AREAS.md`](AREAS.md). |
 | — | **The Grove / The Vault** | Reward rooms behind the sealed gates. |
+
+Every area's exit door returns to **the Wilds** (beside the landmark you used),
+so the open world is the hub you always come back to — not the lobby.
 
 ### Presentation Wing (the one area with deep mechanics)
 

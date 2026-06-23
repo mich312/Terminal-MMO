@@ -134,10 +134,16 @@ func (a *area) Init(*world.Player) tea.Cmd {
 	return nil
 }
 
-// resume returns the saved position if it's still an open, non-portal footprint
-// (so you don't re-trigger the door you arrived through), else a fresh spawn by
-// the HQ gate.
+// resume decides where to surface in the Wilds. Returning through a door (a
+// hall, the lobby, the arcade) drops you beside that landmark, so stepping out
+// of an area lands you back in the open world right where you went in — never
+// teleported to the distant HQ. Otherwise it restores your last saved footprint
+// (e.g. surfacing beside a cave mouth far from the hub), falling back to a fresh
+// spawn by the HQ gate.
 func (a *area) resume() (int, int) {
+	if x, y, ok := a.landmarkReturn(); ok {
+		return x, y
+	}
 	if x, y, ok := a.ctx.Store.LoadPosition(a.ctx.Name, "wilds"); ok && a.fits(x, y) {
 		if _, isPortal := a.portalUnder(x, y); !isPortal {
 			return x, y
@@ -153,6 +159,32 @@ func (a *area) resume() (int, int) {
 		}
 	}
 	return a.spawn()
+}
+
+// landmarkReturn, when the player has just stepped out of an area reached by a
+// landmark door (a hall, the lobby, the arcade), returns a walkable cell beside
+// that door. ok is false on a fresh connect or when arriving from somewhere
+// without a fixed door (a cave mouth, a gate) — those restore the saved spot.
+func (a *area) landmarkReturn() (int, int, bool) {
+	if a.ctx.From == "" || a.ctx.From == "wilds" {
+		return 0, 0, false
+	}
+	for _, lm := range worldgen.Landmarks {
+		if lm.Portal != a.ctx.From {
+			continue
+		}
+		// Surface on an open, non-portal cell next to the door so we don't bounce
+		// straight back through it.
+		for _, o := range [][2]int{{0, 1}, {1, 1}, {-1, 1}, {1, 0}, {-1, 0}, {0, 2}, {2, 0}, {-2, 0}, {0, -1}} {
+			nx, ny := lm.X+o[0], lm.Y+o[1]
+			if a.fits(nx, ny) {
+				if _, isPortal := a.portalUnder(nx, ny); !isPortal {
+					return nx, ny, true
+				}
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 // chunkOf splits a world cell into its chunk coordinate and bit index.

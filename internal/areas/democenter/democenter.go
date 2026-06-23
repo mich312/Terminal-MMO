@@ -35,7 +35,7 @@ var rows = []string{
 }
 
 var legend = map[rune]game.LegendEntry{
-	'0': {Kind: game.TilePortal, Ch: '◊', Walkable: true, Portal: "lobby", Label: "Lobby"},
+	'0': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds"},
 	// Gallery floor (a touch warmer than the default).
 	'.': {Kind: game.TileFloor, Ch: '·', Walkable: true, Tex: game.TexFloor, Ground: "#2E3138"},
 	// Carpet runners (walkable, warm red).

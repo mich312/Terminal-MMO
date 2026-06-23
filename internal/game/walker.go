@@ -120,6 +120,14 @@ func (w *Walker) RenderLit(vw, vh, radius int) string {
 	return RenderLitViewport(w.Ctx.Theme, w.Map, players, w.Ctx.Name, w.Frame, cam, light)
 }
 
+// RenderBoard draws the map centered on its geometric middle with no player
+// avatars — for board games (Pong, Tetris…) where the player is not a token on
+// the grid. Pairs with HideAvatars() so the HD client skips avatars too.
+func (w *Walker) RenderBoard(vw, vh int) string {
+	cam := CameraOn(w.Map, w.Map.W/2, w.Map.H/2, vw, vh)
+	return RenderViewport(w.Ctx.Theme, w.Map, nil, w.Ctx.Name, w.Frame, cam)
+}
+
 // HDView returns a vw×vh tile window centered on the player for the HD pixel
 // renderer, plus its absolute top-left origin. Tiles outside the map come back
 // as void; portal tiles are tagged as animated gate props so they read as

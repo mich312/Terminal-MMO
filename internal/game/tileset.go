@@ -84,6 +84,57 @@ var groundArt = map[TileTex][][]string{
 }
 
 var propArt = map[TileProp][]string{
+	// Chess pieces — crude but distinct 6×6 silhouettes, painted in the side's
+	// colour (PropHex): pawn (squat), knight (angled head), bishop (slit mitre),
+	// rook (crenellated), queen (full spiky crown), king (cross).
+	PropChessPawn: {
+		"......",
+		"..LP..",
+		"..PP..",
+		".pPPp.",
+		".PPPP.",
+		"oPPPPo",
+	},
+	PropChessKnight: {
+		".LPPP.",
+		"PPpPPP",
+		"ooPPPP",
+		"..pPPP",
+		".pPPPp",
+		"oPPPPo",
+	},
+	PropChessBishop: {
+		"..L...",
+		"..oP..",
+		".PPPP.",
+		".PpPP.",
+		".pPPp.",
+		"oPPPPo",
+	},
+	PropChessRook: {
+		"P.PP.P",
+		"PPPPPP",
+		".PLPP.",
+		".pPPp.",
+		".PPPP.",
+		"oPPPPo",
+	},
+	PropChessQueen: {
+		"L.L.L.",
+		"PPPPPP",
+		".PPPP.",
+		".PLPP.",
+		".pPPp.",
+		"oPPPPo",
+	},
+	PropChessKing: {
+		"..L...",
+		".PoP..",
+		"..P...",
+		".PPPP.",
+		".pPPp.",
+		"oPPPPo",
+	},
 	PropFlower: {
 		"......",
 		".P.P..",

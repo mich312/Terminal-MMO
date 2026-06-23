@@ -3,7 +3,10 @@
 package game
 
 import (
+	"image"
 	"sort"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -81,6 +84,36 @@ type HDLighter interface {
 // draws it onto the frame.
 type Toaster interface {
 	Toast() (text string, show bool)
+}
+
+// Ticker is a real-time area: one that advances on its own clock rather than
+// only on key presses (Snake, and future games like Bomberman). The HD client
+// forwards only key events to Update and ignores area tea.Cmds, so it cannot
+// self-clock there — instead both clients drive GameTick() off the wall clock at
+// TickInterval() cadence (the HD loop from its frame ticker, the glyph client
+// from a tea.Tick loop). GameTick returns the next Area, so a game may even
+// transition on a tick (return a Transition); normally it returns itself.
+type Ticker interface {
+	TickInterval() time.Duration
+	GameTick() Area
+}
+
+// AvatarHider lets an area suppress drawing player avatars over its map. Board
+// games (Pong, Breakout, Tetris, Chess…) aren't a walk-around token: the player
+// controls a paddle or a falling piece, not a body on the grid, so a centered
+// "you" marker would just sit in the play area. Such areas frame the board with
+// the camera and return true here so the renderers skip the avatar pass.
+type AvatarHider interface {
+	HideAvatars() bool
+}
+
+// HDFramer lets an area paint straight into the HD pixel frame, on top of the
+// (usually blank) tile render — for a first-person raycaster (Doom) that isn't a
+// tilemap at all. The HD loop calls it each frame after compositing terrain and
+// before the UI overlays; the glyph client renders such an area from its View
+// string as usual. img is the full RGBA frame to draw into.
+type HDFramer interface {
+	HDFrame(img *image.RGBA)
 }
 
 // Hurtable lets an area tell the renderers the local player just took a blow, so
@@ -214,6 +247,24 @@ func RegisteredAreas() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// GotoListLines renders the registered areas as a tidy, wrapped list — one
+// "Display Name (id)" entry per area, a few per line — for the /goto menu both
+// clients show when called with no argument. Derived from the registry, so a new
+// area appears automatically.
+func GotoListLines() []string {
+	ids := RegisteredAreas()
+	const perLine = 3
+	var lines []string
+	for i := 0; i < len(ids); i += perLine {
+		var parts []string
+		for _, id := range ids[i:min(i+perLine, len(ids))] {
+			parts = append(parts, DisplayName(id)+" ("+id+")")
+		}
+		lines = append(lines, "  "+strings.Join(parts, " · "))
+	}
+	return lines
 }
 
 // DisplayName resolves an area id to its human name.
