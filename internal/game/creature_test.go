@@ -3,6 +3,7 @@ package game
 import (
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -98,6 +99,32 @@ func TestCreatureBitmapAllFacings(t *testing.T) {
 		for _, d := range dirs {
 			if _, ok := CreatureBitmap(sp.Kind, d, 0); !ok {
 				t.Errorf("%s has no bitmap for facing %v", sp.Kind, d)
+			}
+		}
+	}
+}
+
+// Negative walk frames must not panic the bitmap lookup. Creatures at negative
+// world coordinates produce a negative animation phase (X*7+Y*13), so the walk
+// frame can be negative — frames[walkFrame%2] would otherwise index frames[-1].
+func TestCreatureBitmapNegativeWalkFrame(t *testing.T) {
+	for _, sp := range SpeciesList() {
+		for _, wf := range []int{-1, -2, -3, -1000001} {
+			rows, ok := CreatureBitmap(sp.Kind, world.DirS, wf)
+			if !ok || len(rows) == 0 {
+				t.Errorf("%s: no bitmap for walk frame %d", sp.Kind, wf)
+			}
+		}
+	}
+}
+
+// CreatureWalkFrame must always report a valid 0/1 pose, even when the phase
+// (derived from possibly-negative world coordinates) is negative.
+func TestCreatureWalkFrameNonNegative(t *testing.T) {
+	for phase := -50; phase <= 50; phase++ {
+		for frame := 0; frame < 210; frame++ {
+			if wf, _ := CreatureWalkFrame(time.Time{}, frame, phase); wf != 0 && wf != 1 {
+				t.Fatalf("walk frame = %d for frame=%d phase=%d, want 0 or 1", wf, frame, phase)
 			}
 		}
 	}
