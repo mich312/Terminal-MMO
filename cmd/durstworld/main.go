@@ -30,13 +30,13 @@ import (
 	"github.com/durst-group/durstworld/internal/worldgen"
 
 	// areas register themselves with the game registry
+	_ "github.com/durst-group/durstworld/internal/areas/arcade"
 	_ "github.com/durst-group/durstworld/internal/areas/cave"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
 	_ "github.com/durst-group/durstworld/internal/areas/grove"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
-	_ "github.com/durst-group/durstworld/internal/areas/stub"
 	_ "github.com/durst-group/durstworld/internal/areas/vault"
 	"github.com/durst-group/durstworld/internal/areas/wilds"
 )

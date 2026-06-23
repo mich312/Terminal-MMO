@@ -10,11 +10,11 @@ import (
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
 
+	_ "github.com/durst-group/durstworld/internal/areas/arcade"
 	_ "github.com/durst-group/durstworld/internal/areas/democenter"
 	_ "github.com/durst-group/durstworld/internal/areas/kraftwerk"
 	_ "github.com/durst-group/durstworld/internal/areas/lobby"
 	_ "github.com/durst-group/durstworld/internal/areas/presentation"
-	_ "github.com/durst-group/durstworld/internal/areas/stub"
 )
 
 // TestAreasConstructAndSpawn instantiates every registered area and runs
