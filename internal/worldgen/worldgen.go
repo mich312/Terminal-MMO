@@ -102,6 +102,35 @@ var Gates = []Landmark{
 	{0, 18, "vault", "Sunken Gate", '◈', "#56E1FF", 2},
 }
 
+// ProjectSite is a community build's anchor in the overworld (docs/COMMUNITY_PLAN.md):
+// a fixed, pure-seed cell that the Wilds dresses from live project state. Like
+// the gates, worldgen only fixes the position and a dormant marker; the build's
+// progress — and, later, its grown structure — is decided from the shared World.
+// ID matches the game project catalog and the stored project row.
+type ProjectSite struct {
+	X, Y  int
+	ID    string
+	Name  string
+	Glyph rune
+	Color string
+}
+
+// ProjectSites are the communal builds' anchors, placed in the hub's cleared
+// green just south of Durst HQ so they're always reachable from spawn.
+var ProjectSites = []ProjectSite{
+	{0, -5, "all-hands-hall", "The All-Hands Hall", '⌸', "#FFD166"},
+}
+
+// ProjectSiteAt returns the community-build anchor on (x,y), if any.
+func ProjectSiteAt(x, y int) (ProjectSite, bool) {
+	for _, s := range ProjectSites {
+		if s.X == x && s.Y == y {
+			return s, true
+		}
+	}
+	return ProjectSite{}, false
+}
+
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
 func (g *Generator) At(x, y int) Cell {
 	for _, lm := range Landmarks {
@@ -115,6 +144,13 @@ func (g *Generator) At(x, y int) Cell {
 	for _, gt := range Gates {
 		if x == gt.X && y == gt.Y {
 			return Cell{Biome: Grass, Glyph: gt.Glyph, Color: gt.Color, Walkable: true, Object: true}
+		}
+	}
+	// A community build's anchor: a blocking marker on the hub green you walk up
+	// to. The Wilds reads its progress (and later swaps in the grown structure).
+	for _, s := range ProjectSites {
+		if x == s.X && y == s.Y {
+			return Cell{Biome: Grass, Glyph: s.Glyph, Color: s.Color, Object: true}
 		}
 	}
 	// The hub town: the redesigned spawn. A cobbled square ringed by the wing

@@ -32,6 +32,33 @@ func TestGateAndSpawn(t *testing.T) {
 
 // Every hub landmark must sit on a walkable portal tile in a reachable
 // clearing — these are the Wilds' doors to the hand-built areas.
+// The community-build anchor is a fixed, blocking marker on the cleared hub
+// green — the same cell for every seed — with walkable ground beside it so a
+// body can walk up and read its progress.
+func TestProjectSiteAnchored(t *testing.T) {
+	for _, seed := range []uint64{1, 7, 42, 1000} {
+		g := New(seed)
+		for _, s := range ProjectSites {
+			c := g.At(s.X, s.Y)
+			if c.Glyph != s.Glyph || c.Walkable {
+				t.Fatalf("seed %d: site %q at (%d,%d) = %+v, want a blocking %c marker",
+					seed, s.Name, s.X, s.Y, c, s.Glyph)
+			}
+			// The green just north of it (toward HQ and spawn) is clear, so the
+			// site is always reachable on foot.
+			if !g.Walkable(s.X, s.Y+1) || !g.Walkable(s.X-1, s.Y+1) {
+				t.Fatalf("seed %d: ground beside site %q is not walkable", seed, s.Name)
+			}
+		}
+	}
+	if _, ok := ProjectSiteAt(ProjectSites[0].X, ProjectSites[0].Y); !ok {
+		t.Fatal("ProjectSiteAt didn't find the site at its own coords")
+	}
+	if _, ok := ProjectSiteAt(9999, 9999); ok {
+		t.Fatal("ProjectSiteAt found a site on empty ground")
+	}
+}
+
 func TestLandmarkPortals(t *testing.T) {
 	g := New(1)
 	for _, lm := range Landmarks {

@@ -1479,6 +1479,9 @@ func (a *area) Hint() string {
 	if s, ok := a.strikePrompt(); ok {
 		return s
 	}
+	if s, ok := a.projectSiteAdjacent(); ok {
+		return "⌸ " + a.projectStatus(s)
+	}
 	if a.boardAdjacent() {
 		return "e — read the notice board"
 	}
@@ -1542,6 +1545,30 @@ func (a *area) boardAdjacent() bool {
 	bx, by := worldgen.HubBoard()
 	return bx >= a.wx-1 && bx <= a.wx+game.PlayerW &&
 		by >= a.wy-1 && by <= a.wy+game.PlayerH
+}
+
+// projectSiteAdjacent returns the community-build anchor the player's body
+// stands beside (within one tile), if any — the cue to show its progress.
+func (a *area) projectSiteAdjacent() (worldgen.ProjectSite, bool) {
+	for _, s := range worldgen.ProjectSites {
+		if s.X >= a.wx-1 && s.X <= a.wx+game.PlayerW &&
+			s.Y >= a.wy-1 && s.Y <= a.wy+game.PlayerH {
+			return s, true
+		}
+	}
+	return worldgen.ProjectSite{}, false
+}
+
+// projectStatus reads a build's live state and formats its progress line from
+// the game catalog (docs/COMMUNITY_PLAN.md). An absent project (no contribution
+// yet) reads as phase 0 with an empty pool.
+func (a *area) projectStatus(s worldgen.ProjectSite) string {
+	def, ok := game.ProjectByID(s.ID)
+	if !ok {
+		return s.Name
+	}
+	st, _ := a.ctx.World.ProjectState(s.ID)
+	return def.ProjectStatus(st.Phase, st.Pool, st.Done)
 }
 
 // itemUnderBody returns the first uncollected item beneath the 2×2 footprint.
