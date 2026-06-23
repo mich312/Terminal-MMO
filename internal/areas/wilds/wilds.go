@@ -1195,6 +1195,13 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 						t.Ch, t.Color = '♚', h.hex
 						t.Prop, t.PropHex, t.Ground = game.PropHat, h.hex, groundColor(cell.Biome)
 					} else if it, ok := itemAt(cell, wx, wy); ok {
+						// Pin the surface before recoloring: a plain cell carries no
+						// explicit Ground, so the HD renderer falls back to Color —
+						// recoloring to the loot hue without this paints the whole tile
+						// in the loot color instead of keeping the floor under it.
+						if t.Ground == "" {
+							t.Ground = t.Color
+						}
 						t.Ch, t.Color = it.Glyph, it.Hex
 						switch it.ID {
 						case "grain": // standing crop, over the field's furrows
@@ -1227,8 +1234,16 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 				// Wildlife: the glyph client draws the species letter here; the HD
 				// client draws a full animated sprite over this tile from the live
 				// creature list (passed to the renderer), so we only set Ch/Color.
+				// Pin the tile's ground color first: a plain ground cell carries no
+				// explicit Ground, so the HD renderer falls back to Color for its
+				// surface — recoloring Color to the species hue without this would
+				// paint the whole tile (and bleed into neighbours' seam dither) in
+				// the animal's color, a colored box behind the sprite.
 				if c, ok := creatures[[2]int{wx, wy}]; ok {
 					if sp, ok := game.SpeciesByKind(c.Kind); ok {
+						if t.Ground == "" {
+							t.Ground = t.Color
+						}
 						t.Ch, t.Color = sp.Glyph, sp.Hex
 					}
 				}
