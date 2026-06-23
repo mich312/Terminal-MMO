@@ -51,6 +51,14 @@ const (
 	// Player is the attacker. The victim's own client owns its position, so it
 	// applies the shove (re-checking the destination); others just see the move.
 	EventPlayerShoved
+	// EventProjectContributed: someone banked resources toward a community build
+	// (docs/COMMUNITY_PLAN.md). Player is the contributor, Detail the project id,
+	// X the project's current phase. Delivered world-wide (a shared milestone is
+	// everyone's news); clients re-read project state to redraw the progress.
+	EventProjectContributed
+	// EventProjectAdvanced: a community build completed a phase. Player is whoever
+	// laid the finishing contribution, Detail the project id, X the new phase.
+	EventProjectAdvanced
 )
 
 // Trade event phases, carried in Event.Detail.

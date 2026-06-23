@@ -106,6 +106,13 @@ type World struct {
 	gateFixed   map[string]bool
 	gatePersist func(gate string, pool int, fixed bool) // set by main
 
+	// Shared community projects: staged, multi-resource builds the whole player
+	// base raises together (docs/COMMUNITY_PLAN.md) — the gate pool generalized
+	// from a one-shot into an ongoing build. Shared state persisted via a
+	// callback; the world owns atomic contribution, the game layer the catalog.
+	projects       map[string]*Project
+	projectPersist func(Project) // set by main
+
 	// Shared placements: player-built structures keyed by absolute (x,y),
 	// overlaid on the deterministic Wilds. Everyone sees the same set.
 	placements   map[[2]int]Placement
@@ -169,6 +176,7 @@ func New() *World {
 		stop:       make(chan struct{}),
 		gatePool:   make(map[string]int),
 		gateFixed:  make(map[string]bool),
+		projects:   make(map[string]*Project),
 		placements: make(map[[2]int]Placement),
 		claims:     make(map[string]Claim),
 		cleared:    make(map[[2]int]Cleared),
