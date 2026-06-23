@@ -319,6 +319,18 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   woods reclaim ghost towns.
 - ⬜ The parked wildlife layer comes after.
 
+## Phase 10 — Community projects & the async-social loop (proposed)
+
+The cozy-frontier loop (Phase 9) and the danger layers (wildlife, arms) gave the
+world *things to do* but no **sink** and no answer to the empty room — the core
+risk for a one-company MMO. This phase closes the loop: a **communal build** the
+whole player base raises together over time (the co-op Sunken Gate generalized
+into an ongoing, staged, named project), plus a **"while you were away"** digest
+so you always arrive to evidence the world — and your colleagues — moved. It
+rides the existing shared-state layers (gate pool, placements, `MutatePlacement`,
+the event log); no new genre. Full design, pillar check and shippable slice:
+[`COMMUNITY_PLAN.md`](COMMUNITY_PLAN.md).
+
 ## Parked polish
 
 - ✅ Real-pixel renderer (kitty graphics / sixel): shipped as the **default**
