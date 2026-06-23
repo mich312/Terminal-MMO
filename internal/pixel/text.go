@@ -230,6 +230,31 @@ func Shade(img *image.RGBA, x, y, w, h int, t float64) {
 	}
 }
 
+// TintEdges blends col into a vignette band around the frame's border, fading
+// from strength t at the very edge to nothing `band` pixels in. Used for the
+// on-hit damage flash — a red rim that reads instantly without hiding the scene.
+func TintEdges(img *image.RGBA, col color.RGBA, band int, t float64) {
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	if band < 1 {
+		band = 1
+	}
+	for y := 0; y < H; y++ {
+		for x := 0; x < W; x++ {
+			d := x
+			for _, e := range []int{W - 1 - x, y, H - 1 - y} {
+				if e < d {
+					d = e
+				}
+			}
+			if d >= band {
+				continue
+			}
+			k := t * (1 - float64(d)/float64(band))
+			img.SetRGBA(x, y, blend(img.RGBAAt(x, y), col, k))
+		}
+	}
+}
+
 // cardUnit is the chunky-pixel size for panel chrome, matched to the bitmap
 // font's scale so the borders read at the same resolution as the text.
 func cardUnit(img *image.RGBA) int {

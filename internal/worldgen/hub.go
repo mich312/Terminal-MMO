@@ -56,6 +56,19 @@ var (
 // player stands beside it (to offer the "read" action).
 func HubBoard() (int, int) { return hubBoard[0], hubBoard[1] }
 
+// hubSafeR is the radius of the hub's peace ward, measured from the green's
+// heart at the origin. It comfortably covers the commons, the outlying
+// buildings, and the gates (at distance ~22) where the trails leave town — so
+// the whole settlement is a no-fighting sanctuary and PvP only begins out in the
+// open Wilds beyond it (docs/WEAPON_PLAN.md).
+const hubSafeR = 26.0
+
+// HubSafe reports whether (x,y) lies within the hub's peace ward, where players
+// cannot be struck. Beyond it, the open Wilds allow PvP.
+func HubSafe(x, y int) bool {
+	return math.Hypot(float64(x), float64(y)) <= hubSafeR
+}
+
 // hubCell returns the redressed cell for the hub town, or ok=false for cells
 // the hub does not cover (so generation falls through to settlements/biome).
 // It is consulted after the portal/gate overrides in At, so those cells win.

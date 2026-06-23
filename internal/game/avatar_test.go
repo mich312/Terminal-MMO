@@ -27,7 +27,7 @@ func TestAvatarBitmapDimensions(t *testing.T) {
 		for acc := 0; acc < NumAccessories(); acc++ {
 			for _, d := range dirs {
 				for f := 0; f < 2; f++ {
-					bmp := AvatarBitmap(style, acc, d, f)
+					bmp := AvatarBitmap(style, acc, "", d, f)
 					if len(bmp) != 12 {
 						t.Fatalf("style %d acc %d dir %v frame %d: %d rows, want 12", style, acc, d, f, len(bmp))
 					}
@@ -45,8 +45,8 @@ func TestAvatarBitmapDimensions(t *testing.T) {
 // West is the east profile mirrored: AvatarBitmap(...DirW) must equal each
 // row of AvatarBitmap(...DirE) reversed.
 func TestAvatarBitmapWestMirrorsEast(t *testing.T) {
-	east := AvatarBitmap(0, 0, world.DirE, 0)
-	west := AvatarBitmap(0, 0, world.DirW, 0)
+	east := AvatarBitmap(0, 0, "", world.DirE, 0)
+	west := AvatarBitmap(0, 0, "", world.DirW, 0)
 	if len(east) != len(west) {
 		t.Fatalf("row count mismatch: east %d, west %d", len(east), len(west))
 	}
@@ -65,13 +65,40 @@ func TestAvatarBitmapWestMirrorsEast(t *testing.T) {
 // The "none" accessory (index 0) leaves the body untouched; a real accessory
 // changes the top rows.
 func TestAvatarAccessoryOverlay(t *testing.T) {
-	plain := AvatarBitmap(0, 0, world.DirS, 0)
+	plain := AvatarBitmap(0, 0, "", world.DirS, 0)
 	if got := overlayAccessory(append([]string(nil), plain...), 0); !equalRows(got, plain) {
 		t.Errorf("accessory 0 (none) altered the bitmap")
 	}
-	hatted := AvatarBitmap(0, 1, world.DirS, 0) // cap
+	hatted := AvatarBitmap(0, 1, "", world.DirS, 0) // cap
 	if equalRows(hatted, plain) {
 		t.Errorf("accessory 1 (cap) left the bitmap unchanged")
+	}
+}
+
+// A wielded weapon overlays the body (it draws something the unarmed sprite
+// doesn't), every weapon shape stays a clean 12×12, and an unknown/empty weapon
+// leaves the figure untouched.
+func TestAvatarWeaponOverlay(t *testing.T) {
+	plain := AvatarBitmap(0, 0, "", world.DirS, 0)
+	if armed := AvatarBitmap(0, 0, "sword", world.DirS, 0); equalRows(armed, plain) {
+		t.Error("wielding a sword left the avatar unchanged")
+	}
+	if got := AvatarBitmap(0, 0, "not-a-weapon", world.DirS, 0); !equalRows(got, plain) {
+		t.Error("an unknown weapon should not alter the avatar")
+	}
+	for _, wp := range Weapons() {
+		bmp := AvatarBitmap(0, 0, wp.Item, world.DirN, 0)
+		if len(bmp) != 12 {
+			t.Fatalf("weapon %q: %d rows, want 12", wp.Item, len(bmp))
+		}
+		for r, row := range bmp {
+			if n := len([]rune(row)); n != 12 {
+				t.Fatalf("weapon %q row %d: width %d, want 12", wp.Item, r, n)
+			}
+		}
+		if weaponShapeOf(wp.Item) == "" {
+			t.Errorf("weapon %q has no in-hand sprite shape", wp.Item)
+		}
 	}
 }
 

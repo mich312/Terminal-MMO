@@ -49,6 +49,18 @@ var Recipes = []Recipe{
 		In: []Ingredient{{"axe_head", 1}, {"wood", 2}}, Out: "axe", OutN: 1},
 	{ID: "pick", Name: "Pickaxe", Blurb: "An iron head, a Timber haft. Breaks rock.",
 		In: []Ingredient{{"pick_head", 1}, {"wood", 2}}, Out: "pick", OutN: 1},
+	// Arms — weapons for the hunt and the open Wilds (docs/WEAPON_PLAN.md). Every
+	// input is an already-gathered good, so they need no new forage.
+	{ID: "knife", Name: "Flint Knife", Blurb: "Knapped to an edge. Field-rated, not guild-certified.",
+		In: []Ingredient{{"stone", 1}, {"wood", 1}}, Out: "knife", OutN: 1},
+	{ID: "spear", Name: "Spear", Blurb: "Reach extended per Durst ergonomics memo.",
+		In: []Ingredient{{"stone", 1}, {"wood", 3}}, Out: "spear", OutN: 1},
+	{ID: "bow", Name: "Hunter's Bow", Blurb: "Tensioned yew. Loose responsibly.",
+		In: []Ingredient{{"wood", 2}, {"leather", 1}, {"feather", 1}}, Out: "bow", OutN: 1},
+	{ID: "arrow", Name: "Arrows", Blurb: "Fletched in batches. Consumables, per policy.",
+		In: []Ingredient{{"wood", 1}, {"feather", 1}}, Out: "arrow", OutN: 4},
+	{ID: "sword", Name: "Cast Blade", Blurb: "Poured from ingots. Asset, depreciating.",
+		In: []Ingredient{{"ingot", 2}, {"wood", 1}}, Out: "sword", OutN: 1},
 }
 
 // Craftable reports how many times the recipe can be made from inv — the min,

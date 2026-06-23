@@ -22,6 +22,31 @@ func TestCatalogEntriesComplete(t *testing.T) {
 	}
 }
 
+// TestArmsSectionGroupsWeapons: every weapon (and arrows) lands in the dedicated
+// "Arms" compendium section, not scattered across Forage/Crafted.
+func TestArmsSectionGroupsWeapons(t *testing.T) {
+	in := map[string]bool{}
+	for _, g := range Compendium(nil) {
+		if g.Title != "Arms" {
+			continue
+		}
+		for _, e := range g.Entries {
+			in[e.Item.ID] = true
+		}
+	}
+	if len(in) == 0 {
+		t.Fatal("no Arms section (or it's empty) in the compendium")
+	}
+	for _, wp := range Weapons() {
+		if !in[wp.Item] {
+			t.Errorf("weapon %q is not in the Arms section", wp.Item)
+		}
+	}
+	if !in["arrow"] {
+		t.Error("arrows should sit in the Arms section")
+	}
+}
+
 // TestCompendiumCoversCatalog: every catalog item appears in exactly one group,
 // so nothing silently drops out of the codex when a new Source is added.
 func TestCompendiumCoversCatalog(t *testing.T) {

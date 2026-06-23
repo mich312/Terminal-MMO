@@ -37,6 +37,20 @@ const (
 	// party (from the recipient's view) and Detail is the phase:
 	// "request", "open", "update", "done", "cancel", or "declined".
 	EventTrade
+	// EventPlayerDamaged: Target took a non-lethal hit (docs/WEAPON_PLAN.md).
+	// Player is the attacker, Detail the weapon name (or "" for bare hands),
+	// X/Y the struck tile (for a hit-spark). Delivered to the whole area so
+	// onlookers see it; the victim reacts even though it didn't act.
+	EventPlayerDamaged
+	// EventPlayerDowned: Target was knocked out. Player is the attacker.
+	EventPlayerDowned
+	// EventPlayerRespawn: Target is back on their feet at full HP. X/Y is the
+	// respawn tile.
+	EventPlayerRespawn
+	// EventPlayerShoved: Target is knocked back to (X,Y) by a knockback weapon.
+	// Player is the attacker. The victim's own client owns its position, so it
+	// applies the shove (re-checking the destination); others just see the move.
+	EventPlayerShoved
 )
 
 // Trade event phases, carried in Event.Detail.

@@ -9,13 +9,13 @@ import (
 // fit their surroundings: berries and mushrooms in the woods, shells on the
 // beach, crystals in the snow, nuggets in the hills.
 var biomeItems = map[worldgen.Biome][]string{
-	worldgen.Forest:  {"berry", "mushroom"},
+	worldgen.Forest:  {"berry", "mushroom", "dagger"},
 	worldgen.Grass:   {"herb", "berry", "axe_head"},
-	worldgen.Savanna: {"herb", "nugget", "axe_head"},
+	worldgen.Savanna: {"herb", "nugget", "axe_head", "sling"},
 	worldgen.Sand:    {"shell"},
 	worldgen.Snow:    {"crystal"},
-	worldgen.Hill:    {"nugget", "crystal", "pick_head"},
-	worldgen.Swamp:   {"mushroom", "herb"},
+	worldgen.Hill:    {"nugget", "crystal", "pick_head", "sling"},
+	worldgen.Swamp:   {"mushroom", "herb", "dagger"},
 }
 
 // Which foraged finds double as an outfit (a mushroom → the shroom cap) now

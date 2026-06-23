@@ -124,6 +124,10 @@ CREATE TABLE IF NOT EXISTS cleared (
 	last_touch INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (x, y)
 );
+CREATE TABLE IF NOT EXISTS artifacts (
+	id    TEXT PRIMARY KEY,
+	owner TEXT NOT NULL
+);
 `
 
 type sqliteStore struct {
@@ -608,6 +612,39 @@ func (s *sqliteStore) LoadCleared() []Cleared {
 		var c Cleared
 		if err := rows.Scan(&c.X, &c.Y, &c.Owner, &c.LastTouch); err == nil {
 			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// SaveArtifact records that a unique legendary weapon has been discovered, by
+// whom (docs/WEAPON_PLAN.md). Its presence means the artifact is claimed and
+// won't appear in the world again.
+func (s *sqliteStore) SaveArtifact(id, owner string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO artifacts (id, owner) VALUES (?, ?)
+		 ON CONFLICT(id) DO UPDATE SET owner = excluded.owner`,
+		id, owner); err != nil {
+		log.Printf("store: save artifact: %v", err)
+	}
+}
+
+// LoadArtifacts returns every claimed artifact id mapped to its discoverer.
+func (s *sqliteStore) LoadArtifacts() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	rows, err := s.db.Query(`SELECT id, owner FROM artifacts`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, owner string
+		if err := rows.Scan(&id, &owner); err == nil {
+			out[id] = owner
 		}
 	}
 	return out

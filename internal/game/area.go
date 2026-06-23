@@ -116,6 +116,13 @@ type HDFramer interface {
 	HDFrame(img *image.RGBA)
 }
 
+// Hurtable lets an area tell the renderers the local player just took a blow, so
+// they can flash the frame for an instant (docs/WEAPON_PLAN.md). Areas without
+// combat simply don't implement it.
+type Hurtable interface {
+	Hurt() bool
+}
+
 // HDOverlayer lets an area draw a text panel over the HD pixel frame. The
 // Presentation Wing uses it to show the current slide on screen in HD (there
 // are no terminal cells in HD, so the markdown is rendered into the image). It
@@ -171,6 +178,10 @@ type Ctx struct {
 	// kind, then clears it. (HD and the glyph client both poll it after
 	// dispatching a key to the area.)
 	UseStation *[2]int
+	// Wielded is the weapon the player has chosen to fight with (an item id), or
+	// "" to auto-pick the strongest usable arm (docs/WEAPON_PLAN.md). The value
+	// "fists" forces bare hands. Session state, set by /wield; not persisted.
+	Wielded string
 }
 
 // Accessory is the index of the accessory the player is currently wearing (0 =

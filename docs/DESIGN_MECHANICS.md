@@ -146,3 +146,9 @@ the cozy tone:
 
 Designed so it slots onto the cozy loop (it's just more resources + recipes),
 never a prerequisite for it.
+
+> **Update:** the genre decision has been made for *light* danger — weapons, a
+> shared player/creature damage model, and **consensual, zone-gated PvP** (safe
+> hub + settlements, live PvP only in the open Wilds, cozy knock-out with no item
+> loss). See [`WEAPON_PLAN.md`](WEAPON_PLAN.md). It is gated on the wildlife
+> branch landing in `main` first, since it builds on the creature HP model.
