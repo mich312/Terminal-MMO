@@ -9,6 +9,7 @@ const (
 	Common Rarity = iota
 	Uncommon
 	Rare
+	Legendary // one-of-a-kind: the unique artifact weapons
 )
 
 func (r Rarity) String() string {
@@ -17,6 +18,8 @@ func (r Rarity) String() string {
 		return "Uncommon"
 	case Rare:
 		return "Rare"
+	case Legendary:
+		return "Legendary"
 	default:
 		return "Common"
 	}
@@ -32,6 +35,7 @@ const (
 	CaveFind               // mined or gathered down in the caves
 	Crafted                // made at a workbench or a machine, not gathered
 	Hunt                   // taken from wild animals (the hunting loop)
+	Arms                   // weapons — crafted, found, or unique legends (weapon.go)
 )
 
 func (s Source) String() string {
@@ -44,6 +48,8 @@ func (s Source) String() string {
 		return "Crafted"
 	case Hunt:
 		return "Hunt"
+	case Arms:
+		return "Arms"
 	default:
 		return "Forage"
 	}
@@ -197,6 +203,56 @@ var Items = []Item{
 		About: "A hafted pickaxe. Breaks rock; does not break ground policy.",
 		Found: "Crafted from an Iron Pick-head and Timber.",
 		Use:   "In build mode, break a hill boulder to clear it and yield Cut Stone."},
+	// Arms — weapons (docs/WEAPON_PLAN.md). Wielded by owning them; the
+	// best one in the pack lands your strike. They hunt wildlife anywhere and,
+	// out in the open Wilds, can be turned on other players.
+	{ID: "knife", Name: "Flint Knife", Glyph: '†', Hex: "#D9C7A3",
+		Source: Arms, Rarity: Uncommon,
+		About: "A knapped flint blade on a short haft. Quick and close.",
+		Found: "Crafted from Cut Stone and Timber.",
+		Use:   "f — strike what you face. A keener blow than bare hands."},
+	{ID: "spear", Name: "Spear", Glyph: '↑', Hex: "#C8A86A",
+		Source: Arms, Rarity: Uncommon,
+		About: "A fire-hardened haft tipped with stone. Hits hard up close.",
+		Found: "Crafted from Cut Stone and Timber.",
+		Use:   "f — strike what you face. A thrust that knocks the target back a step."},
+	{ID: "bow", Name: "Hunter's Bow", Glyph: ')', Hex: "#A6753F",
+		Source: Arms, Rarity: Uncommon,
+		About: "A supple bow of yew and cured leather. Strikes at range.",
+		Found: "Crafted from Timber, Cured Leather and a Feather.",
+		Use:   "f — loose an Arrow at what you face, several tiles off."},
+	{ID: "arrow", Name: "Arrows", Glyph: '»', Hex: "#9C8D67",
+		Source: Arms, Rarity: Common,
+		About: "Flint-tipped, feather-fletched shafts. Spent when loosed.",
+		Found: "Crafted from Timber and a Feather.",
+		Use:   "Ammunition for the Hunter's Bow — one per shot."},
+	{ID: "sword", Name: "Cast Blade", Glyph: '†', Hex: "#D4AF37",
+		Source: Arms, Rarity: Rare,
+		About: "A blade cast from refined ingots. Heavier and meaner than flint.",
+		Found: "Crafted from Gold Ingots and Timber.",
+		Use:   "f — a heavy swing that cleaves every foe around your target."},
+	// Found arms — hidden in the world, turned up by exploring (no recipe).
+	{ID: "sling", Name: "Sling", Glyph: ')', Hex: "#B6A07A",
+		Source: Arms, Rarity: Uncommon,
+		About: "A worn leather sling that flings a stone a fair way.",
+		Found: "Hidden in the hills and savanna.",
+		Use:   "f — sling a Cut Stone at what you face, a few tiles off."},
+	{ID: "dagger", Name: "Bone Dagger", Glyph: '†', Hex: "#E8E0CC",
+		Source: Arms, Rarity: Uncommon,
+		About: "A wicked blade ground from old bone. Quick in the hand.",
+		Found: "Hidden in the swamp and deep forest.",
+		Use:   "f — strike what you face. Bonus damage when you hit from behind."},
+	// Legends — one per world, hidden; trade-only once claimed.
+	{ID: "durstbane", Name: "Durstbane", Glyph: '†', Hex: "#9FE7FF", Glow: true,
+		Source: Arms, Rarity: Legendary,
+		About: "The blade that ended the long audit. There is only one.",
+		Found: "A single blade, lost in the frozen heights far to the north.",
+		Use:   "f — a legendary blow that cleaves every foe around your target."},
+	{ID: "skypiercer", Name: "Skypiercer", Glyph: ')', Hex: "#C9A6FF", Glow: true,
+		Source: Arms, Rarity: Legendary,
+		About: "A bow strung with storm-sinew; its arrows never wander. The only one.",
+		Found: "A single bow, lost deep in the old forest.",
+		Use:   "f — an Arrow that pierces every foe along its flight."},
 }
 
 var itemIndex = func() map[string]Item {

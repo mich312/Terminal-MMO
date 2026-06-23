@@ -290,7 +290,7 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 	wf := AvatarWalkFrame(p.LastMoved, frame)
 	body := playerColor(p.Color)
 	accMain, accShade := accessoryColors(p.Accessory)
-	bmp := AvatarBitmap(p.Style, p.Accessory, p.Facing, wf)
+	bmp := AvatarBitmap(p.Style, p.Accessory, p.Weapon, p.Facing, wf)
 	bw, bh := len([]rune(bmp[0])), len(bmp)
 	// Integer pixel size keeps edges sharp; aim for ~2 tiles tall.
 	k := (PlayerH * scale) / bh

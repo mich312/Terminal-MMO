@@ -61,8 +61,27 @@ type Player struct {
 	Facing    Dir
 	Style     int // avatar sprite style index
 	Accessory int // avatar accessory index (0 = none)
+	Weapon    string // wielded weapon item id ("" = unarmed); drawn in-hand in HD
 	LastMoved time.Time
+
+	// Combat (docs/WEAPON_PLAN.md). Live session state, never persisted — you
+	// always reconnect at full health. The world owns atomicity and delivery
+	// (Strike/Respawn); the game layer owns the numbers (weapon damage, how long
+	// a knock-out lasts) and where you respawn.
+	HP          int       // current health; == MaxHP when full
+	MaxHP       int       // cap (DefaultMaxHP for now; gear/food may lift it later)
+	DownedUntil time.Time // > now ⇒ knocked out: immune, can't act, awaiting respawn
+	LastHurt    time.Time // last time this player took damage (gates regen / "in combat" UI)
+	LastHurtBy  string    // who last struck this player (a tamed companion defends against them)
+	InvulnUntil time.Time // > now ⇒ briefly immune after respawn, so no spawn-camping
 }
+
+// DefaultMaxHP is every player's starting and full health.
+const DefaultMaxHP = 10
+
+// RespawnImmunity is how long a freshly revived player can't be struck — an
+// anti-grief floor so a knock-out can't be chained into a spawn-camp.
+const RespawnImmunity = 3 * time.Second
 
 const eventBuffer = 64
 
@@ -118,6 +137,20 @@ type World struct {
 	// Wildlife: live, server-owned creatures keyed by instance id. The wildlife
 	// stepper is the only writer; renderers read snapshots via CreaturesInArea.
 	creatures map[string]*Creature
+
+	// Combat: where a knocked-out player comes back (docs/WEAPON_PLAN.md). The
+	// world doesn't know any area's geography, so the game layer supplies the
+	// hub spawn; the tick loop revives downed players there when their timer
+	// lapses. nil ⇒ no auto-respawn (tests that don't set it just leave players
+	// down).
+	respawnAt func() (area string, x, y int)
+
+	// Legends: the shared registry of unique weapons, id → discoverer. A claimed
+	// artifact never appears in the world again (it's trade-only thereafter), so
+	// this is small, shared, first-write-wins state persisted via a callback —
+	// the same discipline as claims.
+	artifacts       map[string]string
+	artifactPersist func(id, owner string)
 }
 
 // Placement is one player-built structure in the shared world.
@@ -143,6 +176,7 @@ func New() *World {
 		pending:    make(map[string]string),
 		completed:  make(map[string]CompletedTrade),
 		creatures:  make(map[string]*Creature),
+		artifacts:  make(map[string]string),
 	}
 	go w.tickLoop()
 	return w
@@ -347,8 +381,52 @@ func (w *World) tickLoop() {
 				deliver(ch, ev)
 			}
 			w.mu.Unlock()
+			w.processRespawns()
 		}
 	}
+}
+
+// SetRespawn registers where downed players come back to life (the game layer
+// owns this; the world doesn't know any hub's coordinates). Set once at startup.
+func (w *World) SetRespawn(fn func() (area string, x, y int)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.respawnAt = fn
+}
+
+// processRespawns revives every player whose knock-out timer has lapsed, at the
+// registered hub spawn with full HP, and tells their new area. Runs each tick
+// (server-authoritative, so it works regardless of client type). No-op until a
+// respawn point is set.
+func (w *World) processRespawns() {
+	w.mu.Lock()
+	if w.respawnAt == nil {
+		w.mu.Unlock()
+		return
+	}
+	now := time.Now()
+	var revived []*Player
+	for _, p := range w.players {
+		if p.HP <= 0 && !p.DownedUntil.IsZero() && p.DownedUntil.Before(now) {
+			revived = append(revived, p)
+		}
+	}
+	if len(revived) == 0 {
+		w.mu.Unlock()
+		return
+	}
+	area, x, y := w.respawnAt()
+	for _, p := range revived {
+		p.HP = p.MaxHP
+		p.DownedUntil = time.Time{}
+		p.LastHurtBy = ""
+		p.InvulnUntil = now.Add(RespawnImmunity)
+		p.Area = area
+		p.X, p.Y = x, y
+		p.LastMoved = now
+		w.broadcastToArea(area, Event{Type: EventPlayerRespawn, Player: p.Name, Target: p.Name, Area: area, X: x, Y: y})
+	}
+	w.mu.Unlock()
 }
 
 func (w *World) Close() {
@@ -381,6 +459,8 @@ func (w *World) Join(desired string) (string, <-chan Event) {
 	w.players[name] = &Player{
 		Name:  name,
 		Color: ui.AvatarColor(name),
+		HP:    DefaultMaxHP,
+		MaxHP: DefaultMaxHP,
 	}
 	ch := make(chan Event, eventBuffer)
 	w.subs[name] = ch
@@ -526,6 +606,17 @@ func (w *World) SetColor(name string, c lipgloss.Color) bool {
 	}
 	p.Color = c
 	return true
+}
+
+// SetWeapon records the weapon a player has in hand (item id, "" = unarmed) so
+// it draws on every client's view of them. A no-op (no lock churn) when it
+// hasn't changed, since the renderer syncs this every frame.
+func (w *World) SetWeapon(name, item string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if p, ok := w.players[name]; ok {
+		p.Weapon = item
+	}
 }
 
 // SetAvatar changes a player's sprite style and accessory. Returns false if the

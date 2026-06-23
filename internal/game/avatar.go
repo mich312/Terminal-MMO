@@ -65,8 +65,9 @@ func facingView(d world.Dir) (v avatarView, mirror bool) {
 }
 
 // AvatarBitmap returns the sprite rows for a player's customization, facing and
-// walk frame, with the accessory overlaid and mirrored as needed.
-func AvatarBitmap(style, accessory int, facing world.Dir, walkFrame int) []string {
+// walk frame, with the accessory and any wielded weapon overlaid and mirrored as
+// needed. weapon is the wielded item id ("" = unarmed, no overlay).
+func AvatarBitmap(style, accessory int, weapon string, facing world.Dir, walkFrame int) []string {
 	st := avatarStyles[wrapIdx(style, len(avatarStyles))]
 	v, mirror := facingView(facing)
 	var frames [2][]string
@@ -80,6 +81,7 @@ func AvatarBitmap(style, accessory int, facing world.Dir, walkFrame int) []strin
 	}
 	rows := append([]string(nil), frames[walkFrame%2]...)
 	rows = overlayAccessory(rows, accessory)
+	rows = overlayWeapon(rows, weapon) // the arm goes over the body, like a hat
 	if mirror {
 		rows = mirrorRows(rows)
 	}

@@ -21,6 +21,9 @@ var (
 	spriteBlack = mustHex("#0E1116")
 	hatMain     = mustHex("#FFD166") // accessory colors (H / h)
 	hatShade    = mustHex("#C9962E")
+	weaponSteel = mustHex("#D2D8E0") // weapon blade / highlight (K)
+	weaponHaft  = mustHex("#9A6B3F") // weapon wood / bone / haft (k)
+	weaponGlow  = mustHex("#9FE7FF") // legendary glow accent (G)
 )
 
 // playerColor resolves a player's avatar color to RGB. Avatar colors are hex
@@ -151,6 +154,12 @@ func spritePixel(code rune, body, accMain, accShade colorful.Color, isSelf bool)
 		return accMain, true
 	case 'h':
 		return accShade, true
+	case 'K':
+		return weaponSteel, true
+	case 'k':
+		return weaponHaft, true
+	case 'G':
+		return weaponGlow, true
 	default:
 		return colorful.Color{}, false
 	}
@@ -166,7 +175,7 @@ func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []s
 	}
 	body := playerColor(color)
 	accMain, accShade := accessoryColors(accessory)
-	bmp := AvatarBitmap(style, accessory, world.DirS, 0)
+	bmp := AvatarBitmap(style, accessory, "", world.DirS, 0)
 	bg := lipgloss.Color(ui.HexPanelBg)
 	toLip := func(c colorful.Color) lipgloss.Color { return lipgloss.Color(c.Clamped().Hex()) }
 

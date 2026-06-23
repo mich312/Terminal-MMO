@@ -113,6 +113,18 @@ func main() {
 		st.RemoveCleared,
 	)
 
+	// Combat: a knocked-out player revives at the hub spawn beside the HQ gate
+	// (docs/WEAPON_PLAN.md). The world's tick loop does the revive; it only needs
+	// to know where, which is area geography the game layer owns.
+	w.SetRespawn(func() (string, int, int) {
+		return "wilds", worldgen.GateX + 2, worldgen.GateY + 2
+	})
+
+	// Legends: the shared registry of which unique weapons have been claimed, so a
+	// found artifact never reappears and persists across restarts.
+	w.LoadArtifacts(st.LoadArtifacts())
+	w.SetArtifactPersist(st.SaveArtifact)
+
 	// Wildlife: one server-side stepper drives the live herd in the Wilds, on the
 	// same overworld seed every session sees. It spawns near online players and
 	// reclaims animals when nobody is around, so the population tracks who's

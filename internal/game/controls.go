@@ -30,6 +30,7 @@ func Controls() []ControlGroup {
 		}},
 		{"Act", []Control{
 			{"e", "use what you're on"},
+			{"f", "strike / hunt what you face"},
 			{"b", "build mode (place structures)"},
 			{"Enter", "chat to players nearby"},
 			{"/", "run a command"},

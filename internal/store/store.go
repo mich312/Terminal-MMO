@@ -149,6 +149,11 @@ type Store interface {
 	RemoveCleared(x, y int)
 	// LoadCleared returns every cleared cell in the world.
 	LoadCleared() []Cleared
+	// SaveArtifact records a discovered unique weapon and its discoverer (the
+	// shared legends registry — see docs/WEAPON_PLAN.md).
+	SaveArtifact(id, owner string)
+	// LoadArtifacts returns every claimed artifact id mapped to its discoverer.
+	LoadArtifacts() map[string]string
 	Close() error
 }
 
@@ -206,6 +211,8 @@ func (noopStore) LoadPlacements() []Placement                        { return ni
 func (noopStore) SaveClaim(Claim)                                    {}
 func (noopStore) RemoveClaim(string)                                 {}
 func (noopStore) LoadClaims() []Claim                                { return nil }
+func (noopStore) SaveArtifact(string, string)                       {}
+func (noopStore) LoadArtifacts() map[string]string                  { return map[string]string{} }
 func (noopStore) SaveCleared(Cleared)                                {}
 func (noopStore) RemoveCleared(int, int)                             {}
 func (noopStore) LoadCleared() []Cleared                             { return nil }
