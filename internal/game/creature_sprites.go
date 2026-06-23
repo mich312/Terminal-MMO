@@ -402,7 +402,7 @@ func CreatureBitmap(kind string, facing world.Dir, walkFrame int) ([]string, boo
 	default:
 		frames = cs.front
 	}
-	rows := frames[walkFrame%2]
+	rows := frames[((walkFrame%2)+2)%2] // floor-mod so negative frames stay in range
 	if mirror {
 		rows = mirrorRows(rows)
 	}
@@ -421,9 +421,10 @@ const creatureMoveWindow = 600 * time.Millisecond
 // don't all twitch in lockstep.
 func CreatureWalkFrame(lastMoved time.Time, frame, phase int) (wf int, moving bool) {
 	if time.Since(lastMoved) <= creatureMoveWindow {
-		return (frame/3 + phase) % 2, true
+		// Floor-mod: phase derives from world coords, which can be negative.
+		return (((frame/3+phase)%2)+2)%2, true
 	}
-	if (frame+phase*7)%70 < 5 { // a brief flourish roughly every ~70 frames
+	if (((frame+phase*7)%70)+70)%70 < 5 { // a brief flourish roughly every ~70 frames
 		return 1, false
 	}
 	return 0, false
