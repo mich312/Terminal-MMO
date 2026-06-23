@@ -52,6 +52,17 @@ type Cleared struct {
 	LastTouch int64 // unix seconds
 }
 
+// Project is the persisted state of one community build (docs/COMMUNITY_PLAN.md):
+// the build id, the phase currently under construction, the resources banked
+// toward that phase, and whether the whole build is finished. Shared world
+// state, like a co-op gate's pool — saved on every accepted contribution.
+type Project struct {
+	ID    string
+	Phase int
+	Pool  map[string]int // resource id -> amount banked toward the current phase
+	Done  bool
+}
+
 // DeckRecord is a persisted presentation deck (owned by a user).
 type DeckRecord struct {
 	ID      string
@@ -154,6 +165,11 @@ type Store interface {
 	SaveArtifact(id, owner string)
 	// LoadArtifacts returns every claimed artifact id mapped to its discoverer.
 	LoadArtifacts() map[string]string
+	// SaveProject upserts a community build's shared state — its current phase,
+	// the resources banked toward it, and its done flag (docs/COMMUNITY_PLAN.md).
+	SaveProject(p Project)
+	// LoadProjects returns every community build's saved state.
+	LoadProjects() []Project
 	Close() error
 }
 
@@ -219,4 +235,6 @@ func (noopStore) LoadCleared() []Cleared                             { return ni
 func (noopStore) LoadGateWorld() (map[string]int, map[string]bool) {
 	return map[string]int{}, map[string]bool{}
 }
-func (noopStore) Close() error { return nil }
+func (noopStore) SaveProject(Project)     {}
+func (noopStore) LoadProjects() []Project { return nil }
+func (noopStore) Close() error            { return nil }

@@ -80,6 +80,18 @@ func main() {
 	w.LoadGates(st.LoadGateWorld())
 	w.SetGatePersist(st.SaveGateWorld)
 
+	// Restore shared community projects (staged communal builds — the gate pool
+	// generalized) and keep them saved on every accepted contribution
+	// (docs/COMMUNITY_PLAN.md).
+	projects := make([]world.Project, 0)
+	for _, p := range st.LoadProjects() {
+		projects = append(projects, world.Project{ID: p.ID, Phase: p.Phase, Pool: p.Pool, Done: p.Done})
+	}
+	w.LoadProjects(projects)
+	w.SetProjectPersist(func(p world.Project) {
+		st.SaveProject(store.Project{ID: p.ID, Phase: p.Phase, Pool: p.Pool, Done: p.Done})
+	})
+
 	// Restore the shared placements layer (player-built structures) and keep it
 	// saved as people build and demolish.
 	for _, p := range st.LoadPlacements() {

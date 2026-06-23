@@ -128,6 +128,12 @@ CREATE TABLE IF NOT EXISTS artifacts (
 	id    TEXT PRIMARY KEY,
 	owner TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+	id    TEXT PRIMARY KEY,
+	phase INTEGER NOT NULL DEFAULT 0,
+	pool  TEXT NOT NULL DEFAULT '{}',
+	done  INTEGER NOT NULL DEFAULT 0
+);
 `
 
 type sqliteStore struct {
@@ -646,6 +652,54 @@ func (s *sqliteStore) LoadArtifacts() map[string]string {
 		if err := rows.Scan(&id, &owner); err == nil {
 			out[id] = owner
 		}
+	}
+	return out
+}
+
+// SaveProject upserts a community build's shared state. The per-phase pool is a
+// small resource→count map stored as JSON, the same opaque-blob approach a
+// placement's machine state uses.
+func (s *sqliteStore) SaveProject(p Project) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pool, err := json.Marshal(p.Pool)
+	if err != nil {
+		pool = []byte("{}")
+	}
+	done := 0
+	if p.Done {
+		done = 1
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO projects (id, phase, pool, done) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET phase = excluded.phase, pool = excluded.pool, done = excluded.done`,
+		p.ID, p.Phase, string(pool), done); err != nil {
+		log.Printf("store: save project: %v", err)
+	}
+}
+
+// LoadProjects returns every community build's saved state.
+func (s *sqliteStore) LoadProjects() []Project {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT id, phase, pool, done FROM projects`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Project
+	for rows.Next() {
+		var p Project
+		var pool string
+		var done int
+		if err := rows.Scan(&p.ID, &p.Phase, &pool, &done); err != nil {
+			continue
+		}
+		p.Done = done != 0
+		if err := json.Unmarshal([]byte(pool), &p.Pool); err != nil || p.Pool == nil {
+			p.Pool = map[string]int{}
+		}
+		out = append(out, p)
 	}
 	return out
 }

@@ -190,6 +190,35 @@ func TestPlacementRoundTrip(t *testing.T) {
 	}
 }
 
+// A community project round-trips through SQLite: its phase, banked pool and
+// done flag survive a save, and a later save upserts in place.
+func TestProjectRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	if got := s.LoadProjects(); len(got) != 0 {
+		t.Fatalf("fresh store has %d projects, want 0", len(got))
+	}
+	s.SaveProject(Project{ID: "hall", Phase: 1, Pool: map[string]int{"timber": 3, "stone": 1}})
+
+	got := s.LoadProjects()
+	if len(got) != 1 {
+		t.Fatalf("loaded %d projects, want 1", len(got))
+	}
+	if p := got[0]; p.ID != "hall" || p.Phase != 1 || p.Done ||
+		p.Pool["timber"] != 3 || p.Pool["stone"] != 1 {
+		t.Errorf("round-tripped %+v, want hall phase 1 with timber:3 stone:1, not done", p)
+	}
+
+	// Upsert: advancing the same build replaces its row, pool reset and done.
+	s.SaveProject(Project{ID: "hall", Phase: 2, Pool: map[string]int{}, Done: true})
+	got = s.LoadProjects()
+	if len(got) != 1 {
+		t.Fatalf("after upsert there are %d projects, want 1", len(got))
+	}
+	if p := got[0]; p.Phase != 2 || !p.Done || len(p.Pool) != 0 {
+		t.Errorf("upsert kept %+v, want phase 2, done, empty pool", p)
+	}
+}
+
 // A companion round-trips, an upsert replaces it, and an absent one is ok=false.
 func TestCompanionRoundTrip(t *testing.T) {
 	s := openTemp(t)
