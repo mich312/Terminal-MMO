@@ -104,7 +104,11 @@ distinct look, each with its own HD pixel-art ground texture. **Weather**
 crosses the Wilds as drifting fronts — the sky greys over, rain streaks the
 meadows and snow falls on the snowfields (in both clients), and because the
 storm field is a pure function of the clock and the map, everyone standing
-together is rained on together. Walk far enough and you're out from under it. Scattered through
+together is rained on together. Walk far enough and you're out from under it.
+The map also keeps a **calendar**: in real winter the snowline creeps down
+from the heights — cool meadows, woods and hills whiten over (and fronts fall
+frozen on them), deepest in mid-January, gone by summer — while every
+structural thing (settlements, items, walkability) stays put year round. Scattered through
 them are `◆` **collectibles** — berries and mushrooms in the woods, shells on
 the beach, crystals in the snow — that you forage by standing on one and
 pressing `e`; the **compendium** (`i`, or `/compendium` · `/codex`) is the

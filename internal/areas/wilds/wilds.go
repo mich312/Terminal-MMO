@@ -2004,6 +2004,17 @@ func CellTile(c worldgen.Cell) game.Tile {
 			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt
 		}
 	}
+	// Seasonal snow cover (worldgen/season.go): the HD ground goes white with
+	// the snow texture while the props above it keep their own colors — green
+	// firs over white ground read as winter woods. Structural fields are
+	// untouched, and the snow tex means the weather layer's fronts fall as
+	// snow here for the season.
+	if c.Snowy {
+		t.Tex = game.TexSnow
+		if t.Ground != "" {
+			t.Ground = groundColor(worldgen.Snow)
+		}
+	}
 	return t
 }
 

@@ -42,6 +42,7 @@ type Cell struct {
 	Object   bool   // drawn bold (the gate)
 	Portal   string // non-empty → a portal to this area id
 	Variant  uint8  // sub-type selector (e.g. fence orientation, building type)
+	Snowy    bool   // seasonal snow cover (season.go) — cosmetic only, never structural
 }
 
 // Generator produces cells for one seed. The caches memoize settlement metadata
@@ -156,27 +157,32 @@ func (g *Generator) At(x, y int) Cell {
 			return Cell{Biome: Sand, Glyph: 'Ψ', Color: "#3E8E5A"}
 		}
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
+	// Land above the beach may carry the seasonal snow cover (season.go):
+	// winterized dusts a cool cell's ground tones white in winter and leaves
+	// everything structural untouched. Year-round Snow biome skips it.
 	case elev < 0.70: // lowland — climate decides the cover
+		var c Cell
 		switch {
 		case elev < 0.46 && moist > 0.62 && temp > 0.45:
-			return swampCell(g, x, y) // warm, wet, low: wetlands by the water
+			c = swampCell(g, x, y) // warm, wet, low: wetlands by the water
 		case moist > 0.52:
-			return forestCell(g, x, y)
+			c = forestCell(g, x, y)
 		case temp > 0.60 && moist < 0.44:
-			return savannaCell(g, x, y)
+			c = savannaCell(g, x, y)
 		default:
-			return grassCell(g, x, y)
+			c = grassCell(g, x, y)
 		}
+		return winterized(c, temp, region)
 	case elev < 0.84: // highland — snow only in genuinely cold regions, else hills
-		if temp < 0.40 && region < 0.42 {
+		if temp < snowTempLine && region < snowRegionLine {
 			return snowCell(g, x, y)
 		}
-		return hillCell(g, x, y)
+		return winterized(hillCell(g, x, y), temp, region)
 	default: // peaks — snow-capped except in warm regions, where they're bare rock
 		if temp < 0.52 && region < 0.55 {
 			return Cell{Biome: Snow, Glyph: '▲', Color: "#EAF0F7"} // snowy peak (blocks)
 		}
-		return Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"} // bare peak (blocks)
+		return winterized(Cell{Biome: Mountain, Glyph: '▲', Color: "#9AA0A8"}, temp, region) // bare peak (blocks)
 	}
 }
 

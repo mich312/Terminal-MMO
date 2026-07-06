@@ -341,6 +341,15 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   per-player bests (`highscores` table), hall records are announced server-wide
   (`world.Announce` / `EventAnnounce`), and the Hall of Fame plinth in the
   arcade shows the top three per cabinet in both clients.
+- ✅ Directional avatar motion polish: a dash leans the sprite into its heading
+  and kicks run dust up from the vacated tile (both clients), read from a
+  motion trail `world.Move` records (`Player.PrevX/PrevY/Ran`).
+- ✅ Seasonal snowline (`worldgen/season.go`): in real winter, snow cover
+  creeps down from the heights into cool lowlands — cosmetic only (`Cell.Snowy`
+  recolors ground and swaps the HD tex to snow; the weather layer then falls
+  frozen there), never structural, so settlements/items/collision are
+  season-stable. Deepest mid-January, gone by summer; `cmd/seasonpreview`
+  renders the comparison.
 - Directional facing for avatars (sprite mirrors with movement).
 - ✅ Mark landmarks on the minimap distinctly: discovered doors and gates render
   as their own glyph in their door color (glyph client) / a diamond badge cell
