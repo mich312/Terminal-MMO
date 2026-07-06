@@ -86,6 +86,7 @@ func (w *World) Respawn(name, area string, x, y int) {
 	p.InvulnUntil = now.Add(RespawnImmunity)
 	p.Area = area
 	p.X, p.Y = x, y
+	p.PrevX, p.PrevY, p.Ran = x, y, false // coming to is not a dash: no trail
 	p.LastMoved = now
 	w.broadcastToArea(area, Event{Type: EventPlayerRespawn, Player: name, Target: name, Area: area, X: x, Y: y})
 }

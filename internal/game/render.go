@@ -377,6 +377,9 @@ func stampPlayers(grid [][]rcell, th *ui.Theme, players []world.Player, self str
 		return sorted[i].LastMoved.Before(sorted[j].LastMoved)
 	})
 	for _, p := range sorted {
+		stampDust(grid, p, originX, originY) // dust first, so every sprite draws over it
+	}
+	for _, p := range sorted {
 		fc := p.X - originX // footprint top-left column
 		fr := p.Y - originY // footprint top-left row
 		stampSprite(grid, th, p, p.Name == self, frame, fc, fr)

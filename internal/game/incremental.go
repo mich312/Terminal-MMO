@@ -266,7 +266,9 @@ func (r *IncrementalRenderer) renderRegion(tm *TileMap, players []world.Player, 
 	}
 }
 
-// footprints returns the visible tiles every player's body covers (world coords).
+// footprints returns the visible tiles every player's body covers (world
+// coords), plus — while a dash's dust still hangs — the tile it vacated, so
+// the puff animates and then erases like any other avatar pixel.
 func footprints(players []world.Player, ox, oy, vw, vh int) []tileXY {
 	var out []tileXY
 	for _, p := range players {
@@ -276,6 +278,11 @@ func footprints(players []world.Player, ox, oy, vw, vh int) []tileXY {
 				if x >= ox && x < ox+vw && y >= oy && y < oy+vh {
 					out = append(out, tileXY{x, y})
 				}
+			}
+		}
+		if _, ok := DustPuff(p); ok {
+			if x, y := p.PrevX, p.PrevY; x >= ox && x < ox+vw && y >= oy && y < oy+vh {
+				out = append(out, tileXY{x, y})
 			}
 		}
 	}

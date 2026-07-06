@@ -64,6 +64,13 @@ type Player struct {
 	Weapon    string // wielded weapon item id ("" = unarmed); drawn in-hand in HD
 	LastMoved time.Time
 
+	// Motion trail (render-only, never persisted): the tile the last Move
+	// vacated and whether it was a run (a 2-tile step). Fresh values — LastMoved
+	// within the puff window — let the renderers kick up dust behind a sprinter
+	// and lean the sprite into the dash.
+	PrevX, PrevY int
+	Ran          bool
+
 	// Combat (docs/WEAPON_PLAN.md). Live session state, never persisted — you
 	// always reconnect at full health. The world owns atomicity and delivery
 	// (Strike/Respawn); the game layer owns the numbers (weapon damage, how long
@@ -517,6 +524,7 @@ func (w *World) EnterArea(name, area string, x, y int, destDisplay string) {
 	}
 	p.Area = area
 	p.X, p.Y = x, y
+	p.PrevX, p.PrevY, p.Ran = x, y, false // a door is not a dash: no trail
 	p.LastMoved = time.Now()
 	if old != "" && old != area {
 		w.broadcastToArea(old, Event{Type: EventLeft, Player: name, Area: old, Detail: destDisplay})
@@ -532,9 +540,14 @@ func (w *World) Move(name string, x, y int) {
 	if !ok {
 		return
 	}
-	if dx, dy := x-p.X, y-p.Y; dx != 0 || dy != 0 {
+	dx, dy := x-p.X, y-p.Y
+	if dx != 0 || dy != 0 {
 		p.Facing = Facing8(dx, dy)
 	}
+	// The game layer collapses a run into one 2-tile Move, so the step length
+	// tells us whether this was a dash — the renderers' cue for dust and lean.
+	p.PrevX, p.PrevY = p.X, p.Y
+	p.Ran = max(abs(dx), abs(dy)) >= 2
 	p.X, p.Y = x, y
 	p.LastMoved = time.Now()
 	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area, X: x, Y: y})

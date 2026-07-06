@@ -281,6 +281,9 @@ func stampSpritesRGBA(img *image.RGBA, players []world.Player, self string, fram
 		return sorted[i].LastMoved.Before(sorted[j].LastMoved)
 	})
 	for _, p := range sorted {
+		drawDustRGBA(img, p, scale, originX, originY) // dust first, avatars over it
+	}
+	for _, p := range sorted {
 		blitAvatar(img, p, p.Name == self, frame, scale, p.X-originX, p.Y-originY)
 	}
 }
@@ -320,14 +323,22 @@ func blitAvatar(img *image.RGBA, p world.Player, isSelf bool, frame, scale, fc, 
 		top -= bob
 	}
 
+	// A sprinter leans into the dash: the upper body shifts an art-pixel
+	// toward the heading (feet stay planted, so it reads as a lean, not a
+	// slide). Wall-clock gated like the bob — avatars redraw every frame.
+	lean := runLean(p) * k
 	for sy := 0; sy < bh; sy++ {
 		runes := []rune(bmp[sy])
+		rowOff := 0
+		if sy < bh/2 {
+			rowOff = lean
+		}
 		for sx := 0; sx < bw && sx < len(runes); sx++ {
 			col, opaque := spritePixel(runes[sx], body, accMain, accShade, isSelf)
 			if !opaque {
 				continue
 			}
-			fillRect(img, left+sx*k, top+sy*k, k, k, colorfulToRGBA(col))
+			fillRect(img, left+sx*k+rowOff, top+sy*k, k, k, colorfulToRGBA(col))
 		}
 	}
 
