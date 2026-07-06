@@ -51,6 +51,9 @@ const (
 	// Player is the attacker. The victim's own client owns its position, so it
 	// applies the shove (re-checking the destination); others just see the move.
 	EventPlayerShoved
+	// EventAnnounce: a server-wide one-liner for cross-area news (a new arcade
+	// hall record). Detail holds the text; delivered to every session.
+	EventAnnounce
 )
 
 // Trade event phases, carried in Event.Detail.

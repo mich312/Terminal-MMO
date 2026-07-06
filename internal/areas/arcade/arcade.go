@@ -10,6 +10,7 @@
 package arcade
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,7 +30,7 @@ var rows = []string{
 	"#..B....Z....G....C....O.....#",
 	"#............................#",
 	"#..o......................o..#",
-	"#............................#",
+	"#.............H..............#",
 	"#............................#",
 	"#............................#",
 	"#............................#",
@@ -59,6 +60,9 @@ var legend = map[rune]game.LegendEntry{
 	'O': cabinet("doom", "Doom", "#C24A3A", "#FF8A4C"),
 	// The door back to the overworld.
 	'X': {Kind: game.TilePortal, Ch: '◈', Walkable: true, Portal: "wilds", Label: "The Wilds", Color: "#56E1FF"},
+	// The Hall of Fame plinth: press e beside it to read the leaderboards.
+	'H': {Kind: game.TileObject, Ch: '≡', Object: "scores", Label: "High Scores",
+		Color: "#FFD166", Tex: game.TexFloor, Ground: "#241F30", Prop: game.PropPlinth, PropHex: "#FFD166"},
 	// Dormant cabinets — room for the next games to dock.
 	'c': {Kind: game.TileDecor, Ch: '▦', Tex: game.TexFloor, Ground: "#241F30", Prop: game.PropMachine, PropHex: "#5A5470"},
 	// Floor-standing lamps that wash the hall in neon.
@@ -99,6 +103,7 @@ func init() {
 
 type area struct {
 	game.Walker
+	boardOpen bool // the Hall of Fame panel is up
 }
 
 func (a *area) Name() string { return "Arcade" }
@@ -112,9 +117,22 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	return nil
 }
 
+// CapturesInput keeps global keys away while the Hall of Fame is up.
+func (a *area) CapturesInput() bool { return a.boardOpen }
+
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
+	if a.boardOpen {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			a.boardOpen = false // any key closes the board
+		}
+		return a, nil
+	}
 	if portal, handled := a.HandleCommon(msg); handled && portal != "" {
 		return game.Transition{To: portal}, nil
+	}
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "e" &&
+		a.Map.NearObject(a.X, a.Y, "scores") {
+		a.boardOpen = true
 	}
 	return a, nil
 }
@@ -123,7 +141,81 @@ func (a *area) Hint() string {
 	if h := a.PortalHint(); h != "" {
 		return h
 	}
+	if a.Map.NearObject(a.X, a.Y, "scores") {
+		return "e — the Hall of Fame"
+	}
 	return "walk into a cabinet to play · ◈ door leaves"
+}
+
+// scoreLines renders the leaderboards as rows of (header, entries) — the
+// shared source both the glyph panel and the HD slide format from.
+func (a *area) scoreLines() []struct {
+	Title   string
+	Entries []string
+} {
+	out := make([]struct {
+		Title   string
+		Entries []string
+	}, 0, len(game.ScoreGames))
+	for _, g := range game.ScoreGames {
+		rows := a.Ctx.Store.TopScores(g.ID, 3)
+		entries := make([]string, 0, len(rows))
+		for i, hs := range rows {
+			entries = append(entries, fmt.Sprintf("%d. %s — %d %s", i+1, hs.Name, hs.Score, g.Unit))
+		}
+		out = append(out, struct {
+			Title   string
+			Entries []string
+		}{game.DisplayName(g.ID), entries})
+	}
+	return out
+}
+
+// scoresPanel is the glyph client's Hall of Fame overlay.
+func (a *area) scoresPanel() string {
+	th := a.Ctx.Theme
+	if th == nil {
+		th = ui.Default
+	}
+	var b strings.Builder
+	b.WriteString(th.PanelTitle.Render("🏆 Hall of Fame") + "\n")
+	for _, g := range a.scoreLines() {
+		b.WriteString("\n" + th.Accent.Render(g.Title) + "\n")
+		if len(g.Entries) == 0 {
+			b.WriteString(th.Dim.Render("  no scores yet — step in!") + "\n")
+			continue
+		}
+		for i, e := range g.Entries {
+			if i == 0 {
+				b.WriteString("  " + th.Bright.Render(e) + "\n")
+			} else {
+				b.WriteString("  " + th.ChatText.Render(e) + "\n")
+			}
+		}
+	}
+	b.WriteString("\n" + th.Dim.Render("any key to close"))
+	return th.Panel.Render(b.String())
+}
+
+// HDSlide implements game.HDOverlayer: the Hall of Fame rendered as a markdown
+// panel over the HD frame, exactly like the Wilds' notice board.
+func (a *area) HDSlide() (string, string, bool) {
+	if !a.boardOpen {
+		return "", "", false
+	}
+	var b strings.Builder
+	b.WriteString("# Hall of Fame\n")
+	for _, g := range a.scoreLines() {
+		b.WriteString("\n## " + g.Title + "\n\n")
+		if len(g.Entries) == 0 {
+			b.WriteString("_no scores yet — step in!_\n")
+			continue
+		}
+		for _, e := range g.Entries {
+			b.WriteString(e + "\n\n")
+		}
+	}
+	return b.String(), "any key to close", true
 }
 
 func (a *area) View(width, height int) string {
@@ -156,5 +248,10 @@ func (a *area) View(width, height int) string {
 		mapW = 24
 	}
 	mapView := a.RenderViewport(mapW, height)
-	return lipgloss.JoinHorizontal(lipgloss.Center, panel, "   ", mapView)
+	view := lipgloss.JoinHorizontal(lipgloss.Center, panel, "   ", mapView)
+	if a.boardOpen {
+		board := a.scoresPanel()
+		view = ui.Overlay(view, board, (width-lipgloss.Width(board))/2, 1)
+	}
+	return view
 }

@@ -334,7 +334,13 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   event-driven, with the half-block renderer as the fallback. Background and
   measurements: [`docs/pixel-renderer.md`](pixel-renderer.md).
 - ✅ Particles / weather layer: shipped (see Phase 1) — deterministic rain/snow
-  fronts with overcast, in both renderers, within the HD frame budget.
+  fronts with overcast, in both renderers, within the HD frame budget. Made
+  tangible by follow-ups: fish bite double in the rain, `/where` reports the
+  sky, and distant thunder mutters under a front.
+- ✅ Arcade leaderboards: Snake / Tetris / 2048 / Breakout / Sokoban persist
+  per-player bests (`highscores` table), hall records are announced server-wide
+  (`world.Announce` / `EventAnnounce`), and the Hall of Fame plinth in the
+  arcade shows the top three per cabinet in both clients.
 - Directional facing for avatars (sprite mirrors with movement).
 - ✅ Mark landmarks on the minimap distinctly: discovered doors and gates render
   as their own glyph in their door color (glyph client) / a diamond badge cell

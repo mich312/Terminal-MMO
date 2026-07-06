@@ -122,6 +122,7 @@ func (a *area) GameTick() game.Area {
 		if a.score > a.best {
 			a.best = a.score
 		}
+		game.SubmitScore(a.Ctx, "snake", a.score)
 		a.setToast(fmt.Sprintf("💥 game over — score %d · r restart · x leave", a.score))
 		return a
 	}
@@ -146,7 +147,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 	}
 	switch key.String() {
-	case "x": // leave for the Arcade
+	case "x": // leave for the Arcade — the run so far still counts for the board
+		game.SubmitScore(a.Ctx, "snake", a.score)
 		return game.Transition{To: "arcade"}, nil
 	case "r": // restart
 		a.reset()

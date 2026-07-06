@@ -183,7 +183,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 	}
 	switch key.String() {
-	case "x":
+	case "x": // the run so far still counts for the board
+		game.SubmitScore(a.Ctx, "2048", a.score)
 		return game.Transition{To: "arcade"}, nil
 	case "r":
 		a.reset()
@@ -208,6 +209,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		}
 		if !a.movesLeft() {
 			a.over = true
+			game.SubmitScore(a.Ctx, "2048", a.score)
 			a.setToast(fmt.Sprintf("no moves left · score %d · r restart · x leave", a.score))
 		}
 		a.rebuild()

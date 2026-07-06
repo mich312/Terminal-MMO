@@ -278,6 +278,8 @@ func (m *Model) handleWorldEvent(ev world.Event) tea.Cmd {
 		}
 	case world.EventTrade:
 		m.handleTradeEvent(ev)
+	case world.EventAnnounce:
+		m.addChatLine(m.theme.Accent.Render(ev.Detail))
 	}
 	if m.area != nil {
 		return m.updateArea(WorldEventMsg(ev))

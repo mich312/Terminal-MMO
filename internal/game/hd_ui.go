@@ -1582,6 +1582,8 @@ func HDChatLine(ev world.Event, self string) (HDLine, bool) {
 			}
 			return HDLine{"- " + ev.Player + " left", hudDim}, true
 		}
+	case world.EventAnnounce:
+		return HDLine{ev.Detail, hudAccent}, true
 	}
 	return HDLine{}, false
 }

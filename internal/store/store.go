@@ -52,6 +52,12 @@ type Cleared struct {
 	LastTouch int64 // unix seconds
 }
 
+// HighScore is one row on an arcade cabinet's leaderboard.
+type HighScore struct {
+	Name  string
+	Score int
+}
+
 // DeckRecord is a persisted presentation deck (owned by a user).
 type DeckRecord struct {
 	ID      string
@@ -149,6 +155,11 @@ type Store interface {
 	RemoveCleared(x, y int)
 	// LoadCleared returns every cleared cell in the world.
 	LoadCleared() []Cleared
+	// SaveScore keeps a player's best score on one arcade cabinet's board and
+	// reports whether it set a new hall record (beat every stored score).
+	SaveScore(game, name string, score int) bool
+	// TopScores returns a cabinet's leaderboard, best first, one row per player.
+	TopScores(game string, n int) []HighScore
 	// SaveArtifact records a discovered unique weapon and its discoverer (the
 	// shared legends registry — see docs/WEAPON_PLAN.md).
 	SaveArtifact(id, owner string)
@@ -211,8 +222,10 @@ func (noopStore) LoadPlacements() []Placement                        { return ni
 func (noopStore) SaveClaim(Claim)                                    {}
 func (noopStore) RemoveClaim(string)                                 {}
 func (noopStore) LoadClaims() []Claim                                { return nil }
-func (noopStore) SaveArtifact(string, string)                       {}
-func (noopStore) LoadArtifacts() map[string]string                  { return map[string]string{} }
+func (noopStore) SaveScore(string, string, int) bool                 { return false }
+func (noopStore) TopScores(string, int) []HighScore                  { return nil }
+func (noopStore) SaveArtifact(string, string)                        {}
+func (noopStore) LoadArtifacts() map[string]string                   { return map[string]string{} }
 func (noopStore) SaveCleared(Cleared)                                {}
 func (noopStore) RemoveCleared(int, int)                             {}
 func (noopStore) LoadCleared() []Cleared                             { return nil }

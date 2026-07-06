@@ -128,6 +128,13 @@ CREATE TABLE IF NOT EXISTS artifacts (
 	id    TEXT PRIMARY KEY,
 	owner TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS highscores (
+	game       TEXT NOT NULL,
+	name       TEXT NOT NULL,
+	score      INTEGER NOT NULL,
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (game, name)
+);
 `
 
 type sqliteStore struct {
@@ -311,6 +318,47 @@ func (s *sqliteStore) LoadInventory(name string) map[string]int {
 		var count int
 		if err := rows.Scan(&item, &count); err == nil {
 			out[item] = count
+		}
+	}
+	return out
+}
+
+// SaveScore keeps a player's best score on one cabinet's board (an upsert that
+// only ever raises) and reports whether it beat every score stored so far —
+// i.e. set a new hall record. The read-then-write is atomic under s.mu.
+func (s *sqliteStore) SaveScore(game, name string, score int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var top int
+	_ = s.db.QueryRow(`SELECT COALESCE(MAX(score), 0) FROM highscores WHERE game = ?`, game).Scan(&top)
+	if _, err := s.db.Exec(
+		`INSERT INTO highscores (game, name, score, created_at) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(game, name) DO UPDATE SET score = excluded.score, created_at = excluded.created_at
+		 WHERE excluded.score > highscores.score`,
+		game, name, score, time.Now().Unix()); err != nil {
+		log.Printf("store: save score: %v", err)
+		return false
+	}
+	return score > top
+}
+
+// TopScores returns a cabinet's leaderboard, best first (ties to the earlier
+// scorer), one row per player.
+func (s *sqliteStore) TopScores(game string, n int) []HighScore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(
+		`SELECT name, score FROM highscores WHERE game = ? ORDER BY score DESC, created_at ASC LIMIT ?`,
+		game, n)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []HighScore
+	for rows.Next() {
+		var hs HighScore
+		if err := rows.Scan(&hs.Name, &hs.Score); err == nil {
+			out = append(out, hs)
 		}
 	}
 	return out

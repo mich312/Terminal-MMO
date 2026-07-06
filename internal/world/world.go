@@ -595,6 +595,18 @@ func (w *World) Whisper(from, to, text string) bool {
 	return true
 }
 
+// Announce fans a server-wide one-liner out to every session, whatever area
+// they're in — the town crier for cross-area news like a new arcade hall
+// record. Non-blocking like every broadcast.
+func (w *World) Announce(text string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ev := Event{Type: EventAnnounce, Detail: text}
+	for _, ch := range w.subs {
+		deliver(ch, ev)
+	}
+}
+
 // SetColor changes a player's avatar color. The new color shows on everyone's
 // next render. Returns false if the player is gone.
 func (w *World) SetColor(name string, c lipgloss.Color) bool {

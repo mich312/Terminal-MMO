@@ -118,6 +118,7 @@ func (a *area) spawn() {
 	a.px, a.py = 3, -1
 	if !a.valid(a.px, a.py, a.rot) {
 		a.over = true
+		game.SubmitScore(a.Ctx, "tetris", a.score)
 		a.setToast(fmt.Sprintf("game over · %d lines · r restart · x leave", a.lines))
 	}
 }
@@ -184,6 +185,9 @@ func (a *area) lock() {
 		}
 		a.grid[c[1]][c[0]] = a.piece + 1
 	}
+	if a.over {
+		game.SubmitScore(a.Ctx, "tetris", a.score)
+	}
 }
 
 func (a *area) clearLines() {
@@ -220,7 +224,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 	}
 	switch key.String() {
-	case "x":
+	case "x": // the run so far still counts for the board
+		game.SubmitScore(a.Ctx, "tetris", a.score)
 		return game.Transition{To: "arcade"}, nil
 	case "r":
 		a.reset()

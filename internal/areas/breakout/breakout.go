@@ -114,6 +114,7 @@ func (a *area) GameTick() game.Area {
 		ny = a.by + a.vy
 		if len(a.bricks) == 0 {
 			a.over, a.won = true, true
+			game.SubmitScore(a.Ctx, "breakout", a.score)
 			a.setToast("🏆 cleared! · r play again · x leave")
 			a.rebuild()
 			return a
@@ -136,6 +137,7 @@ func (a *area) GameTick() game.Area {
 		a.lives--
 		if a.lives <= 0 {
 			a.over = true
+			game.SubmitScore(a.Ctx, "breakout", a.score)
 			a.setToast(fmt.Sprintf("game over · score %d · r retry · x leave", a.score))
 			a.rebuild()
 			return a
@@ -155,7 +157,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 	}
 	switch key.String() {
-	case "x":
+	case "x": // the run so far still counts for the board
+		game.SubmitScore(a.Ctx, "breakout", a.score)
 		return game.Transition{To: "arcade"}, nil
 	case "r":
 		a.reset()

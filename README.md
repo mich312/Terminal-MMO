@@ -229,6 +229,12 @@ from the lobby) — a neon hall of cabinets, each a portal into a self-contained
 - **Doom** (`◊`) — a first-person raycaster maze; find the exit (W/S walk, A/D
   turn). Drawn as real pixels in HD, ASCII in the glyph client. `r` resets.
 
+Snake, Tetris, 2048, Breakout and Sokoban keep **persistent leaderboards**: a
+finished (or abandoned) run lands your best on that cabinet's board, a run that
+beats every stored score is **announced to everyone online**, and the **Hall of
+Fame plinth** (`≡`, press `e`) in the middle of the hall shows the top three
+per game — in both clients.
+
 Most minigames are **keypress-driven** (the HD client only forwards key events to
 an area, never a clock), so they play identically in both clients. Real-time
 ones like Snake implement `game.Ticker`, which both clients drive off a

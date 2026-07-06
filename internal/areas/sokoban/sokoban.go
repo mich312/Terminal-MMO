@@ -221,6 +221,7 @@ func (a *area) step(dx, dy int) (game.Area, tea.Cmd) {
 			a.finished = true
 			a.setToast("🏆 all puzzles solved! step on the door to leave")
 		}
+		game.SubmitScore(a.Ctx, "sokoban", a.cleared) // levels solved this visit
 	}
 	return a, nil
 }
