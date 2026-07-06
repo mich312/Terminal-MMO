@@ -3,7 +3,9 @@ package game
 import (
 	"image"
 	"math"
+	"time"
 
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -72,6 +74,23 @@ func smallReachTile(t Tile) bool {
 		return true
 	}
 	return false
+}
+
+// precipOnlyTile reports whether a dirty tile's only frame-to-frame change is
+// the falling weather over it: it hosts a drop/flake right now and nothing else
+// about it animates. drawWeather guarantees the streak stays strictly inside
+// the cell's own rect, so such a tile needs no dilation at all — the property
+// that keeps a steady rain incremental instead of a full repaint every frame.
+// (A cell whose host just lapsed goes dirty once through the ordinary big
+// bucket; that transition is sparse.)
+func precipOnlyTile(t Tile, wx, wy int, night float64, style *Style, sky bool, now time.Time) bool {
+	if !sky || !precipCell(t.Tex) {
+		return false
+	}
+	if _, ok := precipHost(now, wx, wy); !ok {
+		return false
+	}
+	return !tileAnimated(t, wx, wy, night, style, false, now) // nothing but the weather moves
 }
 
 // Render returns the terrain frame for a vw×vh tile window (tm), reusing the
@@ -154,24 +173,33 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 	// scatter of motes by the full overhang re-covers a whole explored wood (each
 	// mote's 9×9 halo overlaps its neighbours), tipping a still night forest into a
 	// full repaint every frame; the tighter halo keeps it incremental. Wide casters
-	// and avatar footprints stay in the big bucket.
-	big, small := make([]bool, vw*vh), make([]bool, vw*vh)
+	// and avatar footprints stay in the big bucket. Cells whose only change is the
+	// in-cell precipitation streak need no dilation at all (the point bucket) —
+	// without it a steady rain's scattered hosts would dilate into a full repaint
+	// every frame.
+	_, _, night := sunState()
+	now := ui.Now()
+	big, small, point := make([]bool, vw*vh), make([]bool, vw*vh), make([]bool, vw*vh)
 	for ty := 0; ty < vh; ty++ {
 		for tx := 0; tx < vw; tx++ {
 			i := ty*vw + tx
 			if !dirty[i] {
 				continue
 			}
-			if smallReachTile(tm.At(tx, ty)) {
+			t := tm.At(tx, ty)
+			switch {
+			case precipOnlyTile(t, ox+tx, oy+ty, night, style, light.Sky, now):
+				point[i] = true
+			case smallReachTile(t):
 				small[i] = true
-			} else {
+			default:
 				big[i] = true
 			}
 		}
 	}
 	forceBig := func(f tileXY) {
 		if tx, ty := f.x-ox, f.y-oy; tx >= 0 && tx < vw && ty >= 0 && ty < vh {
-			big[ty*vw+tx], small[ty*vw+tx] = true, false
+			big[ty*vw+tx], small[ty*vw+tx], point[ty*vw+tx] = true, false, false
 		}
 	}
 	for _, f := range feet {
@@ -190,6 +218,11 @@ func (r *IncrementalRenderer) Render(tm *TileMap, players []world.Player, self s
 	}
 	dil := dilate(big, vw, vh, overhangTiles)
 	for i, d := range dilate(small, vw, vh, ambientOverhang) {
+		if d {
+			dil[i] = true
+		}
+	}
+	for i, d := range point {
 		if d {
 			dil[i] = true
 		}
@@ -270,6 +303,7 @@ func creatureCells(creatures []world.Creature, ox, oy, vw, vh int) []tileXY {
 func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style) []uint64 {
 	vw, vh := tm.W, tm.H
 	_, _, night := sunState()
+	now := ui.Now() // weather clock, read once so the whole grid agrees
 	band := make([]int, vw*vh)
 	for ty := 0; ty < vh; ty++ {
 		for tx := 0; tx < vw; tx++ {
@@ -294,7 +328,7 @@ func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style
 			h := tileSig(tx, ty)
 			h = fnv1a(h, tileSig(tx, ty-1), tileSig(tx+1, ty-1), tileSig(tx+1, ty), tileSig(tx+1, ty+1))
 			h = fnv1a(h, tileSig(tx, ty+1), tileSig(tx-1, ty+1), tileSig(tx-1, ty), tileSig(tx-1, ty-1))
-			if tileAnimated(tm.At(tx, ty), ox+tx, oy+ty, night, style) {
+			if tileAnimated(tm.At(tx, ty), ox+tx, oy+ty, night, style, light.Sky, now) {
 				h = fnv1a(h, uint64(frame))
 			}
 			out[ty*vw+tx] = h
@@ -305,9 +339,10 @@ func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style
 
 // tileAnimated reports whether a tile's pixels change frame-to-frame: water
 // (ripples + glint), portals and emissive props (pulse/flicker, day or night),
-// and — after dusk — the forest/swamp cells that actually host a drifting
-// firefly or mist wisp. (wx,wy) is the cell's world position, needed for those
-// per-cell night effects.
+// — after dusk — the forest/swamp cells that actually host a drifting
+// firefly or mist wisp, and — under an open sky — the sparse cells hosting a
+// falling raindrop or snowflake right now. (wx,wy) is the cell's world
+// position, needed for those per-cell effects; now is the weather clock.
 //
 // The night branch is deliberately per-cell rather than per-biome: marking the
 // whole wood animated meant a fully-explored forest re-rasterized every tile
@@ -317,7 +352,12 @@ func signatureGrid(tm *TileMap, frame int, light Light, ox, oy int, style *Style
 // are still redrawn via the dirty-set dilation (the same way a campfire's glow
 // reaches its neighbours). Validated against a full render by
 // TestIncrementalMatchesFull at day, dusk and night.
-func tileAnimated(t Tile, wx, wy int, night float64, style *Style) bool {
+func tileAnimated(t Tile, wx, wy int, night float64, style *Style, sky bool, now time.Time) bool {
+	if sky && precipCell(t.Tex) {
+		if _, ok := precipHost(now, wx, wy); ok {
+			return true
+		}
+	}
 	if t.Tex == TexWater || t.Prop == PropPortal {
 		return true
 	}

@@ -1806,7 +1806,12 @@ func fogTile() game.Tile {
 // midday the circle vanishes and only at night does it pool like a torch. (The
 // wider discoverR reveal circle is unaffected — explored ground stays uncovered.)
 func (a *area) sightLight() game.Light {
-	return game.DayFadedLight(game.Light{X: a.wx + game.PlayerW/2, Y: a.wy + game.PlayerH/2, Radius: sightR})
+	l := game.DayFadedLight(game.Light{X: a.wx + game.PlayerW/2, Y: a.wy + game.PlayerH/2, Radius: sightR})
+	// The Wilds is under the open sky: the weather layer falls on it, and the
+	// storm intensity where the player stands greys the ambient (weather.go).
+	l.Sky = true
+	l.Overcast = game.StormAt(ui.Now(), a.wx, a.wy)
+	return l
 }
 
 // HDView implements game.HDViewer so the Wilds renders in HD pixel mode.
@@ -2045,26 +2050,66 @@ func groundColor(b worldgen.Biome) string {
 	}
 }
 
+// Minimap geometry, shared by the glyph panel and the HD grid: one map cell per
+// stride tiles, a (2·halfW+1)×(2·halfH+1) chart centered on the player.
+const (
+	mapStride = 4
+	mapHalfW  = 19
+	mapHalfH  = 9
+)
+
+// roundDiv divides rounding to nearest (Go's integer division truncates, which
+// would snap negative offsets a cell off-center).
+func roundDiv(d, s int) int {
+	if d >= 0 {
+		return (d + s/2) / s
+	}
+	return -((-d + s/2) / s)
+}
+
+// mapMarks returns the landmarks and gates the player has discovered, snapped
+// onto the minimap grid (keys are map-cell offsets from the player) — so the
+// hub's doors and the old gates read as themselves on the chart instead of
+// being lost between the stride samples. A door only appears once its own cell
+// has been walked into view, keeping the map something you earn.
+func (a *area) mapMarks() map[[2]int]worldgen.Landmark {
+	marks := map[[2]int]worldgen.Landmark{}
+	all := append(append([]worldgen.Landmark{}, worldgen.Landmarks...), worldgen.Gates...)
+	for _, lm := range all {
+		if !a.seen(lm.X, lm.Y) {
+			continue
+		}
+		rx := roundDiv(lm.X-a.wx, mapStride)
+		ry := roundDiv(lm.Y-a.wy, mapStride)
+		if rx < -mapHalfW || rx > mapHalfW || ry < -mapHalfH || ry > mapHalfH {
+			continue
+		}
+		marks[[2]int{rx, ry}] = lm
+	}
+	return marks
+}
+
 // minimap renders a coarse overview of the surrounding terrain (one cell per
-// few tiles), marking the player (☺), landmarks (their glyph) and the gate.
+// few tiles), marking the player (☺) and every discovered landmark door/gate
+// (its own glyph, bold in its door color) over the sampled terrain.
 func (a *area) minimap() string {
-	const (
-		stride = 4
-		halfW  = 19
-		halfH  = 9
-	)
 	th := a.ctx.Theme
 	if th == nil {
 		th = ui.Default
 	}
+	marks := a.mapMarks()
 	var b strings.Builder
 	b.WriteString(th.PanelTitle.Render("Map — The Wilds") + "\n")
-	for ry := -halfH; ry <= halfH; ry++ {
-		for rx := -halfW; rx <= halfW; rx++ {
-			wx := a.wx + rx*stride
-			wy := a.wy + ry*stride
+	for ry := -mapHalfH; ry <= mapHalfH; ry++ {
+		for rx := -mapHalfW; rx <= mapHalfW; rx++ {
+			wx := a.wx + rx*mapStride
+			wy := a.wy + ry*mapStride
 			if rx == 0 && ry == 0 {
 				b.WriteString(th.Bright.Render("☺"))
+				continue
+			}
+			if lm, ok := marks[[2]int{rx, ry}]; ok {
+				b.WriteString(th.Fg(lipgloss.Color(lm.Color)).Bold(true).Render(string(lm.Glyph)))
 				continue
 			}
 			if !a.seen(wx, wy) {
@@ -2192,28 +2237,28 @@ func (a *area) HDSlide() (string, string, bool) {
 }
 
 // HDMinimap supplies the same coarse overview to the HD pixel client, which
-// rasterizes the cells as colored blocks rather than glyphs. It mirrors minimap:
-// one block per few tiles, centered on the player, filling in as you explore.
+// rasterizes the cells as colored blocks rather than glyphs. It mirrors
+// minimap: one block per few tiles, centered on the player, filling in as you
+// explore, with discovered landmark doors/gates flagged as badge cells.
 func (a *area) HDMinimap() (string, [][]game.MiniCell, bool) {
 	if !a.showMap {
 		return "", nil, false
 	}
-	const (
-		stride = 4
-		halfW  = 19
-		halfH  = 9
-	)
-	rows := make([][]game.MiniCell, 0, 2*halfH+1)
-	for ry := -halfH; ry <= halfH; ry++ {
-		row := make([]game.MiniCell, 0, 2*halfW+1)
-		for rx := -halfW; rx <= halfW; rx++ {
+	marks := a.mapMarks()
+	rows := make([][]game.MiniCell, 0, 2*mapHalfH+1)
+	for ry := -mapHalfH; ry <= mapHalfH; ry++ {
+		row := make([]game.MiniCell, 0, 2*mapHalfW+1)
+		for rx := -mapHalfW; rx <= mapHalfW; rx++ {
+			lm, marked := marks[[2]int{rx, ry}]
 			switch {
 			case rx == 0 && ry == 0:
 				row = append(row, game.MiniCell{Self: true})
-			case !a.seen(a.wx+rx*stride, a.wy+ry*stride):
+			case marked:
+				row = append(row, game.MiniCell{Hex: lm.Color, Mark: true})
+			case !a.seen(a.wx+rx*mapStride, a.wy+ry*mapStride):
 				row = append(row, game.MiniCell{}) // unexplored
 			default:
-				c := a.gen.At(a.wx+rx*stride, a.wy+ry*stride)
+				c := a.gen.At(a.wx+rx*mapStride, a.wy+ry*mapStride)
 				hex := c.Color
 				if hex == "" {
 					hex = ui.HexDim

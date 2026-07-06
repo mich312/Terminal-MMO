@@ -67,21 +67,29 @@ func CameraOn(tm *TileMap, cx, cy, vw, vh int) Camera {
 // forces full night, so the lantern and the world's own glow always dominate
 // regardless of the surface day/night cycle. It is independent of Warm — a dark
 // place need not be lit by a warm lantern.
+// Sky marks a scene under the open sky — the Wilds — where the weather layer
+// applies: drifting rain/snow fronts (weather.go) fall on it and Overcast (the
+// storm intensity where the player stands, 0..1) greys the ambient. Interiors
+// and Sunless worlds never set it, so it never rains in the lobby.
 type Light struct {
 	X, Y, Radius int
 	Warm         bool
 	Sunless      bool
 	Floor        float64
+	Sky          bool
+	Overcast     float64
 }
 
 // sceneAmbient is the ambient tint/strength a scene renders under: the live
 // day/night sky normally, or the fixed deep-dark for a Sunless (underground /
 // interior) light, so such worlds stay dark whatever the hour above ground.
+// Under the open sky a storm's overcast greys and deepens the wash.
 func sceneAmbient(light Light) (hex string, strength float64) {
 	if light.Sunless {
 		return ui.SunlessAmbient()
 	}
-	return ui.Ambient(ui.Now())
+	hex, strength = ui.Ambient(ui.Now())
+	return overcastAmbient(hex, strength, light.Overcast)
 }
 
 // sceneNight is the night factor driving emissive effects (glow blooms): forced
@@ -185,6 +193,7 @@ func renderAll(th *ui.Theme, tm *TileMap, players []world.Player, self string, f
 func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame, originX, originY int) [][]rcell {
 	ambHex, ambStr := sceneAmbient(light)
 	amb := mustHex(ambHex)
+	now := ui.Now() // weather clock, read once so the whole grid agrees
 	base := map[TileKind]colorful.Color{
 		TileWall:   tint(mustHex(ui.HexDim), amb, ambStr),
 		TileFloor:  tint(mustHex(ui.HexFaint), amb, ambStr),
@@ -210,6 +219,16 @@ func buildGrid(th *ui.Theme, tm *TileMap, cam Camera, light Light, frame, origin
 			}
 			ch, col, bold := tileLook(t, frame, base, labelC, portalC, amb, ambStr)
 			col = applyLight(col, originX+vx, originY+vy, light)
+			// Falling weather in the glyph client: on plain open ground a host
+			// cell's glyph becomes the streak/flake for this frame (the same host
+			// set the HD renderer draws), leaving props, loot and portals legible.
+			if light.Sky && t.Kind == TileFloor && t.Anim == nil && precipCell(t.Tex) &&
+				(t.Prop == PropNone || t.Prop == PropTuft || t.Prop == PropFlower) {
+				if i, ok := precipHost(now, originX+vx, originY+vy); ok {
+					ch, col = precipGlyph(t.Tex, frame, originX+vx, originY+vy, i, col)
+					bold = false
+				}
+			}
 			grid[vy][vx] = rcell{ch: ch, fg: col, bold: bold}
 		}
 	}

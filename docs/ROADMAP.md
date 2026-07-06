@@ -43,7 +43,14 @@ Direction agreed with the team. Decisions locked:
   the store as 8×8 chunk bitmasks (full chunks pack to 8 bytes, frontier chunks
   keep exact bits), alongside the player's position — so the map and where you
   stand survive disconnects and re-entry.
-- ⬜ Particles / weather layer.
+- ✅ Particles / weather layer (`internal/game/weather.go`): drifting rain/snow
+  fronts as a pure function of (wall clock, world cell) — deterministic, shared
+  by every session, nothing stored. Sparse per-cell drops/flakes render in both
+  clients (streak runes in glyph, in-tile slanted streaks + splashes / swaying
+  flakes in HD), the ambient greys over under a front (`Light.Overcast`), and
+  the Wilds is the only `Light.Sky` scene so it never rains indoors. In-cell
+  drawing keeps the incremental HD renderer incremental (a zero-dilation dirty
+  bucket); validated byte-identical by `TestIncrementalMatchesFull/rain`.
 - ⬜ Directional / two-cell avatars with a drop shadow.
 
 ## Phase 2 — Chunked infinite overworld ✅
@@ -326,7 +333,11 @@ and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Corporate × medieval vo
   `ssh -t … glyph` opts back into the half-block client. Flat + delta,
   event-driven, with the half-block renderer as the fallback. Background and
   measurements: [`docs/pixel-renderer.md`](pixel-renderer.md).
-- Particles / weather layer.
+- ✅ Particles / weather layer: shipped (see Phase 1) — deterministic rain/snow
+  fronts with overcast, in both renderers, within the HD frame budget.
 - Directional facing for avatars (sprite mirrors with movement).
-- Mark landmarks on the minimap distinctly.
+- ✅ Mark landmarks on the minimap distinctly: discovered doors and gates render
+  as their own glyph in their door color (glyph client) / a diamond badge cell
+  (HD) at their true position on the chart, once their cell has been walked
+  into view.
 - Admin `/regen`, `/tp` (needs an auth/ownership concept).

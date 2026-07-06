@@ -239,6 +239,9 @@ func RenderRGBA(th *ui.Theme, tm *TileMap, players []world.Player, self string, 
 		drawFireflies(img, texs, cam, scale, frame, originX, originY)
 		// Cave life: bats at the mouths, fish in the pools, glow-worms over the fungi.
 		drawCaveFauna(img, props, cam, scale, frame, originX, originY)
+		// Falling weather over the open sky: rain streaks and snowflakes on the
+		// sparse host cells the drifting storm front covers (weather.go).
+		drawWeather(img, texs, cam, scale, frame, originX, originY, light)
 	}
 
 	// Wildlife sprites: drawn over the terrain but under the players, tinted by

@@ -298,8 +298,9 @@ func DrawHurtFlash(img *image.RGBA) {
 
 // DrawMinimapPanel draws an area's coarse overview as a grid of colored blocks —
 // the HD twin of the glyph client's 'm' map. Explored cells show their terrain
-// color, the player's block is bright, and unexplored ground is left dark so the
-// chart fills in as you roam.
+// color, the player's block is bright, unexplored ground is left dark so the
+// chart fills in as you roam, and discovered landmarks (Mark cells) get a
+// diamond badge in their door color so the chart doubles as a directory.
 func DrawMinimapPanel(img *image.RGBA, title string, rows [][]MiniCell) {
 	if len(rows) == 0 || len(rows[0]) == 0 {
 		return
@@ -330,9 +331,29 @@ func DrawMinimapPanel(img *image.RGBA, title string, rows [][]MiniCell) {
 			switch {
 			case cell.Self:
 				fillRect(img, gx+c*block, gy+r*block, block, block, hudBright)
-			case cell.Hex != "":
+			case cell.Hex != "" && !cell.Mark:
 				fillRect(img, gx+c*block, gy+r*block, block, block, colorfulToRGBA(mustHex(cell.Hex)))
 			}
+		}
+	}
+	// Landmark badges go over the terrain in a second pass, so a neighbouring
+	// cell's block never clips one: a diamond of the door's color around a
+	// bright core, spanning a block beyond the cell — small, but unmistakably
+	// not terrain.
+	for r, row := range rows {
+		for c, cell := range row {
+			if !cell.Mark || cell.Hex == "" {
+				continue
+			}
+			col := colorfulToRGBA(mustHex(cell.Hex))
+			cx, cy := gx+c*block, gy+r*block
+			for _, d := range [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+				bx, by := cx+d[0]*block, cy+d[1]*block
+				if bx >= gx && bx < gx+gridW && by >= gy && by < gy+gridH {
+					fillRect(img, bx, by, block, block, col)
+				}
+			}
+			fillRect(img, cx, cy, block, block, hudBright)
 		}
 	}
 	pixel.DrawText(img, ox+pad, oy+ph-pad-lh+lh/4, s, footer, hudDim)

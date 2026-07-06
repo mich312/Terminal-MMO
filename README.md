@@ -97,9 +97,14 @@ open world stays the hub. Players are half-block avatars in their own color.
 The overworld starts **hidden** — only a circle of terrain around you is lit;
 the rest is fog. Walking uncovers new ground, which then stays visible (dimmed)
 on screen and fills in on the minimap (`m`), so the world is something you
-explore rather than see all at once. Climate-driven biomes — forest, savanna,
+explore rather than see all at once; doors and gates you've found stay marked
+on the chart in their own colors. Climate-driven biomes — forest, savanna,
 snowfields and snow-capped peaks, wetlands, sand, hills — give each direction a
-distinct look, each with its own HD pixel-art ground texture. Scattered through
+distinct look, each with its own HD pixel-art ground texture. **Weather**
+crosses the Wilds as drifting fronts — the sky greys over, rain streaks the
+meadows and snow falls on the snowfields (in both clients), and because the
+storm field is a pure function of the clock and the map, everyone standing
+together is rained on together. Walk far enough and you're out from under it. Scattered through
 them are `◆` **collectibles** — berries and mushrooms in the woods, shells on
 the beach, crystals in the snow — that you forage by standing on one and
 pressing `e`; the **compendium** (`i`, or `/compendium` · `/codex`) is the

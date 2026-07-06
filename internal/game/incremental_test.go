@@ -27,8 +27,10 @@ func worldTile(wx, wy int) Tile {
 		t.Tex, t.Ground = TexSand, "#D9C58B"
 	case r < 0.85:
 		t.Tex, t.Ground = TexSwamp, "#4A5A3A"
-	default:
+	case r < 0.93:
 		t.Tex, t.Ground = TexRock, "#7A7A82"
+	default:
+		t.Tex, t.Ground = TexSnow, "#E8EEF5" // exercises snowfall under a Sky light
 	}
 	if hashNoise(wx, wy, 0x99) > 0.95 {
 		t.Prop, t.PropHex = PropCampfire, "#FF8030" // emissive: exercises glow overhang
@@ -69,6 +71,21 @@ func TestIncrementalMatchesFull(t *testing.T) {
 		"dusk":  time.Date(2026, 6, 16, 10, 47, 30, 0, time.UTC),
 		"night": time.Date(2026, 6, 16, 10, 57, 30, 0, time.UTC),
 	}
+	// A fourth regime: an open-sky scene in heavy rain/snow (the weather layer's
+	// per-cell hosts and the zero-dilation point bucket). Scan for a moment the
+	// storm field sits hard over the test window — deterministic, so the scan
+	// always lands on the same instant.
+	sky := map[string]bool{"rain": true}
+	for probe := times["day"]; ; probe = probe.Add(5 * time.Minute) {
+		if StormAt(probe, 8, 6) > 0.8 {
+			// Keep the compressed day/night clock at daytime so the rain run
+			// isolates weather churn from the night firefly/mist churn.
+			times["rain"] = time.Date(probe.Year(), probe.Month(), probe.Day(), probe.Hour(), 25, probe.Second(), 0, time.UTC)
+			if StormAt(times["rain"], 8, 6) > 0.6 {
+				break
+			}
+		}
+	}
 
 	// Scripted steps: each advances the frame and moves the self/npc avatars.
 	type step struct {
@@ -95,7 +112,10 @@ func TestIncrementalMatchesFull(t *testing.T) {
 				cx, cy = cx+s.dnx, cy-s.dpy // moves on its own track so tiles vacate
 				frame := i
 				ox, oy := px-vw/2, py-vh/2
-				light := Light{X: px, Y: py, Radius: 18}
+				light := Light{X: px, Y: py, Radius: 18, Sky: sky[name]}
+				if light.Sky {
+					light.Overcast = 0.5
+				}
 				players := []world.Player{
 					{Name: "me", X: px, Y: py, Color: "#FFC861", Facing: world.DirS, LastMoved: idle},
 					{Name: "bob", X: nx, Y: ny, Color: "#7DF0FF", Facing: world.DirE, LastMoved: idle},

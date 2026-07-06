@@ -176,6 +176,14 @@ Computed per frame, never persisted:
   player's reach. Only *luminous* loot (crystals, mushrooms) glows at night;
   the campfire warms and flickers.
 - **Fog-of-war**: bright sight radius + dimmed explored memory + fog beyond.
+- **Weather** (`weather.go`): drifting rain/snow fronts, a pure function of
+  (wall clock, world cell) — every session sees the same shower, nothing is
+  stored. Only sparse *host* cells draw a drop/flake (the firefly pattern), and
+  everything a host draws stays **strictly inside its own tile** — that is the
+  contract that keeps the incremental HD renderer incremental (the
+  zero-dilation point bucket). Weather is gated on `Light.Sky` (the Wilds);
+  `Light.Overcast` greys the ambient under a front. Snow falls on `TexSnow`,
+  rain everywhere else; nothing falls on fog or interiors.
 
 Keep these as render-time passes layered on the same scene data — that's what
 keeps the two renderers in agreement and the world deterministic.

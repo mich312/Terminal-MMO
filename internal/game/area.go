@@ -133,11 +133,14 @@ type HDOverlayer interface {
 
 // MiniCell is one coarse tile in an area's overview map: its terrain color (Hex
 // empty means unexplored — drawn dark), with Self marking the player's own
-// block. The glyph client renders the map as text; HD draws these as a grid of
-// colored squares, so both clients answer "where am I?" the same way.
+// block and Mark flagging a discovered landmark (a door or gate), drawn as a
+// distinct badge rather than a terrain block. The glyph client renders the map
+// as text; HD draws these as a grid of colored squares, so both clients answer
+// "where am I?" the same way.
 type MiniCell struct {
 	Hex  string
 	Self bool
+	Mark bool
 }
 
 // HDMinimapper lets an area supply a coarse overview for the HD client to
