@@ -170,6 +170,41 @@ func TestHDWeatherDraws(t *testing.T) {
 	}
 }
 
+// TestSkyReport: the /where flavor line tracks the intensity bands.
+func TestSkyReport(t *testing.T) {
+	for _, c := range []struct {
+		i    float64
+		want string
+	}{
+		{0, "clear"}, {0.2, "drizzle"}, {0.5, "rain"}, {0.9, "storm"},
+	} {
+		if got := SkyReport(c.i); !strings.Contains(got, c.want) {
+			t.Fatalf("SkyReport(%v) = %q, want it to mention %q", c.i, got, c.want)
+		}
+	}
+}
+
+// TestWhereReportsSky: /where appends the weather in the Wilds and stays
+// weatherless indoors.
+func TestWhereReportsSky(t *testing.T) {
+	orig := ui.Now
+	defer func() { ui.Now = orig }()
+	m := playingModel(t)
+	m.ctx.World.EnterArea(m.ctx.Name, "wilds", 4, 4, "The Wilds")
+	self, _ := m.ctx.World.Self(m.ctx.Name)
+	at := findWeather(t, self.X, self.Y, func(i float64) bool { return i > 0.75 })
+	ui.Now = func() time.Time { return at }
+	m.runChatLine("/where")
+	if got := lastChat(m); !strings.Contains(got, "storm") {
+		t.Fatalf("/where in a Wilds storm = %q, want the sky mentioned", got)
+	}
+	m.ctx.World.EnterArea(m.ctx.Name, "lobby", 2, 2, "Durst HQ")
+	m.runChatLine("/where")
+	if got := lastChat(m); strings.Contains(got, "storm") || strings.Contains(got, "skies") {
+		t.Fatalf("/where indoors = %q, want no weather report", got)
+	}
+}
+
 // TestOvercastAmbient: a storm's wash only ever greys and deepens the ambient —
 // zero overcast is a no-op and full overcast never lightens the night.
 func TestOvercastAmbient(t *testing.T) {

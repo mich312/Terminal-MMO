@@ -1,6 +1,8 @@
 package wilds
 
 import (
+	"time"
+
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/worldgen"
 )
@@ -47,6 +49,19 @@ const (
 	woodRate  = 0.6  // most felled stumps still hold a log
 	fishRate  = 0.4  // fish to be had off the jetty
 )
+
+// rainBite is the storm intensity past which the fish are biting: a jetty haul
+// in real rain lands a second fish — the weather layer made tangible.
+const rainBite = 0.25
+
+// fishHaul is how many fish one jetty cell yields at t: two under rain heavy
+// enough that they're biting, one otherwise. Pure, like the rest of the roll.
+func fishHaul(x, y int, t time.Time) int {
+	if game.StormAt(t, x, y) >= rainBite {
+		return 2
+	}
+	return 1
+}
 
 // rarityRate thins the forage scatter by how scarce a find is: commons stay
 // plentiful, while uncommons and rares are held back by a second roll. This both

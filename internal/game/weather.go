@@ -146,6 +146,21 @@ func overcastAmbient(hex string, strength, overcast float64) (string, float64) {
 	return hex, strength
 }
 
+// SkyReport describes a storm intensity from the ground — the `/where` flavor
+// line, in the game's corporate-medieval voice.
+func SkyReport(i float64) string {
+	switch {
+	case i <= 0:
+		return "clear skies"
+	case i < 0.35:
+		return "a light drizzle drifting through"
+	case i < 0.7:
+		return "steady rain on the wind"
+	default:
+		return "a storm overhead"
+	}
+}
+
 // Precipitation colors: a pale cool streak for rain, near-white for snow.
 // Blended over whatever is already on the ground (opaque mix, not additive), so
 // drops read on a bright beach at noon and over a dark wood at night alike.

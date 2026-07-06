@@ -211,7 +211,11 @@ func cmdWhere(m *Model, args []string) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	m.addSystemLine(fmt.Sprintf("%s · (%d, %d)", DisplayName(self.Area), self.X, self.Y))
+	line := fmt.Sprintf("%s · (%d, %d)", DisplayName(self.Area), self.X, self.Y)
+	if self.Area == "wilds" { // the one open-sky area: report the weather too
+		line += " · " + SkyReport(StormAt(ui.Now(), self.X, self.Y))
+	}
+	m.addSystemLine(line)
 	return nil
 }
 

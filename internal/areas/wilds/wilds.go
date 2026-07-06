@@ -52,21 +52,22 @@ const (
 )
 
 type area struct {
-	ctx        *game.Ctx
-	gen        *worldgen.Generator
-	wx, wy     int // absolute world position (top-left of the body's footprint)
-	frame      int
-	showMap    bool
-	showBoard  bool              // the notice board panel is open
-	discovered map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
-	dirty      map[[2]int]bool   // chunks changed since the last persist
-	collected  map[[2]int]bool   // world cells whose item this player has taken
-	rng        *rand.Rand        // per-session stream for hunting drop rolls
-	toast      string            // transient pickup feedback
-	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
-	lastStrike time.Time         // when this session last landed a blow (weapon cooldown)
-	hurtUntil  time.Time         // brief on-hit flash window after taking damage
-	wieldSync  string            // last wielded weapon pushed to the world (avoids per-frame churn)
+	ctx         *game.Ctx
+	gen         *worldgen.Generator
+	wx, wy      int // absolute world position (top-left of the body's footprint)
+	frame       int
+	showMap     bool
+	showBoard   bool              // the notice board panel is open
+	discovered  map[[2]int]uint64 // chunk coord → 64-bit mask of revealed cells
+	dirty       map[[2]int]bool   // chunks changed since the last persist
+	collected   map[[2]int]bool   // world cells whose item this player has taken
+	rng         *rand.Rand        // per-session stream for hunting drop rolls
+	toast       string            // transient pickup feedback
+	toastUntil  time.Time         // when the toast expires (wall-clock; works in both renderers)
+	lastStrike  time.Time         // when this session last landed a blow (weapon cooldown)
+	lastThunder int64             // last wall-clock window a thunder line rolled in
+	hurtUntil   time.Time         // brief on-hit flash window after taking damage
+	wieldSync   string            // last wielded weapon pushed to the world (avoids per-frame churn)
 
 	// Hidden legends: the deterministic cell each unique weapon lies in, resolved
 	// once in Init (docs/WEAPON_PLAN.md). Whether one still shows is the world's
@@ -86,9 +87,47 @@ type area struct {
 const toastDuration = 3 * time.Second
 
 // Toast implements game.Toaster: the current pickup message, if still fresh.
-// Both renderers poll it — the glyph View and the HD overlay.
+// Both renderers poll it — the glyph View and the HD overlay. The poll doubles
+// as the ambient-flavor hook: with no live toast to stamp over, a storm may
+// roll distant thunder. (It lives here rather than on the tick because the HD
+// client doesn't feed world ticks to the area — but it polls Toast every frame.)
 func (a *area) Toast() (string, bool) {
+	if time.Now().After(a.toastUntil) {
+		a.rollThunder()
+	}
 	return a.toast, a.toast != "" && time.Now().Before(a.toastUntil)
+}
+
+// Distant thunder: an occasional one-liner while a front sits over the player.
+// The wall clock is cut into windows; each window rolls once, deterministically
+// (hash of the window), with the odds scaled by the storm overhead — so heavy
+// weather mutters every minute or so and a drizzle stays quiet.
+const (
+	thunderSalt   uint64 = 0x744_0DE57_082
+	thunderWindow        = 20 // seconds per roll window
+)
+
+var thunderLines = []string{
+	"Thunder rolls somewhere over the Wilds…",
+	"A low rumble crosses the sky…",
+	"Thunder mutters beyond the hills…",
+}
+
+func (a *area) rollThunder() {
+	now := ui.Now()
+	window := now.Unix() / thunderWindow
+	if window == a.lastThunder {
+		return // this window already spoke
+	}
+	storm := game.StormAt(now, a.wx, a.wy)
+	if storm < 0.35 {
+		return
+	}
+	if hash01(int(window), 0, thunderSalt) > 0.18+0.25*storm {
+		return
+	}
+	a.lastThunder = window
+	a.setToast(thunderLines[int(uint64(window))%len(thunderLines)])
 }
 
 func (a *area) setToast(msg string) {
@@ -1629,6 +1668,16 @@ func (a *area) collectItem() bool {
 	a.ctx.Inventory[it.ID]++
 	a.ctx.Store.AddItem(a.ctx.Name, it.ID)
 	a.setToast("+ " + it.Name)
+	// The fish are biting in the rain: a jetty haul under a storm lands extra.
+	if it.ID == "fish" {
+		if n := fishHaul(x, y, ui.Now()); n > 1 {
+			for i := 1; i < n; i++ {
+				a.ctx.Inventory[it.ID]++
+				a.ctx.Store.AddItem(a.ctx.Name, it.ID)
+			}
+			a.setToast(fmt.Sprintf("+ %d Fish — they bite in the rain!", n))
+		}
+	}
 	if it.Wear != "" {
 		if idx, ok := game.AccessoryIndex(it.Wear); ok && a.unlockHat(idx) {
 			a.setToast("+ " + it.Name + " - now wearable! (c to equip)")
