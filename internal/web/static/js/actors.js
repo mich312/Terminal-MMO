@@ -325,18 +325,21 @@ export class ActorField {
     }
   }
 
-  /** nearestTarget picks the closest other player roughly in front of the
-   *  camera — the lock-on's opening bid. */
+  /** nearestTarget picks the closest other player, nudged toward whoever is in
+   *  front of the camera when two are equally close — the lock-on's opening
+   *  bid. Never nobody-because-they're-behind-you: the camera swings to them.
+   */
   nearestTarget(px, pz, fwdX, fwdZ, maxDist = 14) {
-    let best = null, bestD = maxDist;
+    let best = null, bestScore = maxDist;
     for (const [name, a] of this.players) {
       if (a === this.self || a.downed) continue;
       const dx = a.x - px, dz = a.z - pz;
       const d = Math.hypot(dx, dz);
-      if (d >= bestD || d < 0.01) continue;
-      if (dx * fwdX + dz * fwdZ < -d * 0.3) continue; // well behind — skip
+      if (d >= maxDist || d < 0.01) continue;
+      const behind = (dx * fwdX + dz * fwdZ) < 0 ? 1.5 : 0;
+      if (d + behind >= bestScore) continue;
       best = name;
-      bestD = d;
+      bestScore = d + behind;
     }
     return best;
   }

@@ -23,7 +23,7 @@ const GLOW = 0xffe9a8;
    height (0.85) as the old capsule avatar, so hats keep fitting. */
 const HIP_Y = 0.42;
 const SHOULDER_Y = 0.72;
-const SHOULDER_X = 0.2;
+const SHOULDER_X = 0.24; // clear of the torso, so arms read as arms
 const HEAD_PIVOT_Y = 0.74;
 
 function std(color, rough = 0.62, metal = 0.04) {
@@ -167,10 +167,10 @@ export class Rig {
     this.torso.add(this.head);
 
     // Arms hang from the shoulders; the right hand carries the weapon.
-    this.armL = limb(0.1, 0.34, 0.12, tinted(0.92));
+    this.armL = limb(0.1, 0.34, 0.12, tinted(0.78));
     this.armL.position.set(-SHOULDER_X, SHOULDER_Y - HIP_Y, 0);
     this.torso.add(this.armL);
-    this.armR = limb(0.1, 0.34, 0.12, tinted(0.92));
+    this.armR = limb(0.1, 0.34, 0.12, tinted(0.78));
     this.armR.position.set(SHOULDER_X, SHOULDER_Y - HIP_Y, 0);
     this.torso.add(this.armR);
     this.hand = new THREE.Group();
@@ -187,6 +187,7 @@ export class Rig {
 
     this.weaponCls = '';
     this.walkPhase = 0;
+    this.moveW = 0;   // smoothed "am I moving" weight
     this.guardW = 0;  // guard stance blend, eased toward the server's state
     this.downedW = 0; // knock-out blend
     this.act = null;  // one-shot motion: {kind, start, mirror}
@@ -224,7 +225,7 @@ export class Rig {
 
     // The walk: legs scissor, arms counter-swing, all scaled by a smoothed
     // "am I moving" weight so stopping settles instead of freezing.
-    this.moveW = (this.moveW ?? 0) + ((moving ? 1 : 0) - this.moveW) * Math.min(1, dt * 10);
+    this.moveW += ((moving ? 1 : 0) - this.moveW) * Math.min(1, dt * 10);
     const sw = Math.sin(this.walkPhase) * (running ? 0.85 : 0.6) * this.moveW;
     let legL = sw, legR = -sw;
     let armLX = -sw * 0.5, armRX = sw * 0.5;
