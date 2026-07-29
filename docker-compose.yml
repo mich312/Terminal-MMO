@@ -23,4 +23,4 @@ services:
       # publishes this past the host firewall; also open 2222/tcp in ufw.
       - '2222:2222'
       # Web — loopback only; public access is via the edge proxy, not this port.
-      - '127.0.0.1:8080:8080'
+      - '127.0.0.1:8081:8080'
