@@ -51,6 +51,20 @@ const (
 	// Player is the attacker. The victim's own client owns its position, so it
 	// applies the shove (re-checking the destination); others just see the move.
 	EventPlayerShoved
+	// EventPlayerActed: Player performed a combat motion — Detail is one of the
+	// Act* verbs below. Purely presentational (damage has its own events): it
+	// exists so clients can animate a swing, a dodge roll or a parry spark on
+	// the actor everyone is watching, whiffs included. For ActParry, Target is
+	// the attacker whose blow was turned aside.
+	EventPlayerActed
+)
+
+// Combat motions carried in EventPlayerActed's Detail (docs/SWORDPLAY_PLAN.md).
+const (
+	ActFast   = "fast"   // a quick slash
+	ActStrong = "strong" // a heavy, wound-up blow
+	ActDodge  = "dodge"  // a dodge roll
+	ActParry  = "parry"  // steel turned aside steel
 )
 
 // Trade event phases, carried in Event.Detail.

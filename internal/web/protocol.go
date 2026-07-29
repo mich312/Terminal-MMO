@@ -18,7 +18,9 @@ package web
 
 // Protocol version. The client refuses to run against a server it doesn't
 // recognize, so a stale cached page fails loudly instead of rendering nonsense.
-const ProtocolVersion = 1
+// v2: swordplay — combat FX on the scene, guard state on actors, the held-
+// weapon vocabulary in the hello, and the face/dodge/guard client commands.
+const ProtocolVersion = 2
 
 // Message types, server → client.
 const (
@@ -51,6 +53,11 @@ type Hello struct {
 	Shapes  map[string]Shape `json:"shapes"`
 	Props   map[int]string   `json:"props"` // TileProp id → shape name
 	Texes   map[int]string   `json:"texes"` // TileTex id → surface name
+	// Weapons maps a weapon item id to its held-silhouette class (blade,
+	// blade_s, polearm, bow, sling, *_legend) so avatars can carry their arms
+	// in 3D. Shipped like Shapes: the vocabulary lives in Go beside the
+	// catalog, and the client never hardcodes an item id.
+	Weapons map[string]string `json:"weapons"`
 }
 
 // Scene is one frame. Everything in it is either a delta against what the
@@ -87,6 +94,10 @@ type Scene struct {
 
 	Players   []Actor   `json:"players"`
 	Creatures []Actor   `json:"creatures"`
+	// FX are the combat motions since the last frame — swings (whiffs
+	// included), dodge rolls, parries — so the client can animate the fight on
+	// the actors everyone is watching. Transient: play once, forget.
+	FX []FX `json:"fx,omitempty"`
 	Light     *Light    `json:"light,omitempty"`
 	Ambient   *Ambient  `json:"ambient,omitempty"`
 	Labels    []Label   `json:"labels,omitempty"`
@@ -139,8 +150,18 @@ type Actor struct {
 	HP     int    `json:"hp,omitempty"`
 	MaxHP  int    `json:"mhp,omitempty"`
 	Downed bool   `json:"down,omitempty"`
+	Guard  bool   `json:"g,omitempty"` // blade raised (docs/SWORDPLAY_PLAN.md)
 	Self   bool   `json:"me,omitempty"`
 	Owner  string `json:"o,omitempty"` // a tamed creature's player
+}
+
+// FX is one combat motion to animate: who moved, and how ("fast", "strong",
+// "dodge", "parry" — world's Act* verbs). For a parry, Target is the attacker
+// whose blow was turned aside.
+type FX struct {
+	Name   string `json:"n"`
+	Act    string `json:"k"`
+	Target string `json:"t,omitempty"`
 }
 
 // Light is an area's radial light — the Wilds' discovery circle, a cave's

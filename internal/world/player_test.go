@@ -46,9 +46,9 @@ func TestStrikeNonLethal(t *testing.T) {
 	defer w.Close()
 	atk, _, vic, vicCh := twoFighters(w)
 
-	hp, downed, ok := w.Strike(atk, vic, "spear", 3, time.Second)
-	if !ok || downed {
-		t.Fatalf("Strike ok=%v downed=%v, want true/false", ok, downed)
+	hp, out := w.Strike(atk, vic, "spear", 3, false, time.Second)
+	if out != StrikeHit {
+		t.Fatalf("Strike outcome = %v, want StrikeHit", out)
 	}
 	if hp != DefaultMaxHP-3 {
 		t.Fatalf("HP after strike = %d, want %d", hp, DefaultMaxHP-3)
@@ -68,9 +68,9 @@ func TestStrikeDownsAtZero(t *testing.T) {
 	atk, _, vic, vicCh := twoFighters(w)
 
 	// Big hit empties the bar in one blow.
-	hp, downed, ok := w.Strike(atk, vic, "", DefaultMaxHP+5, time.Minute)
-	if !ok || !downed {
-		t.Fatalf("Strike ok=%v downed=%v, want true/true", ok, downed)
+	hp, out := w.Strike(atk, vic, "", DefaultMaxHP+5, false, time.Minute)
+	if out != StrikeDowned {
+		t.Fatalf("Strike outcome = %v, want StrikeDowned", out)
 	}
 	if hp != 0 {
 		t.Fatalf("HP floored = %d, want 0", hp)
@@ -88,17 +88,17 @@ func TestStrikeOnDownedIsNoop(t *testing.T) {
 	defer w.Close()
 	atk, _, vic, _ := twoFighters(w)
 
-	w.Strike(atk, vic, "", DefaultMaxHP, time.Minute) // down them
-	_, downed, ok := w.Strike(atk, vic, "", 5, time.Minute)
-	if ok || downed {
-		t.Fatalf("second strike on downed: ok=%v downed=%v, want false/false", ok, downed)
+	w.Strike(atk, vic, "", DefaultMaxHP, false, time.Minute) // down them
+	_, out := w.Strike(atk, vic, "", 5, false, time.Minute)
+	if out != StrikeMissed {
+		t.Fatalf("second strike on downed: outcome = %v, want StrikeMissed", out)
 	}
 }
 
 func TestStrikeUnknownTarget(t *testing.T) {
 	w := New()
 	defer w.Close()
-	if _, _, ok := w.Strike("ghost", "nobody", "", 1, time.Second); ok {
+	if _, out := w.Strike("ghost", "nobody", "", 1, false, time.Second); out != StrikeMissed {
 		t.Fatal("striking an unknown player should report ok=false")
 	}
 }
@@ -107,7 +107,7 @@ func TestRespawnRestores(t *testing.T) {
 	w := New()
 	defer w.Close()
 	atk, _, vic, vicCh := twoFighters(w)
-	w.Strike(atk, vic, "", DefaultMaxHP, time.Minute)
+	w.Strike(atk, vic, "", DefaultMaxHP, false, time.Minute)
 	drain(vicCh)
 
 	w.Respawn(vic, "wilds", 50, 60)
@@ -154,7 +154,7 @@ func TestStrikeRefusedWhileImmune(t *testing.T) {
 	if !w.Immune(vic) {
 		t.Fatal("a just-respawned player should be immune")
 	}
-	if _, _, ok := w.Strike(atk, vic, "", 3, time.Second); ok {
+	if _, out := w.Strike(atk, vic, "", 3, false, time.Second); out != StrikeMissed {
 		t.Fatal("striking an immune player should be refused")
 	}
 	if p, _ := w.Self(vic); p.HP != p.MaxHP {
@@ -169,7 +169,7 @@ func TestDownedExpires(t *testing.T) {
 	defer w.Close()
 	atk, _, vic, _ := twoFighters(w)
 
-	w.Strike(atk, vic, "", DefaultMaxHP, time.Millisecond)
+	w.Strike(atk, vic, "", DefaultMaxHP, false, time.Millisecond)
 	if !w.Downed(vic) {
 		t.Fatal("should be downed immediately after the blow")
 	}

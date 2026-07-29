@@ -97,6 +97,7 @@ type sceneInput struct {
 	Prompt    string
 	Building  bool
 	Creatures []world.Creature
+	FX        []FX // combat motions since the last frame (docs/SWORDPLAY_PLAN.md)
 }
 
 // Build turns the live area into one frame for the browser.
@@ -126,6 +127,7 @@ func (s *sceneState) Build(in sceneInput) *Scene {
 		H:        in.VH,
 		Frame:    in.Frame,
 		Prompt:   in.Prompt,
+		FX:       in.FX,
 	}
 
 	// Tiles: send only what the client doesn't already hold. On a step, that's
@@ -184,6 +186,7 @@ func (s *sceneState) Build(in sceneInput) *Scene {
 				HP:     p.HP,
 				MaxHP:  p.MaxHP,
 				Downed: !p.DownedUntil.IsZero() && p.DownedUntil.After(in.Now),
+				Guard:  p.Guarding,
 				Self:   p.Name == in.Name,
 			})
 		}

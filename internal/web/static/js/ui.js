@@ -57,6 +57,21 @@ export class UI {
     this.lastChatAt = 0;
     this.area = '';
 
+    // The action camera's two overlays (docs/SWORDPLAY_PLAN.md): a reticle
+    // dot, and a hint line teaching the combat grammar. Built here rather than
+    // in the HTML because they exist only for that mode.
+    const hud = document.getElementById('hud');
+    this.reticle = document.createElement('div');
+    this.reticle.id = 'reticle';
+    this.reticle.hidden = true;
+    hud.appendChild(this.reticle);
+    this.actionHint = document.createElement('div');
+    this.actionHint.id = 'action-hint';
+    this.actionHint.textContent =
+      'click swing · hold heavy · right-click guard · Space dodge · Q lock-on · V top-down';
+    this.actionHint.hidden = true;
+    hud.appendChild(this.actionHint);
+
     $('panel-close').addEventListener('click', () => this.closePanel());
     $('menu-close').addEventListener('click', () => this.closeMenu());
     this.el.panel.addEventListener('click', (e) => {
@@ -93,6 +108,12 @@ export class UI {
     if (!text) { el.hidden = true; return; }
     el.textContent = text;
     el.hidden = false;
+  }
+
+  /** setActionMode shows the duel overlays while the action camera is up. */
+  setActionMode(on) {
+    this.reticle.hidden = !on;
+    this.actionHint.hidden = !on;
   }
 
   flashHurt(on) {

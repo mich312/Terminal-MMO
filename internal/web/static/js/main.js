@@ -15,7 +15,7 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 
 const NAME_KEY = 'durstworld.name';
-const PROTOCOL = 1;
+const PROTOCOL = 2;
 
 const gate = document.getElementById('gate');
 const gameEl = document.getElementById('game');
@@ -74,6 +74,22 @@ function start(name) {
   ui = new UI(send);
   input = new Input(ui, send);
 
+  // The action camera (docs/SWORDPLAY_PLAN.md): V flips between the top-down
+  // follow-cam and the over-the-shoulder duel view. One switch, three parties.
+  function setView(mode) {
+    scene.setMode(mode);
+    input.setMode(mode);
+    ui.setActionMode(mode === 'action');
+  }
+  input.attach({
+    scene,
+    actors,
+    toggleView: () => setView(scene.mode === 'action' ? 'top' : 'action'),
+  });
+  // Esc releases the pointer but keeps the view: the next click on the world
+  // re-engages mouse-look (input.js), so the default camera never dumps you
+  // into the overview uninvited.
+
   conn = new Connection(name, {
     onMessage: (msg) => {
       switch (msg.t) {
@@ -103,11 +119,16 @@ function start(name) {
       return;
     }
     field.setVocabulary(msg.shapes, msg.props, msg.texes);
-    actors.setVocabulary(msg.shapes);
+    actors.setVocabulary(msg.shapes, msg.weapons);
     gate.hidden = true;
     gameEl.hidden = false;
     scene.resize();
     reportSize(true);
+    // You arrive behind your own shoulders: the action camera is the default
+    // view, V drops to the top-down overview. Pointer lock wants a user
+    // gesture — the join click usually still counts; if the browser says no,
+    // the first click on the world engages mouse-look instead of swinging.
+    setView('action');
   }
 
   function onScene(msg) {
@@ -124,7 +145,10 @@ function start(name) {
     ui.setMinimap(msg.minimap || null);
     ui.setBuild(msg.build || null);
     ui.setSlide(msg.slide || null);
-    if (msg.hurt) ui.flashHurt(true);
+    if (msg.hurt) {
+      ui.flashHurt(true);
+      actors.flinchSelf(); // the vignette's partner: the body reacts too
+    }
     if (msg.toast) {
       ui.setToast(msg.toast);
       toastUntil = performance.now() + 2600;
@@ -168,6 +192,9 @@ function start(name) {
 
     const self = actors.self;
     if (self) scene.follow(self.x, self.z);
+    // Locked on: the camera steers to keep both fighters in frame.
+    const lock = actors.lockName ? actors.players.get(actors.lockName) : null;
+    scene.lockPoint = lock ? { x: lock.x, z: lock.z } : null;
     scene.update(dt);
     scene.render();
 
@@ -181,5 +208,5 @@ function start(name) {
 
   // Expose a little state for debugging in the console; harmless, and it makes
   // "why is that tile wrong" answerable without a rebuild.
-  window.durstworld = { scene, field, actors, ui, get lastScene() { return lastScene; } };
+  window.durstworld = { scene, field, actors, ui, input, get lastScene() { return lastScene; } };
 }

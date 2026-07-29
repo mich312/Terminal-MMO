@@ -16,6 +16,19 @@ package game
 // weaponShapeOf maps a weapon item id to its in-hand sprite shape. Several
 // weapons share a silhouette (a knife and a dagger are both short blades); the
 // legends get their own glowing variants so they read as special.
+// HeldWeaponShapes maps every weapon item id to its silhouette class — the
+// vocabulary the browser client's hello message ships so held-weapon meshes
+// are chosen in Go, beside the catalog, and the two can't drift.
+func HeldWeaponShapes() map[string]string {
+	m := make(map[string]string, len(weapons))
+	for _, wp := range weapons {
+		if s := weaponShapeOf(wp.Item); s != "" {
+			m[wp.Item] = s
+		}
+	}
+	return m
+}
+
 func weaponShapeOf(item string) string {
 	switch item {
 	case "knife", "dagger":

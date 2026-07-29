@@ -18,6 +18,14 @@ import * as THREE from 'three';
 const PITCH = 52 * Math.PI / 180; // camera tilt from horizontal
 const MIN_ZOOM = 9, MAX_ZOOM = 34, DEFAULT_ZOOM = 17;
 
+/* The action camera (docs/SWORDPLAY_PLAN.md): an over-the-shoulder chase-cam
+   with the hero framing the left third of the screen. The character faces
+   where they move, not where the camera looks — you watch them fight. */
+const ACT_MIN_DIST = 3, ACT_MAX_DIST = 9, ACT_DIST = 5.2;
+const ACT_EYE = 1.35;       // look-at height: about the hero's collarbone
+const ACT_SHOULDER = 0.55;  // sideways offset — the hero out of the crosshair
+const ACT_FOG_ANCHOR = 6;   // stands in for "camera distance" in fog math
+
 /* The two ends of the warm/cool axis the lighting is built on, plus the color
    the ground bounces back up into everything standing on it. */
 const WARM = new THREE.Color(0xffd9a8);
@@ -119,6 +127,15 @@ export class WorldScene {
     this.yaw = 0;          // camera spin around the player, in radians
     this.targetYaw = 0;
 
+    // Action mode state. camYaw/camPitch are mouse-look; lockPoint, when set,
+    // steers the yaw so the locked target stays in frame.
+    this.mode = 'top';
+    this.camYaw = 0;
+    this.camPitch = 0.16;
+    this.actDist = ACT_DIST;
+    this.lockPoint = null;
+    this.onPointerLockLost = null;
+
     // Three lights, and no more: a sun for shape, a hemisphere for the sky's
     // color bouncing off the ground, and a weak fill so nothing is ever a
     // silhouette you can't read.
@@ -151,14 +168,20 @@ export class WorldScene {
 
     // Zoom with the wheel; drag with the right mouse button to spin the camera
     // around your character (some things hide behind a tall building otherwise).
+    // In action mode the wheel adjusts the chase distance instead, and the
+    // right button belongs to the guard.
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.zoom = clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.12), MIN_ZOOM, MAX_ZOOM);
+      if (this.mode === 'action') {
+        this.actDist = clamp(this.actDist * (1 + Math.sign(e.deltaY) * 0.1), ACT_MIN_DIST, ACT_MAX_DIST);
+      } else {
+        this.zoom = clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.12), MIN_ZOOM, MAX_ZOOM);
+      }
     }, { passive: false });
 
     let dragging = false, lastX = 0;
     canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 2) return;
+      if (e.button !== 2 || this.mode === 'action') return;
       dragging = true; lastX = e.clientX;
       canvas.setPointerCapture(e.pointerId);
     });
@@ -171,6 +194,51 @@ export class WorldScene {
     canvas.addEventListener('pointerup', stop);
     canvas.addEventListener('pointercancel', stop);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Mouse-look, live only while the pointer is locked to the canvas.
+    document.addEventListener('mousemove', (e) => {
+      if (this.mode !== 'action' || document.pointerLockElement !== canvas) return;
+      this.camYaw -= e.movementX * 0.0032;
+      this.camPitch = clamp(this.camPitch + e.movementY * 0.0026, -0.3, 0.95);
+    });
+    document.addEventListener('pointerlockchange', () => {
+      if (this.mode === 'action' && document.pointerLockElement !== canvas) {
+        // Esc released the pointer. The mode stays; the next click on the
+        // world re-engages mouse-look (see input.js).
+        this.onPointerLockLost?.();
+      }
+    });
+  }
+
+  /** setMode switches between the top-down follow-cam and the action camera.
+   *  Entering action mode locks the pointer (we're called from a key press, a
+   *  user gesture, so the browser allows it); leaving releases it. */
+  setMode(mode) {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    if (mode === 'action') {
+      // Start looking the way the world does: over the character's shoulder.
+      this.camYaw = Math.PI; // facing north — the classic establishing angle
+      this.camPitch = 0.16;
+      this.relock();
+    } else {
+      this.lockPoint = null;
+      if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
+    }
+  }
+
+  /** relock (re)acquires the pointer for mouse-look. The browser may refuse
+   *  outside a user gesture — callers treat that as "wait for the next click",
+   *  so the rejection is expected and swallowed. */
+  relock() {
+    if (this.mode !== 'action') return;
+    const p = this.canvas.requestPointerLock?.();
+    p?.catch?.(() => {});
+  }
+
+  /** forward is the action camera's ground-plane look direction. */
+  forward() {
+    return { x: Math.sin(this.camYaw), z: Math.cos(this.camYaw) };
   }
 
   resize() {
@@ -184,6 +252,12 @@ export class WorldScene {
   /** tilesInView estimates how many tiles the camera can see, so the client can
    *  ask the server for a window that matches the screen — no more, no less. */
   tilesInView() {
+    if (this.mode === 'action') {
+      // The chase-cam looks outward, not down: how much ground is visible is
+      // set by the fog, not the zoom. Ask for a window that fills out to the
+      // fog line in every direction (the camera can spin freely).
+      return { w: 44, h: 36 };
+    }
     const h = 2 * this.zoom * Math.tan((this.camera.fov * Math.PI / 180) / 2);
     const w = h * this.camera.aspect;
     // Generous margins, on purpose. The window's edge is a cliff into empty
@@ -244,17 +318,20 @@ export class WorldScene {
     // so the fog must close before it whatever the area's own light says. The
     // window is centered on the player, so what matters is its *half* extent —
     // and we close a little inside even that, so the last thing you see is haze
-    // rather than the last row of ground.
+    // rather than the last row of ground. All fog distances are measured from
+    // the camera, which in action mode sits close over the player's shoulder —
+    // a fixed anchor stands in for the top-down zoom there.
+    const anchor = this.mode === 'action' ? ACT_FOG_ANCHOR : this.zoom;
     const edge = windowTiles > 0
-      ? this.zoom + (windowTiles / 2) * 0.85
+      ? anchor + (windowTiles / 2) * 0.85
       : Infinity;
 
     if (light && light.r > 0) {
       // A radial light becomes fog: you can see a circle around yourself and
       // the world falls away into the dark beyond it. The camera sits back from
       // the player, so the distances are offset by the camera's own distance.
-      this.fog.far = Math.min(this.zoom + light.r * 1.05, edge);
-      this.fog.near = Math.min(this.zoom + light.r * 0.35, this.fog.far - 4);
+      this.fog.far = Math.min(anchor + light.r * 1.05, edge);
+      this.fog.near = Math.min(anchor + light.r * 0.35, this.fog.far - 4);
       if (light.sunless) {
         // Underground: no sky at all, so the fog goes to black rather than to
         // whatever color the sky above happens to be.
@@ -262,8 +339,8 @@ export class WorldScene {
         this.scene.background = new THREE.Color(0x04060a);
       }
     } else {
-      this.fog.far = Math.min(this.zoom + 60, edge);
-      this.fog.near = Math.max(this.zoom * 0.5, this.fog.far - 26);
+      this.fog.far = Math.min(anchor + 60, edge);
+      this.fog.near = Math.max(anchor * 0.5, this.fog.far - 26);
     }
   }
 
@@ -288,18 +365,23 @@ export class WorldScene {
 
   update(dt) {
     // Lag the camera behind the player: a little inertia reads as weight, and
-    // it hides the fact that movement is discrete tile steps underneath.
-    this.smoothed.lerp(this.target, Math.min(1, dt * 7));
+    // it hides the fact that movement is discrete tile steps underneath. The
+    // chase-cam tracks tighter — at melee range, lag reads as seasickness.
+    this.smoothed.lerp(this.target, Math.min(1, dt * (this.mode === 'action' ? 11 : 7)));
     this.yaw += (this.targetYaw - this.yaw) * Math.min(1, dt * 8);
 
-    const horiz = Math.cos(PITCH) * this.zoom;
-    const vert = Math.sin(PITCH) * this.zoom;
-    this.camera.position.set(
-      this.smoothed.x + Math.sin(this.yaw) * horiz,
-      vert,
-      this.smoothed.z + Math.cos(this.yaw) * horiz,
-    );
-    this.camera.lookAt(this.smoothed);
+    if (this.mode === 'action') {
+      this.updateAction(dt);
+    } else {
+      const horiz = Math.cos(PITCH) * this.zoom;
+      const vert = Math.sin(PITCH) * this.zoom;
+      this.camera.position.set(
+        this.smoothed.x + Math.sin(this.yaw) * horiz,
+        vert,
+        this.smoothed.z + Math.cos(this.yaw) * horiz,
+      );
+      this.camera.lookAt(this.smoothed);
+    }
 
     // The sky is infinitely far away, so it rides with the camera. Without
     // this it would sit at the world origin, and walking a few hundred tiles
@@ -309,7 +391,9 @@ export class WorldScene {
     // Walk the shadow camera along with the player and size its box to what is
     // actually on screen. Shadow resolution is the box divided by the map, so a
     // box that tracks the view is worth more than a much larger shadow map.
-    const span = this.zoom * 1.15;
+    // The chase-cam sees less ground, so its box is tighter — crisper shadows
+    // on the two fighters that fill the frame.
+    const span = (this.mode === 'action' ? 16 : this.zoom) * 1.15;
     const sc = this.sun.shadow.camera;
     if (sc.right !== span) {
       sc.left = -span; sc.right = span;
@@ -321,6 +405,38 @@ export class WorldScene {
     this.sun.target.position.copy(this.smoothed);
     this.sun.position.set(
       this.smoothed.x - 14, 26, this.smoothed.z - 11,
+    );
+  }
+
+  /** updateAction is the over-the-shoulder camera: orbit the mouse-look yaw
+   *  and pitch around the hero, offset to the right so they frame the left
+   *  third, and — locked on — steer the yaw so both fighters stay in shot. */
+  updateAction(dt) {
+    if (this.lockPoint) {
+      const dx = this.lockPoint.x - this.smoothed.x;
+      const dz = this.lockPoint.z - this.smoothed.z;
+      if (dx * dx + dz * dz > 0.05) {
+        const want = Math.atan2(dx, dz);
+        let d = want - this.camYaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        this.camYaw += d * Math.min(1, dt * 6);
+      }
+    }
+
+    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
+    const rx = -fz, rz = fx; // the camera's right hand on the ground plane
+    const horiz = this.actDist * Math.cos(this.camPitch);
+    const lift = this.actDist * Math.sin(this.camPitch);
+    this.camera.position.set(
+      this.smoothed.x - fx * horiz + rx * ACT_SHOULDER,
+      ACT_EYE + lift,
+      this.smoothed.z - fz * horiz + rz * ACT_SHOULDER,
+    );
+    this.camera.lookAt(
+      this.smoothed.x + fx * 3 + rx * ACT_SHOULDER,
+      ACT_EYE - this.camPitch * 1.6,
+      this.smoothed.z + fz * 3 + rz * ACT_SHOULDER,
     );
   }
 

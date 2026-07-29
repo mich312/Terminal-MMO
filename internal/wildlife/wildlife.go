@@ -328,7 +328,7 @@ func (s *Sim) defend(c world.Creature, sp game.Species, foe world.Player) {
 			return true
 		})
 		if s.frame%biteEvery == 0 {
-			s.w.Strike(c.Owner, foe.Name, sp.Name, petBite(sp), petKnockout)
+			s.w.Strike(c.Owner, foe.Name, sp.Name, petBite(sp), false, petKnockout)
 		}
 		return
 	}

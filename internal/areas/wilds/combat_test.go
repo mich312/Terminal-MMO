@@ -31,7 +31,7 @@ func TestStrikePlayerInWild(t *testing.T) {
 	vicName, _ := w.Join("victim")
 	w.EnterArea(vicName, "wilds", 101, 100, "")
 
-	atk.strike() // fists: damage 1, reach 1
+	atk.strike(false) // fists: damage 1, reach 1
 
 	vp, _ := w.Self(vicName)
 	if vp.HP != world.DefaultMaxHP-1 {
@@ -48,7 +48,7 @@ func TestStrikePlayerWithSpear(t *testing.T) {
 	vicName, _ := w.Join("victim")
 	w.EnterArea(vicName, "wilds", 101, 100, "")
 
-	atk.strike()
+	atk.strike(false)
 
 	vp, _ := w.Self(vicName)
 	if vp.HP != world.DefaultMaxHP-3 {
@@ -64,7 +64,7 @@ func TestStrikePlayerRefusedInHub(t *testing.T) {
 	vicName, _ := w.Join("victim")
 	w.EnterArea(vicName, "wilds", 1, 0, "")
 
-	atk.strike()
+	atk.strike(false)
 
 	vp, _ := w.Self(vicName)
 	if vp.HP != world.DefaultMaxHP {
@@ -82,8 +82,8 @@ func TestWeaponCooldownThrottlesStrikes(t *testing.T) {
 	vicName, _ := w.Join("victim")
 	w.EnterArea(vicName, "wilds", 101, 100, "")
 
-	atk.strike()
-	atk.strike() // immediately again — should still be cooling down
+	atk.strike(false)
+	atk.strike(false) // immediately again — should still be cooling down
 
 	vp, _ := w.Self(vicName)
 	if vp.HP != world.DefaultMaxHP-3 {
