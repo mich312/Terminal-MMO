@@ -12,6 +12,9 @@ COPY --from=build /durstworld /app/durstworld
 # mount these two volumes to persist the host key and the SQLite DB:
 #   -v ./.ssh:/app/.ssh  -v ./data:/app/data
 VOLUME ["/app/.ssh", "/app/data"]
-EXPOSE 2222
+# 2222 is the SSH world; 8080 serves the browser client (WEB_PORT=off to
+# disable it and stay SSH-only).
+EXPOSE 2222 8080
 ENV PORT=2222
+ENV WEB_PORT=8080
 CMD ["/app/durstworld"]

@@ -11,6 +11,11 @@ Tetris, Pong, Breakout, Bomberman, 2048, Chess, Doom).
 ssh -p 2222 yourname@durstworld.example.com
 ```
 
+…or **play it in a browser**, in top-down 3D, at
+`http://durstworld.example.com:8080`. It's the same live world: browser players
+and SSH players walk the same Wilds, see each other move, and chat across the
+divide. See [Browser client](#browser-client-top-down-3d) below.
+
 > **New here (human or AI)?** [`docs/GAME.md`](docs/GAME.md) is the orientation
 > doc — what the game is, every feature, and the architecture. Before touching
 > anything visual, read [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md).
@@ -26,9 +31,16 @@ go run ./cmd/durstworld
 # in two other terminals:
 ssh -p 2222 anna@localhost
 ssh -p 2222 markus@localhost
+# …and in a browser, in the same world:
+open http://localhost:8080
 ```
 
 - `PORT` env var changes the listen port (default `2222`).
+- `WEB_PORT` changes the browser client's port (default `8080`); `WEB_PORT=off`
+  disables it and leaves the server SSH-only.
+- `WEB_ORIGINS` lists the origins allowed to open a game websocket
+  (comma-separated, or `*`). The default is same-origin, which is what you want
+  when the page and the socket come from this server.
 - `./.ssh/host_key` — persistent Ed25519 host key, generated on first run.
 - `./data/durstworld.db` — SQLite (WAL) for visits, guestbook, the event log
   and player-authored presentation decks. Created with schema on first run;
@@ -68,6 +80,30 @@ the fast keys (`i`, `c`, `?`) over time. **Chat** is `Enter` (plain text, or
 `/me`, `/w`, `/who`, `/goto`; the log fades when idle). It bypasses bubbletea
 and streams sixel with delta updates (only the changed region each frame).
 Background and rationale: [`docs/pixel-renderer.md`](docs/pixel-renderer.md).
+
+### Browser client (top-down 3D)
+
+The third renderer. Open `http://localhost:8080`, type a name, and you're in —
+the same world, drawn as a tilted 3/4 top-down 3D scene with WebGL. Your name is
+remembered in `localStorage`, so you come back as the same character (SSH gets
+this from your username; a browser has nothing to get it from).
+
+The controls are the game's own — **WASD** to move, **Shift** to run, **YUBN**
+for diagonals, **E** to interact, **Enter** to chat, **Tab** for the menu, **?**
+for help — so there's no second vocabulary to learn. Scroll to zoom; hold the
+right mouse button and drag to swing the camera around your character when a
+building is in the way.
+
+Everything renders in 3D: the Wilds' biomes and villages, the hand-built rooms,
+and the arcade cabinets as 3D boards. The only exception is **Doom**, which is a
+first-person raycaster painting a pixel buffer and has no browser equivalent
+yet.
+
+Nothing about the world is browser-specific. The client is a renderer and an
+input device; the server owns the world, exactly as it does for a terminal. It's
+served by `go:embed` (three.js included), so the binary stays self-contained —
+no CDN, no build step, no assets to deploy. How it works, and why:
+[`docs/BROWSER.md`](docs/BROWSER.md).
 
 ### Controls
 
@@ -168,13 +204,16 @@ degradation.
 docker build -t durstworld .
 docker run -d --name durstworld \
   -p 2222:2222 \
+  -p 8080:8080 \
   -v "$PWD/.ssh:/app/.ssh" \
   -v "$PWD/data:/app/data" \
   durstworld
 ```
 
 The two mounts keep the host key (so clients don't see scary
-known-hosts warnings after a redeploy) and the SQLite DB.
+known-hosts warnings after a redeploy) and the SQLite DB. The second port
+serves the browser client; drop it (and set `WEB_PORT=off`) for an SSH-only
+deployment.
 
 ### systemd
 
@@ -286,13 +325,18 @@ Optional extras: implement `game.Hinter` for a contextual status-bar hint,
 ## Architecture
 
 ```
-cmd/durstworld/            wiring: wish server, middleware, signals
+cmd/durstworld/            wiring: wish server, middleware, signals, web server
 internal/world/            shared in-memory state + pub/sub events (one mutex)
 internal/store/            SQLite persistence behind a small interface
 internal/game/             root bubbletea model, Area interface, tilemap, Walker
 internal/areas/...         one package per area
 internal/ui/               the only place colors and styles are defined
+internal/web/              the browser client: websocket sessions + a 3D renderer
 ```
+
+Three clients, one world: the glyph TUI, the HD sixel renderer, and the browser.
+They share `internal/world` and drive the same `game.Area` objects, differing
+only in how they paint — glyphs, pixels, or WebGL.
 
 Sessions never touch each other directly: every change goes through the
 world, which fans events out to per-session buffered channels (oldest
