@@ -144,10 +144,12 @@ var propShapes = map[game.TileProp]Shape{
 	game.PropRelic:      {BuildGlow, "relic", 0.5, 0.5, 0.5, 0.6, 0, 0.12},
 	game.PropGeode:      {BuildGlow, "geode", 0.6, 0.6, 0.5, 0.8, 0, 0.12},
 
-	// Small pickups resting on the ground.
-	game.PropGem:  {BuildItem, "gem", 0.35, 0.35, 0.35, 0.15, 0, 0.15},
-	game.PropHat:  {BuildItem, "hat", 0.5, 0.5, 0.3, 0.3, 0, 0.15},
-	game.PropFish: {BuildItem, "fish", 0.5, 0.5, 0.2, 0, 0, 0.15},
+	// Small pickups hovering over the ground. Taller than a grass tuft (a
+	// gem that grass can hide isn't loot), and never jittered — a spun,
+	// rescaled collectible reads as scenery; an upright one reads as placed.
+	game.PropGem:  {BuildItem, "gem", 0.35, 0.35, 0.55, 0.15, 0, 0},
+	game.PropHat:  {BuildItem, "hat", 0.5, 0.5, 0.45, 0.3, 0, 0},
+	game.PropFish: {BuildItem, "fish", 0.5, 0.5, 0.3, 0, 0, 0},
 
 	// Area entrances.
 	game.PropPortal:    {BuildPortal, "gate", 1.0, 1.0, 2.0, 0.9, 0, 0},

@@ -54,11 +54,12 @@ var (
 // ── settlement identity ──────────────────────────────────────────────────────
 
 type settlement struct {
-	mx, my int    // macro-cell
-	id     uint64 // identity hash — seeds the whole layout
-	cx, cy int    // centre, world coordinates
-	reach  int    // core size, in tiles (its own scale)
-	town   bool   // a stone-walled city (vs a timber-palisade village)
+	mx, my int     // macro-cell
+	id     uint64  // identity hash — seeds the whole layout
+	cx, cy int     // centre, world coordinates
+	reach  int     // core size, in tiles (its own scale)
+	town   bool    // a stone-walled city (vs a timber-palisade village)
+	elev   float64 // the centre's terrain elevation — the town's terrace level
 	valid  bool
 }
 
@@ -100,6 +101,10 @@ func (g *Generator) computeSettlement(mx, my int) settlement {
 	sz := unit(hashCoord(h, 0x717, 0x727))
 	s.reach = minReach + int(sz*sz*float64(maxReach-minReach))
 	s.town = s.reach >= cityThreshold
+	// The terrace level the town is leveled to (flattenElev): the real warped
+	// climate elevation at the centre, not the cheap probe above, so the flat
+	// ground meets the surrounding terrain without a step.
+	s.elev, _, _, _ = g.climate(s.cx, s.cy)
 	s.valid = true
 	return s
 }

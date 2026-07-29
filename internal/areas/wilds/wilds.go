@@ -265,10 +265,10 @@ func clearedTile(cell worldgen.Cell) game.Tile {
 	switch cell.Biome {
 	case worldgen.Hill, worldgen.Mountain:
 		return game.Tile{Kind: game.TileFloor, Ch: '·', Walkable: true,
-			Color: "#9C8D67", Tex: game.TexDirt, Ground: "#9C8D67"}
+			Color: "#9C8D67", Tex: game.TexDirt, Ground: "#9C8D67", Elev: cell.Elev}
 	default: // a felled forest reads as a grassy clearing
 		return game.Tile{Kind: game.TileFloor, Ch: ',', Walkable: true,
-			Color: "#5EAE63", Tex: game.TexGrass, Ground: "#5EAE63"}
+			Color: "#5EAE63", Tex: game.TexGrass, Ground: "#5EAE63", Elev: cell.Elev}
 	}
 }
 
@@ -1895,7 +1895,12 @@ func (a *area) sample(vw, vh int) (*game.TileMap, int, int) {
 				}
 				row[lx] = t
 			} else {
-				row[lx] = fogTile() // the unexplored world stays hidden
+				// The unexplored world stays hidden — but keeps its shape: the
+				// 3D client raises dark terrain instead of a flat black plate,
+				// so hills don't pop out of the ground at the discovery ring.
+				f := fogTile()
+				f.Elev = a.gen.SurfaceElev(wx, wy)
+				row[lx] = f
 			}
 
 			// The build ghost draws over everything (even fog), green where it can
@@ -1996,7 +2001,7 @@ func CellTile(c worldgen.Cell) game.Tile {
 	case !c.Walkable:
 		kind = game.TileDecor
 	}
-	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal, Tex: texForBiome(c.Biome)}
+	t := game.Tile{Kind: kind, Ch: c.Glyph, Walkable: c.Walkable, Color: c.Color, Portal: c.Portal, Tex: texForBiome(c.Biome), Elev: c.Elev}
 	if c.AnimA != "" && c.AnimB != "" {
 		t.Anim = &game.TileAnim{Frames: c.Frames, ColorA: c.AnimA, ColorB: c.AnimB, Speed: 3}
 	}
@@ -2014,8 +2019,10 @@ func CellTile(c worldgen.Cell) game.Tile {
 	switch c.Glyph {
 	case '*': // flower on grass
 		t.Prop, t.PropHex, t.Ground = game.PropFlower, c.Color, groundColor(c.Biome)
-	case ',': // grass tuft
-		t.Prop, t.PropHex, t.Ground = game.PropTuft, "#3E7A4F", groundColor(c.Biome)
+	case ',': // ground tuft — dune grass, ferns, snow drifts and sward alike,
+		// each in its own cell color (a hardcoded green here once painted
+		// savanna tussocks and snow drifts as lush forest grass)
+		t.Prop, t.PropHex, t.Ground = game.PropTuft, c.Color, groundColor(c.Biome)
 	case 'o': // bush
 		t.Prop, t.PropHex, t.Ground = game.PropBush, c.Color, groundColor(c.Biome)
 	case 'u': // tree stump
@@ -2070,17 +2077,26 @@ func CellTile(c worldgen.Cell) game.Tile {
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropAcacia, c.Color, groundColor(worldgen.Savanna), game.TexSavanna
 	case 'Ψ': // palm on the beach
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropPalm, c.Color, groundColor(worldgen.Sand), game.TexSand
-	case '♠': // fir in the snow
-		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropFir, c.Color, groundColor(worldgen.Snow), game.TexSnow
+	case '♠': // fir — in the snow, or a conifer stand inside a forest
+		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropFir, c.Color, groundColor(c.Biome), texForBiome(c.Biome)
 	case '‖': // cattail reeds in the swamp
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropReed, c.Color, groundColor(worldgen.Swamp), game.TexSwamp
 	case 'Δ': // rocky crag on the hills
 		t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCrag, c.Color, groundColor(worldgen.Hill), game.TexDirt
 	case 'Λ': // a traveler's campfire
 		t.Prop, t.PropHex, t.Ground = game.PropCampfire, c.Color, groundColor(c.Biome)
-	case '▲': // boulder on hill earth (mountain peaks stay a plain rock tile)
-		if c.Biome == worldgen.Hill {
+	case '▲': // boulder on hill earth; on the peaks, real summit rock
+		switch c.Biome {
+		case worldgen.Hill:
 			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropBoulder, "#8A8170", groundColor(worldgen.Hill), game.TexDirt
+		case worldgen.Mountain: // a bare summit crag — without it a peak was a flat grey square in 3D
+			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCrag, "#8B8E96", groundColor(worldgen.Mountain), game.TexRock
+		case worldgen.Snow: // a snow-capped summit crag
+			t.Prop, t.PropHex, t.Ground, t.Tex = game.PropCrag, "#DDE6F0", groundColor(worldgen.Snow), game.TexSnow
+		}
+	case '~': // a stagnant pool on the swamp flats — real water, not a dark tile
+		if c.Biome == worldgen.Swamp {
+			t.Tex, t.Ground = game.TexWater, "#31504A"
 		}
 	}
 	return t

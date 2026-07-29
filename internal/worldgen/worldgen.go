@@ -42,6 +42,11 @@ type Cell struct {
 	Object   bool   // drawn bold (the gate)
 	Portal   string // non-empty → a portal to this area id
 	Variant  uint8  // sub-type selector (e.g. fence orientation, building type)
+	// Elev is the cell's display elevation (0 deep water … 1 peak), already
+	// leveled under the hub and settlements so built ground reads as terraced
+	// flat. The 3D client turns it into real rolling terrain; the glyph and HD
+	// renderers ignore it.
+	Elev float64
 }
 
 // Generator produces cells for one seed. The caches memoize settlement metadata
@@ -54,6 +59,8 @@ type Generator struct {
 	partnerCache  sync.Map // macro-cell key → partnerResult
 	partnersCache sync.Map // macro-cell key → []settlement (road network)
 	caveCache     sync.Map // macro-cell key → caveSystem
+	hubElevOnce   sync.Once
+	hubElev       float64 // the hub plaza's leveled elevation (see flattenElev)
 }
 
 // New returns a generator for the given seed.
@@ -103,7 +110,17 @@ var Gates = []Landmark{
 }
 
 // At returns the cell at world coordinate (x,y). Deterministic and infinite.
+// Every cell — terrain, hub, settlement or cave mouth alike — carries the
+// leveled surface elevation, so the 3D client can raise real ground under it.
 func (g *Generator) At(x, y int) Cell {
+	elev, moist, temp, region := g.climate(x, y)
+	c := g.cellAt(x, y, elev, moist, temp, region)
+	c.Elev = g.flattenElev(x, y, elev)
+	return c
+}
+
+// cellAt resolves what stands on a cell, from the precomputed climate fields.
+func (g *Generator) cellAt(x, y int, elev, moist, temp, region float64) Cell {
 	for _, lm := range Landmarks {
 		if x == lm.X && y == lm.Y {
 			return Cell{Biome: Grass, Glyph: lm.Glyph, Color: lm.Color,
@@ -134,12 +151,14 @@ func (g *Generator) At(x, y int) Cell {
 	}
 
 	// Cave mouths: 1–3 linked openings per cave system, set in the high hills.
-	// Placed after settlements so a town always wins the cell.
+	// Placed after settlements so a town always wins the cell. Each mouth is
+	// staged with a cleared talus apron so it can always be reached.
 	if c, ok := g.caveMouthCell(x, y); ok {
 		return c
 	}
-
-	elev, moist, temp, region := g.climate(x, y)
+	if c, ok := g.caveApronCell(x, y); ok {
+		return c
+	}
 
 	switch {
 	case elev < 0.24: // deep water
@@ -152,8 +171,18 @@ func (g *Generator) At(x, y int) Cell {
 		return Cell{Biome: Water, Glyph: '~', Color: "#5BB0E0",
 			AnimA: "#5BB0E0", AnimB: "#86D2EE", Frames: []rune{'~', '≈', '~', '≋'}}
 	case elev < 0.38: // beach
-		if g.prop(x, y) < 0.02 { // the occasional palm — blocks movement
-			return Cell{Biome: Sand, Glyph: 'Ψ', Color: "#3E8E5A"}
+		// Palms gather in groves (a low-frequency field), with dune grass and
+		// the odd piece of driftwood between them, so a shore reads as a coast
+		// rather than an even sprinkle of trees.
+		grove := g.fbmAt(float64(x), float64(y), groveSalt, 0.09, 2)
+		palm := 0.004 + 0.05*smooth01((grove-0.52)/0.30)
+		switch r := g.prop(x, y); {
+		case r < palm: // a palm — blocks movement
+			return Cell{Biome: Sand, Glyph: 'Ψ', Color: palmColor(g.prop2(x, y))}
+		case r < palm+0.008: // sun-bleached driftwood
+			return Cell{Biome: Sand, Glyph: 'u', Color: "#A98F6B", Walkable: true}
+		case r < palm+0.13: // a tussock of dune grass
+			return Cell{Biome: Sand, Glyph: ',', Color: "#B8B276", Walkable: true}
 		}
 		return Cell{Biome: Sand, Glyph: '·', Color: "#E6D6A0", Walkable: true}
 	case elev < 0.70: // lowland — climate decides the cover
@@ -161,7 +190,7 @@ func (g *Generator) At(x, y int) Cell {
 		case elev < 0.46 && moist > 0.62 && temp > 0.45:
 			return swampCell(g, x, y) // warm, wet, low: wetlands by the water
 		case moist > 0.52:
-			return forestCell(g, x, y)
+			return forestCell(g, x, y, temp)
 		case temp > 0.60 && moist < 0.44:
 			return savannaCell(g, x, y)
 		default:
@@ -192,15 +221,87 @@ func (g *Generator) Walkable(x, y int) bool { return g.At(x, y).Walkable }
 // regions); temp folds in elevation on top of it. Snow keys off region as well
 // as temp, so a lone high knoll in a warm meadow stays a rocky hill instead of
 // sprouting a snowcap.
+//
+// Elevation blends a ridged octave into the plain fBm. Pure fBm is Gaussian —
+// almost nothing ever reaches the highland/peak bands, so the world reads as
+// an endless meadow — while ridged noise (1 - |2n-1|) makes sharp crests and
+// broad valleys. The 30% blend widens the distribution's tails enough that
+// hills and peaks genuinely occur, and gives ranges real ridgelines for the
+// 3D terrain to raise.
 func (g *Generator) climate(x, y int) (elev, moist, temp, region float64) {
 	const warp = 18.0
 	wx := float64(x) + warp*(g.fbmAt(float64(x), float64(y), 0x1233A, 0.02, 2)-0.5)
 	wy := float64(y) + warp*(g.fbmAt(float64(x), float64(y), 0x77C2B, 0.02, 2)-0.5)
-	elev = g.fbmAt(wx, wy, 0x1, 0.045, 4)
+	base := g.fbmAt(wx, wy, 0x1, 0.045, 4)
+	ridge := 1 - math.Abs(2*g.fbmAt(wx, wy, ridgeSalt, 0.02, 3)-1)
+	// The uplift fades in above the lowlands, so lakes and coastlines keep
+	// exactly their old share while the high country gains real ranges.
+	// Tuned (measured over ±300 at the live seed): ~12% highland and ~1.8%
+	// peaks, up from 4.5% and a statistically-invisible 0.12%.
+	elev = base + smooth01((base-0.54)/0.16)*ridge*ridge*0.11
 	moist = g.fbmAt(wx, wy, 0x9E37, 0.03, 3)
 	region = g.fbmAt(wx, wy, 0x7E11, 0.014, 3)
 	temp = region - 0.30*(elev-0.5)
 	return elev, moist, temp, region
+}
+
+// ridgeSalt separates the ridged mountain-crest field from the base elevation.
+const ridgeSalt uint64 = 0x21D6E0B15C4E57
+
+// SurfaceElev is the display elevation of a cell (0 deep water … 1 peak): the
+// raw terrain elevation, leveled under the hub plaza and under settlements so
+// built ground reads as terraced flat instead of buildings riding a slope.
+func (g *Generator) SurfaceElev(x, y int) float64 {
+	elev, _, _, _ := g.climate(x, y)
+	return g.flattenElev(x, y, elev)
+}
+
+// flattenElev levels the elevation toward a local anchor inside the hub and
+// inside every settlement, easing back to the raw terrain over a fade band, so
+// towns sit on plateaus and the wild ground rolls right up to their edges.
+func (g *Generator) flattenElev(x, y int, elev float64) float64 {
+	// The hub plaza: one level terrace centred on the spawn.
+	const hubFlatR, hubFade = 30.0, 16.0
+	if d := math.Hypot(float64(x), float64(y)); d < hubFlatR+hubFade {
+		g.hubElevOnce.Do(func() {
+			e, _, _, _ := g.climate(GateX, GateY)
+			// Never sink the plaza below the shoreline, whatever the seed says.
+			g.hubElev = math.Max(e, 0.42)
+		})
+		t := smooth01((d - hubFlatR) / hubFade)
+		return g.hubElev*(1-t) + elev*t
+	}
+	// Settlements: level toward the centre's elevation across the core, fading
+	// out through the outskirts. The 3×3 macro probe mirrors settlementAt.
+	mx, my := floorDiv(x, settleCell), floorDiv(y, settleCell)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			s := g.settlementFor(mx+dx, my+dy)
+			if !s.valid {
+				continue
+			}
+			reach, _, _ := s.dims()
+			flat, fade := float64(reach)+8, 18.0
+			sd := math.Hypot(float64(x-s.cx), float64(y-s.cy))
+			if sd >= flat+fade {
+				continue
+			}
+			t := smooth01((sd - flat) / fade)
+			elev = s.elev*(1-t) + elev*t
+		}
+	}
+	return elev
+}
+
+// smooth01 is smoothstep over [0,1] with clamping.
+func smooth01(t float64) float64 {
+	if t <= 0 {
+		return 0
+	}
+	if t >= 1 {
+		return 1
+	}
+	return t * t * (3 - 2*t)
 }
 
 // biomeAt returns the coarse biome class at (x,y), ignoring props, landmarks and
@@ -236,19 +337,27 @@ func (g *Generator) biomeAt(x, y int) Biome {
 
 func grassCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Grass, Glyph: '·', Color: "#5EAE63", Walkable: true}
+	// Wildflowers drift in meadow patches gated by a low-frequency field, and
+	// the patch — not the cell — picks the species, so a meadow reads as a
+	// swathe of one flower rather than confetti.
+	patch := g.fbmAt(float64(x), float64(y), flowerSalt, 0.11, 2)
+	flower := 0.008 + 0.15*smooth01((patch-0.52)/0.30)
 	switch r := g.prop(x, y); {
 	case r < 0.0016: // a traveler's campfire — blocks, glows warm at night
 		c.Glyph, c.Color, c.Walkable = 'Λ', "#FF7A1E", false
 	case r < 0.0026: // a remote lone cabin — blocks movement (most houses cluster in villages)
 		c.Glyph, c.Color, c.Walkable = 'H', houseColor(g.prop2(x, y)), false
-	case r < 0.056:
-		c.Glyph, c.Color = '*', flowerColor(g.prop2(x, y)) // flower (varied)
-	case r < 0.086:
+	case r < 0.0026+flower:
+		// The hue field is smooth at patch scale but stretched (fbm clusters
+		// near 0.5) so different meadows genuinely land on different species.
+		hue := math.Mod(g.fbmAt(float64(x), float64(y), flowerHueSalt, 0.11, 1)*7.3, 1)
+		c.Glyph, c.Color = '*', flowerColor(hue)
+	case r < 0.0026+flower+0.030:
 		c.Glyph, c.Color = 'o', "#3E8F57" // bush
-	case r < 0.106:
+	case r < 0.0026+flower+0.050:
 		c.Glyph, c.Color = '°', "#9AA0A8" // small rock
-	case r < 0.206:
-		c.Glyph, c.Color = ',', "#4F9460" // tuft
+	case r < 0.0026+flower+0.360:
+		c.Glyph, c.Color = ',', "#4F9460" // tuft — the sward itself, thick underfoot
 	}
 	return c
 }
@@ -256,19 +365,28 @@ func grassCell(g *Generator, x, y int) Cell {
 // forestSalt separates the tree-clustering field from the other noise.
 const forestSalt uint64 = 0x0F0235713EE50000
 
-func forestCell(g *Generator, x, y int) Cell {
+func forestCell(g *Generator, x, y int, temp float64) Cell {
 	// Cluster trees into stands: a low-frequency density field thickens the
 	// canopy in the heart of a wood and thins it toward the edges, so forests
 	// read as groves with clearings rather than an even scatter.
 	density := g.fbmAt(float64(x), float64(y), forestSalt, 0.07, 2)
 	tree := 0.16 + 0.46*density // ~16% at edges … ~62% in dense cores
+	// A mid-frequency stand field groups species: the cooler stands run to
+	// conifers, so a wood is a fir stand or a broadleaf grove, never a lottery.
+	stand := g.fbmAt(float64(x), float64(y), standSalt, 0.05, 2)
+	conifer := stand > 0.60 && temp < 0.55
 	switch r := g.prop(x, y); {
 	case r < tree: // a tree — blocks movement (color varies; some autumn)
+		if conifer {
+			return Cell{Biome: Forest, Glyph: '♠', Color: firColor(g.prop2(x, y))}
+		}
 		return Cell{Biome: Forest, Glyph: '♣', Color: treeColor(g.prop2(x, y))}
 	case r < tree+0.07: // a stump
 		return Cell{Biome: Forest, Glyph: 'u', Color: "#6B4A2B", Walkable: true}
-	case r < tree+0.22: // undergrowth bush
+	case r < tree+0.20: // undergrowth bush
 		return Cell{Biome: Forest, Glyph: 'o', Color: "#2F7D4F", Walkable: true}
+	case r < tree+0.34: // ferns on the forest floor
+		return Cell{Biome: Forest, Glyph: ',', Color: "#3F7F4C", Walkable: true}
 	}
 	return Cell{Biome: Forest, Glyph: '·', Color: "#2E6B40", Walkable: true}
 }
@@ -294,10 +412,12 @@ func savannaCell(g *Generator, x, y int) Cell {
 	c := Cell{Biome: Savanna, Glyph: '·', Color: "#CDBA5C", Walkable: true}
 	switch r := g.prop(x, y); {
 	case r < 0.013: // a lone acacia — blocks movement, a savanna landmark
-		return Cell{Biome: Savanna, Glyph: 'ϒ', Color: "#7C9442"}
+		return Cell{Biome: Savanna, Glyph: 'ϒ', Color: acaciaColor(g.prop2(x, y))}
+	case r < 0.021: // a scatter of sun-bleached wildflowers
+		c.Glyph, c.Color = '*', savannaFlowerColor(g.prop2(x, y))
 	case r < 0.06:
 		c.Glyph, c.Color = 'o', "#7E8F3C" // a dry scrub bush
-	case r < 0.23:
+	case r < 0.30:
 		c.Glyph, c.Color = ',', "#C9B85F" // a clump of dry grass
 	}
 	return c
@@ -334,6 +454,29 @@ func hillCell(g *Generator, x, y int) Cell {
 // flowerColor and treeColor add deterministic variety from a second hash field.
 func flowerColor(r float64) string {
 	cols := []string{"#FF6B6B", "#FFC861", "#FF8FB1", "#F2F2F2", "#C792EA", "#A0C7FF"}
+	return cols[int(r*float64(len(cols)))%len(cols)]
+}
+
+func savannaFlowerColor(r float64) string {
+	cols := []string{"#FFC861", "#F2F2F2", "#E8935A"}
+	return cols[int(r*float64(len(cols)))%len(cols)]
+}
+
+// firColor, acaciaColor and palmColor keep every species from being one exact
+// green — a stand of firs is several firs, the way the broadleaf woods already
+// vary through treeColor.
+func firColor(r float64) string {
+	cols := []string{"#2E5E43", "#35684A", "#27503B", "#3B7252"}
+	return cols[int(r*float64(len(cols)))%len(cols)]
+}
+
+func acaciaColor(r float64) string {
+	cols := []string{"#7C9442", "#8CA24C", "#6E863B"}
+	return cols[int(r*float64(len(cols)))%len(cols)]
+}
+
+func palmColor(r float64) string {
+	cols := []string{"#3E8E5A", "#4C9E63", "#357F53"}
 	return cols[int(r*float64(len(cols)))%len(cols)]
 }
 
@@ -397,6 +540,16 @@ func (g *Generator) valueNoise(x, y float64, salt uint64) float64 {
 func (g *Generator) lattice(ix, iy int, salt uint64) float64 {
 	return unit(hashCoord(g.seed^salt, ix, iy))
 }
+
+// Salts for the cover-clustering fields: wildflower meadows (where they grow
+// and which species), conifer stands within forests, and palm groves on the
+// shore. Each is an independent low-frequency field, like forestSalt.
+const (
+	flowerSalt    uint64 = 0xF10E7B3C95A22D01
+	flowerHueSalt uint64 = 0xF10E7B3C95A22D02
+	standSalt     uint64 = 0x57A2DF1E60B3C441
+	groveSalt     uint64 = 0x6F0A11E5C2D97B23
+)
 
 // propSalt separates the prop-scatter field from the elevation/moisture noise.
 const propSalt uint64 = 0x5CA77E12B10550DE
