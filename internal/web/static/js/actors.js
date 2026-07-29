@@ -61,7 +61,8 @@ function nameSprite(text, hex) {
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
     map: tex, transparent: true, depthWrite: false,
   }));
-  sprite.scale.set(w / h * 0.5, 0.5, 1);
+  // Modest plates: the fighters are the picture, the names are a caption.
+  sprite.scale.set(w / h * 0.34, 0.34, 1);
   sprite.renderOrder = 10;
   return sprite;
 }
@@ -231,7 +232,7 @@ export class ActorField {
       group = rig.group;
       group.userData.lit = rig.lit;
       const label = nameSprite(a.n, '#' + color.getHexString());
-      label.position.set(0, 1.45, 0);
+      label.position.set(0, 1.34, 0);
       group.add(label);
       group.userData.label = label;
     } else {

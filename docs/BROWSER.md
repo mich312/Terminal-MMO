@@ -113,7 +113,10 @@ lets HTML lay it out.
 | `field.js` | ground/walls/props, all instanced |
 | `props.js` | the twelve geometry builders |
 | `actors.js` | players and creatures, interpolated |
-| `rig.js` | the articulated player body + procedural combat animations |
+| `rig.js` | the hero-rig skeleton contract and verb state machine |
+| `rig_character.js` | the armored duelist body (pauldrons, tabard, cloak) |
+| `rig_weapons.js` | the arms catalog, legends glowing (see weapon.go) |
+| `rig_animation.js` | procedural combat motion: swings, dodge, guard, trail |
 | `ui.js` | the DOM overlays and panels |
 | `input.js` | keyboard, and the action mode's mouse combat |
 
