@@ -37,7 +37,7 @@ func TestCompanionDefendsOwner(t *testing.T) {
 	w.SpawnCreature(world.Creature{ID: "pet", Kind: "fox", Area: Area, X: px, Y: py, State: "tamed", Owner: owner, HP: 4})
 
 	// The rogue strikes the owner — rousing the companion.
-	if _, _, hit := w.Strike(rogue, owner, "knife", 1, time.Second); !hit {
+	if _, out := w.Strike(rogue, owner, "knife", 1, false, time.Second); !out.Connected() {
 		t.Fatal("setup strike on owner failed")
 	}
 	pet, _ := findCreature(w, "pet")
@@ -72,7 +72,7 @@ func TestCompanionHoldsInSafeZone(t *testing.T) {
 	rogue, _ := w.Join("rogue")
 	w.EnterArea(rogue, Area, 0, 0, "")
 	w.SpawnCreature(world.Creature{ID: "pet", Kind: "fox", Area: Area, X: 0, Y: 0, State: "tamed", Owner: owner, HP: 4})
-	w.Strike(rogue, owner, "knife", 1, time.Second)
+	w.Strike(rogue, owner, "knife", 1, false, time.Second)
 
 	pet, _ := findCreature(w, "pet")
 	if _, ok := s.defendTarget(pet, w.PlayersInArea(Area)); ok {

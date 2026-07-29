@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,6 +74,9 @@ type session struct {
 	machXY   [2]int
 	tradeReq string
 	lastSent []byte
+
+	fx       []FX      // combat motions since the last frame, riding the next scene
+	lastFace time.Time // throttle for face: turns (the action camera sends them freely)
 }
 
 // runSession owns one browser player from connect to disconnect.
@@ -124,6 +128,7 @@ func runSession(ctx context.Context, conn *websocket.Conn, w *world.World, st st
 		T: MsgHello, Version: ProtocolVersion, Name: name,
 		MaxW: maxTileW, MaxH: maxTileH,
 		Shapes: shapes, Props: ids, Texes: texIDs(),
+		Weapons: game.HeldWeaponShapes(),
 	})
 	s.render(true)
 
@@ -311,7 +316,9 @@ func (s *session) render(force bool) {
 		VW: s.vw, VH: s.vh, Frame: s.frame, Flare: flare, Now: time.Now(),
 		Prompt: prompt, Building: building,
 		Creatures: s.w.CreaturesInArea(s.areaID),
+		FX:        s.fx,
 	})
+	s.fx = nil // motions ride exactly one frame
 
 	// Compare with the frame counter and flare zeroed: those advance on their
 	// own and would make every frame look different, defeating the check.
@@ -399,15 +406,48 @@ func (s *session) handleKey(key string) {
 				s.openPanel("machine")
 			}
 		}
-	case "b", "r", "[", "]", "x", "f", "t", "m", "n", "p":
-		// Build mode, minigame restart/leave, hunting, taming, the overview map
-		// and slide navigation all go straight to the area, which owns what they
-		// mean where you're standing. Any of them may transition.
+	case "b", "r", "[", "]", "x", "f", "F", "t", "m", "n", "p":
+		// Build mode, minigame restart/leave, striking (f fast, F strong),
+		// taming, the overview map and slide navigation all go straight to the
+		// area, which owns what they mean where you're standing.
 		s.sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	case "guard:1", "guard:0":
+		// Guard is world state, not an area action: raise/lower goes straight to
+		// the referee, which stamps the parry clock server-side.
+		s.w.SetGuard(s.name, key == "guard:1")
 	default:
+		// The parameterized combat commands, validated here so a browser can no
+		// more inject an arbitrary key than an SSH client can.
+		if n, ok := combatDir(key, "face:"); ok {
+			// The action camera turns freely; the world only needs the quantized
+			// facing, throttled so mouse-look doesn't become a broadcast storm.
+			if time.Since(s.lastFace) >= 40*time.Millisecond {
+				s.lastFace = time.Now()
+				s.w.SetFacing(s.name, world.Dir(n))
+			}
+			return
+		}
+		if _, ok := combatDir(key, "dodge:"); ok {
+			s.sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			s.render(false)
+		}
 		return
 	}
 	s.render(false)
+}
+
+// combatDir parses a "prefix:N" combat command into its 8-way direction,
+// rejecting anything outside world.Dir's range.
+func combatDir(key, prefix string) (int, bool) {
+	d, ok := strings.CutPrefix(key, prefix)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(d)
+	if err != nil || n < int(world.DirS) || n > int(world.DirSW) {
+		return 0, false
+	}
+	return n, true
 }
 
 // handleWorldEvent mirrors the HD loop's event handling: chat lines for the
@@ -422,6 +462,11 @@ func (s *session) handleWorldEvent(ev world.Event) {
 		world.EventPlayerDamaged, world.EventPlayerDowned,
 		world.EventPlayerRespawn, world.EventPlayerShoved:
 		s.area, _ = s.area.Update(game.WorldEventMsg(ev))
+		s.render(false)
+	case world.EventPlayerActed:
+		// A swing, a dodge, a parry: collect it for the next scene frame so the
+		// client can animate the motion on the right actor.
+		s.fx = append(s.fx, FX{Name: ev.Player, Act: ev.Detail, Target: ev.Target})
 		s.render(false)
 	case world.EventTrade:
 		s.handleTradeEvent(ev)

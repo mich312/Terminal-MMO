@@ -109,12 +109,20 @@ lets HTML lay it out.
 | --- | --- |
 | `main.js` | boot, frame loop, message dispatch |
 | `net.js` | the socket, with backoff reconnect |
-| `scene.js` | camera, sun, sky, fog |
+| `scene.js` | cameras (top-down and the `V` action cam), sun, sky, fog |
 | `field.js` | ground/walls/props, all instanced |
 | `props.js` | the twelve geometry builders |
 | `actors.js` | players and creatures, interpolated |
+| `rig.js` | the articulated player body + procedural combat animations |
 | `ui.js` | the DOM overlays and panels |
-| `input.js` | keyboard |
+| `input.js` | keyboard, and the action mode's mouse combat |
+
+The action camera and the swordplay verbs it drives (fast/strong strikes,
+dodge, guard/parry, lock-on) are the subject of
+[`SWORDPLAY_PLAN.md`](SWORDPLAY_PLAN.md); the server referees every verb, the
+client only animates hopefully. Protocol v2 added the combat FX list on the
+scene, guard state on actors, the held-weapon vocabulary in the hello, and the
+`face:`/`dodge:`/`guard:` client commands.
 
 Everything is drawn with `InstancedMesh`, pooled per material — a screenful of
 forest is ~55 draw calls (including the shadow pass), not a thousand. Wind is a

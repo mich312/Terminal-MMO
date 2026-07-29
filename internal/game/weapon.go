@@ -45,6 +45,10 @@ type Weapon struct {
 // foe from behind.
 const BackstabBonus = 3
 
+// RiposteBonus is the extra damage the strike after a successful parry
+// carries (docs/SWORDPLAY_PLAN.md) — the reward for reading the blow.
+const RiposteBonus = 2
+
 // Fists is the implicit weapon everyone always has: a light, melee, no-cost
 // strike. BestWeapon falls back to it when the pack holds nothing better.
 var Fists = Weapon{Item: "", Name: "bare hands", Damage: 1, Reach: 1}

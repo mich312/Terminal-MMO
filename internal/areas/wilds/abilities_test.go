@@ -43,7 +43,7 @@ func TestCleaveHitsAllAdjacent(t *testing.T) {
 	spawnRabbit(w, "r1", 101, 100)
 	spawnRabbit(w, "r2", 100, 101)
 
-	a.strike()
+	a.strike(false)
 	if n := w.CountCreatures("wilds"); n != 0 {
 		t.Fatalf("after a cleave, %d rabbits remain, want 0", n)
 	}
@@ -53,7 +53,7 @@ func TestCleaveHitsAllAdjacent(t *testing.T) {
 	b.ctx.Inventory["knife"] = 1
 	spawnRabbit(w, "r3", 101, 100)
 	spawnRabbit(w, "r4", 100, 101)
-	b.strike()
+	b.strike(false)
 	if n := w.CountCreatures("wilds"); n != 1 {
 		t.Fatalf("after a plain strike, %d rabbits remain, want 1", n)
 	}
@@ -69,7 +69,7 @@ func TestPierceHitsAlongLine(t *testing.T) {
 	spawnRabbit(w, "r1", 100, 102)
 	spawnRabbit(w, "r2", 100, 104)
 
-	a.strike()
+	a.strike(false)
 	if n := w.CountCreatures("wilds"); n != 0 {
 		t.Fatalf("after a pierce, %d rabbits remain, want 0", n)
 	}
@@ -79,7 +79,7 @@ func TestPierceHitsAlongLine(t *testing.T) {
 	b.ctx.Inventory["arrow"] = 9
 	spawnRabbit(w, "r3", 100, 102)
 	spawnRabbit(w, "r4", 100, 104)
-	b.strike()
+	b.strike(false)
 	if n := w.CountCreatures("wilds"); n != 1 {
 		t.Fatalf("after a plain shot, %d rabbits remain, want 1 (the far one)", n)
 	}
@@ -95,7 +95,7 @@ func TestKnockbackShovesCreature(t *testing.T) {
 	w.SpawnCreature(world.Creature{ID: "d1", Kind: "deer", Area: "wilds", X: 101, Y: 100, HP: 6})
 
 	dest := [2]int{102, 100} // pushed east, away from ada
-	a.strike()
+	a.strike(false)
 
 	var got world.Creature
 	for _, c := range w.CreaturesInArea("wilds") {

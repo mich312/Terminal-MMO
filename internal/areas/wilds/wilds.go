@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +65,9 @@ type area struct {
 	rng        *rand.Rand        // per-session stream for hunting drop rolls
 	toast      string            // transient pickup feedback
 	toastUntil time.Time         // when the toast expires (wall-clock; works in both renderers)
-	lastStrike time.Time         // when this session last landed a blow (weapon cooldown)
+	lastStrike time.Time         // when this session last swung (weapon cooldown)
+	strikeCd   time.Duration     // how long that swing's recovery lasts (fast/strong/staggered)
+	lastDodge  time.Time         // when this session last dodge-rolled
 	hurtUntil  time.Time         // brief on-hit flash window after taking damage
 	wieldSync  string            // last wielded weapon pushed to the world (avoids per-frame churn)
 
@@ -709,14 +712,41 @@ func (a *area) strikePrompt() (string, bool) {
 // converts to wall-clock for the per-session strike throttle.
 const tickInterval = 500 * time.Millisecond
 
-func (a *area) strike() {
+// Swordplay tuning (docs/SWORDPLAY_PLAN.md). A strong blow trades pace for
+// weight and guard-breaking; a dodge is the burst the tile grid lacks; a parry
+// leaves the attacker's blade locked long enough to punish.
+const (
+	strongDamageNum, strongDamageDen = 9, 5 // ~1.8× damage, rounded
+	strongCooldownNum                = 5    // ×2.5 the weapon's own recovery…
+	strongCooldownDen                = 2
+	strongMinCooldown                = time.Second // …but never lighter than this
+	dodgeDistance                    = 2
+	dodgeImmunity                    = 300 * time.Millisecond
+	dodgeCooldown                    = 800 * time.Millisecond
+	parryStagger                     = 1200 * time.Millisecond
+)
+
+func (a *area) strike(strong bool) {
 	if a.ctx.World.Downed(a.ctx.Name) {
 		return // can't act while knocked out
 	}
 	wp := game.WieldedWeapon(a.ctx)
-	if cd := time.Duration(wp.Cooldown) * tickInterval; cd > 0 && time.Since(a.lastStrike) < cd {
-		return // still recovering from the last blow
+	if a.strikeCd > 0 && time.Since(a.lastStrike) < a.strikeCd {
+		return // still recovering from the last swing (or a parry's stagger)
 	}
+
+	// The swing happens whether or not it lands: everyone nearby sees it
+	// (world.Acted), and its recovery is real — which is what makes a baited
+	// whiff an opening rather than a free retry.
+	act, cd := world.ActFast, time.Duration(wp.Cooldown)*tickInterval
+	if strong {
+		act = world.ActStrong
+		if cd = cd * strongCooldownNum / strongCooldownDen; cd < strongMinCooldown {
+			cd = strongMinCooldown
+		}
+	}
+	a.ctx.World.Acted(a.ctx.Name, act)
+	a.lastStrike, a.strikeCd = time.Now(), cd
 
 	cs, ps, blocked := a.gatherTargets(wp)
 	if len(cs) == 0 && len(ps) == 0 {
@@ -731,17 +761,24 @@ func (a *area) strike() {
 		return
 	}
 
+	// A parry's reward rides the next blow that reaches a player — read and
+	// cleared atomically, so it can't be banked or double-spent.
+	bonus := 0
+	if len(ps) > 0 && a.ctx.World.TakeRiposte(a.ctx.Name) {
+		bonus = game.RiposteBonus
+	}
+
 	// Multi-target abilities (cleave/pierce) catch several foes; a plain strike
 	// hits one. Multi-hits get a tidy summary instead of clobbering toasts.
 	multi := wp.Pierce || wp.Cleave
 	hits := 0
 	for _, c := range cs {
-		if a.applyCreatureHit(c, wp, multi) {
+		if a.applyCreatureHit(c, wp, strong, multi) {
 			hits++
 		}
 	}
 	for _, p := range ps {
-		if a.applyPlayerHit(p, wp, multi) {
+		if a.applyPlayerHit(p, wp, strong, bonus, multi) {
 			hits++
 		}
 	}
@@ -753,7 +790,45 @@ func (a *area) strike() {
 		a.setToast(fmt.Sprintf("your %s %s %d foes!", wp.Name, verb, hits))
 	}
 	a.spendAmmo(wp)
-	a.lastStrike = time.Now()
+}
+
+// dodge hops the player up to two tiles dir-ward with a beat of untouchability
+// — the grid's answer to a sidestep. It stops at walls and refuses to carry you
+// through a portal: combat footwork shouldn't teleport you to the lobby.
+func (a *area) dodge(dir world.Dir) {
+	if a.building || a.ctx.World.Downed(a.ctx.Name) {
+		return
+	}
+	if time.Since(a.lastDodge) < dodgeCooldown {
+		return
+	}
+	dx, dy := facingDelta(dir)
+	moved := 0
+	for i := 0; i < dodgeDistance; i++ {
+		nx, ny := a.wx+dx, a.wy+dy
+		if !game.CanStep(a.walkableAt, a.wx, a.wy, dx, dy) {
+			break
+		}
+		if _, isPortal := a.portalUnder(nx, ny); isPortal {
+			break
+		}
+		a.wx, a.wy = nx, ny
+		moved++
+		a.reveal()
+		a.pickUp()
+	}
+	if moved == 0 {
+		return
+	}
+	a.lastDodge = time.Now()
+	// The immunity window opens before the move broadcasts, so a blow resolving
+	// against the old tile in the same instant already finds the roll.
+	a.ctx.World.BeginDodge(a.ctx.Name, dodgeImmunity)
+	a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
+	a.ctx.World.Acted(a.ctx.Name, world.ActDodge)
+	a.persist()
+	a.updateClaimPresence()
+	a.tendCleared()
 }
 
 // gatherTargets collects what a strike lands on, honoring the weapon's reach and
@@ -976,14 +1051,21 @@ func isign(n int) int {
 	}
 }
 
-// applyPlayerHit lands a blow on another player via the world's atomic Strike: a
-// non-lethal hit just hurts, the blow that empties their HP knocks them out.
-// Knockback shoves them a tile back. quiet suppresses the per-target toast (for
-// multi-hit sweeps, which print a summary). Returns whether it connected.
-func (a *area) applyPlayerHit(p world.Player, wp game.Weapon, quiet bool) bool {
+// applyPlayerHit lands a blow on another player via the world's atomic Strike
+// and translates the referee's ruling: a clean hit hurts, the emptying blow
+// knocks out, a guard softens, a strong blow smashes a guard open (staggering
+// the defender), a dodge slips it entirely, and a parry turns it back on *you*.
+// quiet suppresses the per-target toast (for multi-hit sweeps, which print a
+// summary). Returns whether the blow cost the target anything.
+func (a *area) applyPlayerHit(p world.Player, wp game.Weapon, strong bool, bonus int, quiet bool) bool {
 	dmg := a.weaponDamage(wp, p.X, p.Y, p.Facing)
-	_, downed, ok := a.ctx.World.Strike(a.ctx.Name, p.Name, wp.Name, dmg, downedDuration)
-	if !ok {
+	if strong {
+		dmg = (dmg*strongDamageNum + strongDamageDen/2) / strongDamageDen
+	}
+	dmg += bonus
+	_, out := a.ctx.World.Strike(a.ctx.Name, p.Name, wp.Name, dmg, strong, downedDuration)
+	switch out {
+	case world.StrikeMissed:
 		if !quiet {
 			if a.ctx.World.Immune(p.Name) {
 				a.setToast(p.Name + " is still catching their breath")
@@ -992,8 +1074,22 @@ func (a *area) applyPlayerHit(p world.Player, wp game.Weapon, quiet bool) bool {
 			}
 		}
 		return false
+	case world.StrikeDodged:
+		if !quiet {
+			a.setToast(p.Name + " rolls clear of your blow")
+		}
+		return false
+	case world.StrikeParried:
+		// Steel turns steel: you stagger back a step with your blade locked —
+		// the parrier has earned a riposte and a moment to spend it.
+		a.staggerSelf(p.X, p.Y)
+		a.setToast(p.Name + " parries — you stagger!")
+		return false
 	}
-	if wp.Knockback && !downed {
+
+	downed := out == world.StrikeDowned
+	// A broken guard reels back a tile, exactly like a knockback hit.
+	if !downed && (out == world.StrikeGuardBroken || wp.Knockback) {
 		dx, dy := a.pushDir(p.X, p.Y)
 		nx, ny := p.X+dx, p.Y+dy
 		if a.fits(nx, ny) {
@@ -1005,13 +1101,37 @@ func (a *area) applyPlayerHit(p world.Player, wp game.Weapon, quiet bool) bool {
 		if wp.Item != "" {
 			with = " with the " + wp.Name
 		}
-		if downed {
+		switch {
+		case downed:
 			a.setToast("you knock " + p.Name + " out" + with + "!")
-		} else {
+		case out == world.StrikeGuardBroken:
+			a.setToast("you smash " + p.Name + "'s guard open" + with + "!")
+		case out == world.StrikeGuarded:
+			a.setToast(p.Name + " blocks — your blow lands softly")
+		case bonus > 0:
+			a.setToast("your riposte catches " + p.Name + with + "!")
+		default:
 			a.setToast("you strike " + p.Name + with)
 		}
 	}
 	return true
+}
+
+// staggerSelf is the price of swinging into a parry: a step back from the
+// parrier (facing held — you reel, you don't turn tail) and a locked blade.
+func (a *area) staggerSelf(tx, ty int) {
+	a.lastStrike, a.strikeCd = time.Now(), parryStagger
+	facing := world.DirS
+	if self, ok := a.ctx.World.Self(a.ctx.Name); ok {
+		facing = self.Facing
+	}
+	dx, dy := a.pushDir(tx, ty)
+	if nx, ny := a.wx-dx, a.wy-dy; a.fits(nx, ny) {
+		a.wx, a.wy = nx, ny
+		a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
+		a.ctx.World.SetFacing(a.ctx.Name, facing)
+		a.persist()
+	}
 }
 
 // applyCreatureHit lands a blow on a wild animal. A strike decrements its HP
@@ -1019,7 +1139,7 @@ func (a *area) applyPlayerHit(p world.Player, wp game.Weapon, quiet bool) bool {
 // spooks it (and a knockback weapon shoves it), and the blow that drops it
 // despawns the animal and rolls its spoils into the pack. quiet suppresses the
 // per-target toast for sweeps. Returns whether it connected.
-func (a *area) applyCreatureHit(c world.Creature, wp game.Weapon, quiet bool) bool {
+func (a *area) applyCreatureHit(c world.Creature, wp game.Weapon, strong, quiet bool) bool {
 	sp, ok := game.SpeciesByKind(c.Kind)
 	if !ok {
 		return false
@@ -1033,6 +1153,9 @@ func (a *area) applyCreatureHit(c world.Creature, wp game.Weapon, quiet bool) bo
 	a.noteSpecies(c.Kind)
 
 	dmg := a.weaponDamage(wp, c.X, c.Y, c.Facing)
+	if strong {
+		dmg = (dmg*strongDamageNum + strongDamageDen/2) / strongDamageDen
+	}
 	killed := false
 	changed := a.ctx.World.MutateCreature(c.ID, func(cc *world.Creature) bool {
 		if cc.HP <= 0 {
@@ -1379,8 +1502,18 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			return a, nil
 		}
-		if ks == "f" { // strike what you face — hunt an animal or, in the wild, a player
-			a.strike()
+		if ks == "f" { // fast strike — hunt an animal or, in the wild, a player
+			a.strike(false)
+			return a, nil
+		}
+		if ks == "F" { // strong strike — slower, heavier, smashes guards open
+			a.strike(true)
+			return a, nil
+		}
+		if d, ok := strings.CutPrefix(ks, "dodge:"); ok { // dodge-roll dir-ward
+			if n, err := strconv.Atoi(d); err == nil && n >= int(world.DirS) && n <= int(world.DirSW) {
+				a.dodge(world.Dir(n))
+			}
 			return a, nil
 		}
 		if ks == "t" { // tame an adjacent animal with bait

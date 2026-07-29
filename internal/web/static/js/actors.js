@@ -1,18 +1,24 @@
 /* Players and creatures.
  *
  * Unlike tiles there are only ever a handful of these, so they get real objects
- * rather than instancing — which buys per-actor animation cheaply: a walk bob, a
- * turn toward the way you're facing, and interpolation between the server's
- * discrete tile steps.
+ * rather than instancing — which buys per-actor animation cheaply: a walk
+ * cycle, a turn toward the way you're facing, and interpolation between the
+ * server's discrete tile steps.
  *
  * That interpolation is the whole reason the browser feels different from the
  * terminal. The world is a grid and always was: the server says "anna is now on
  * tile (12, 7)". A terminal has to snap. Here we glide, so the same 10-steps-
  * per-second movement reads as walking rather than teleporting.
+ *
+ * Players are articulated rigs (rig.js) — limbs, a weapon in hand, and the
+ * swordplay motions (docs/SWORDPLAY_PLAN.md): swings arrive as one-shot FX on
+ * the scene message and play on whoever swung, whiffs included, so a duel is
+ * readable from every camera. Creatures keep the prop-shape bodies.
  */
 
 import * as THREE from 'three';
 import { partsFor } from './props.js';
+import { Rig } from './rig.js';
 
 const STEP_MS = 110;   // how long an actor takes to glide one tile
 const BOB_HEIGHT = 0.07;
@@ -60,7 +66,7 @@ function nameSprite(text, hex) {
   return sprite;
 }
 
-/** buildBody assembles an avatar from the same part list the props use, so a
+/** buildBody assembles a creature from the same part list the props use, so a
  *  creature on the grid and a creature baked into a tile look identical. */
 function buildBody(parts, color) {
   const group = new THREE.Group();
@@ -81,9 +87,6 @@ function buildBody(parts, color) {
     else c.copy(color).multiplyScalar(p.tint);
     material.color.copy(c);
     const mesh = new THREE.Mesh(p.geom, material);
-    // An avatar's own shadow is the strongest cue that it's standing on the
-    // ground rather than floating above it — worth having on the one object
-    // the player is actually watching.
     mesh.castShadow = p.glow === 0;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -93,52 +96,20 @@ function buildBody(parts, color) {
   return group;
 }
 
-/* The player avatar. Deliberately not a creature shape: a person needs to read
-   as a person from above, which means shoulders and a head, and a clear front
-   so facing is visible from a 3/4 camera. */
-function playerParts() {
-  const parts = [];
-  const body = new THREE.CapsuleGeometry(0.2, 0.34, 4, 8);
-  body.translate(0, 0.42, 0);
-  parts.push({ geom: body, tint: 1, fixed: null, glow: 0 });
-  const head = new THREE.SphereGeometry(0.16, 10, 8);
-  head.translate(0, 0.84, 0);
-  parts.push({ geom: head, tint: 1.15, fixed: null, glow: 0 });
-  // A small nose-like wedge on the front face: the cheapest possible "which way
-  // am I pointing", and it survives being 30 pixels tall on screen.
-  const snout = new THREE.BoxGeometry(0.1, 0.08, 0.12);
-  snout.translate(0, 0.84, 0.17);
-  parts.push({ geom: snout, tint: 0.75, fixed: null, glow: 0 });
-  return parts;
-}
-
-const PLAYER_PARTS = playerParts();
-
-/* A worn hat, drawn when the player has an accessory. Which hat you found is
-   in the compendium; here every hat is a hat — the color carries the rest. */
-function hatParts() {
-  const brim = new THREE.CylinderGeometry(0.23, 0.25, 0.04, 10);
-  brim.translate(0, 0.97, 0);
-  const crown = new THREE.CylinderGeometry(0.13, 0.15, 0.14, 10);
-  crown.translate(0, 1.05, 0);
-  return [
-    { geom: brim, tint: 0.9, fixed: null, glow: 0.2 },
-    { geom: crown, tint: 1.3, fixed: null, glow: 0.2 },
-  ];
-}
-
-const HAT_PARTS = hatParts();
-
 class Actor {
-  constructor(scene, group) {
+  constructor(scene, group, rig) {
     this.scene = scene;
     this.group = group;
+    this.rig = rig || null;
     this.x = 0; this.z = 0;         // current interpolated position
     this.fromX = 0; this.fromZ = 0; // where the glide started
     this.toX = 0; this.toZ = 0;     // where the server says we are
     this.t = 1;                     // glide progress, 0..1
+    this.stepLen = 1;               // tiles covered by the current glide
     this.angle = 0;
     this.targetAngle = 0;
+    this.guarding = false;
+    this.downed = false;
     scene.add(group);
   }
 
@@ -146,6 +117,7 @@ class Actor {
     if (this.toX === x && this.toZ === z) return;
     this.fromX = this.x; this.fromZ = this.z;
     this.toX = x; this.toZ = z;
+    this.stepLen = Math.max(Math.abs(x - this.fromX), Math.abs(z - this.fromZ));
     this.t = 0;
   }
 
@@ -163,9 +135,9 @@ class Actor {
       this.x = this.fromX + (this.toX - this.fromX) * e;
       this.z = this.fromZ + (this.toZ - this.fromZ) * e;
     }
-    // A short bob while moving sells the step; standing still, it rests.
     const moving = this.t < 1;
-    const bob = moving ? Math.abs(Math.sin(time * 12)) * BOB_HEIGHT : 0;
+    // Rigs plant their own feet; simple bodies keep the classic hop.
+    const bob = moving && !this.rig ? Math.abs(Math.sin(time * 12)) * BOB_HEIGHT : 0;
     this.group.position.set(this.x, bob, this.z);
 
     // Turn the short way round toward the facing the server reported.
@@ -174,6 +146,15 @@ class Actor {
     while (d < -Math.PI) d += Math.PI * 2;
     this.angle += d * Math.min(1, dt * 12);
     this.group.rotation.y = this.angle;
+
+    if (this.rig) {
+      this.rig.pose({
+        moving,
+        running: this.stepLen > 1,
+        guarding: this.guarding,
+        downed: this.downed,
+      }, time, dt);
+    }
   }
 
   dispose() {
@@ -187,16 +168,25 @@ export class ActorField {
     this.players = new Map();
     this.creatures = new Map();
     this.shapes = {};
+    this.weaponVocab = {};
     this.self = null;
+    this.lockName = null;
     this._c = new THREE.Color();
+    this._localActs = new Map(); // kind → time, to skip the echo of our own swing
   }
 
-  setVocabulary(shapes) { this.shapes = shapes || {}; }
+  setVocabulary(shapes, weapons) {
+    this.shapes = shapes || {};
+    this.weaponVocab = weapons || {};
+  }
 
   /** sync reconciles the live actors with one scene message. */
   sync(msg, palette) {
     this.reconcile(this.players, msg.players || [], palette, true);
     this.reconcile(this.creatures, msg.creatures || [], palette, false);
+    const now = performance.now() / 1000;
+    for (const fx of msg.fx || []) this.playFX(fx, now);
+    if (this.lockName && !this.players.get(this.lockName)) this.setLock(null);
   }
 
   reconcile(map, list, palette, isPlayer) {
@@ -235,10 +225,11 @@ export class ActorField {
   }
 
   spawn(a, color, isPlayer) {
-    let group;
+    let group, rig = null;
     if (isPlayer) {
-      group = buildBody(PLAYER_PARTS, color);
-      if (a.a) group.add(...buildBody(HAT_PARTS, color).children);
+      rig = new Rig(color, a.a);
+      group = rig.group;
+      group.userData.lit = rig.lit;
       const label = nameSprite(a.n, '#' + color.getHexString());
       label.position.set(0, 1.45, 0);
       group.add(label);
@@ -249,21 +240,23 @@ export class ActorField {
       // mystery box wandering the fields
       group = buildBody(parts, color);
     }
-    return new Actor(this.scene, group);
+    return new Actor(this.scene, group, rig);
   }
 
-  /** stylePlayer reflects live state a player's body should show: knocked out,
-   *  or hurt and not yet healed. */
+  /** stylePlayer reflects live state a player's body should show: the wielded
+   *  arm, a raised guard, knocked out, or hurt and not yet healed. */
   stylePlayer(actor, a) {
+    actor.rig?.setWeapon(this.weaponVocab[a.w] || '');
+    actor.guarding = !!a.g;
     const downed = !!a.down;
     if (actor.downed !== downed) {
       actor.downed = downed;
-      // Knocked out: the body tips over. It's unmistakable from any angle and
-      // costs nothing.
-      actor.group.rotation.x = downed ? Math.PI / 2.2 : 0;
+      // The rig plays the crumple; the fade makes "out cold" unmistakable.
       actor.group.traverse((o) => {
-        if (o.isMesh) o.material.opacity = downed ? 0.6 : 1;
-        if (o.isMesh) o.material.transparent = downed;
+        if (o.isMesh && !o.isSprite) {
+          o.material.opacity = downed ? 0.6 : 1;
+          o.material.transparent = downed;
+        }
       });
     }
     if (a.hp != null && a.mhp && a.hp < a.mhp && !actor.hpBar) {
@@ -278,6 +271,74 @@ export class ActorField {
       actor.hpBar.scale.x = Math.max(0.001, 0.5 * frac);
       actor.hpBar.position.x = -(1 - frac) * 0.25;
     }
+  }
+
+  /** playFX routes one combat motion to its actor. Our own verbs already
+   *  played the instant we pressed them (localAct), so their echo — the same
+   *  motion arriving back off the wire moments later — is skipped. */
+  playFX(fx, now) {
+    const actor = this.players.get(fx.n);
+    if (!actor) return;
+    if (actor === this.self) {
+      const at = this._localActs.get(fx.k);
+      if (at != null && now - at < 0.6) return;
+    }
+    actor.rig?.play(fx.k, now);
+    if (fx.k === 'parry') {
+      // The parried attacker reels.
+      this.players.get(fx.t)?.rig?.play('flinch', now);
+    }
+  }
+
+  /** localAct plays one of our own verbs immediately — the client animates
+   *  hopefully, the server referees — and remembers it to skip the echo. */
+  localAct(kind) {
+    const now = performance.now() / 1000;
+    this._localActs.set(kind, now);
+    this.self?.rig?.play(kind, now);
+  }
+
+  /** flinchSelf is the on-hit body reaction (the vignette's partner). */
+  flinchSelf() {
+    this.self?.rig?.play('flinch', performance.now() / 1000);
+  }
+
+  /** setLock marks the locked-on target with a ring at its feet. */
+  setLock(name) {
+    if (this.lockName === name) return;
+    const prev = this.players.get(this.lockName);
+    if (prev && prev.lockRing) {
+      prev.group.remove(prev.lockRing);
+      prev.lockRing = null;
+    }
+    this.lockName = name;
+    const next = this.players.get(name);
+    if (next) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.42, 0.5, 24),
+        new THREE.MeshBasicMaterial({ color: 0xe8b34c, transparent: true, opacity: 0.85 }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.03;
+      next.group.add(ring);
+      next.lockRing = ring;
+    }
+  }
+
+  /** nearestTarget picks the closest other player roughly in front of the
+   *  camera — the lock-on's opening bid. */
+  nearestTarget(px, pz, fwdX, fwdZ, maxDist = 14) {
+    let best = null, bestD = maxDist;
+    for (const [name, a] of this.players) {
+      if (a === this.self || a.downed) continue;
+      const dx = a.x - px, dz = a.z - pz;
+      const d = Math.hypot(dx, dz);
+      if (d >= bestD || d < 0.01) continue;
+      if (dx * fwdX + dz * fwdZ < -d * 0.3) continue; // well behind — skip
+      best = name;
+      bestD = d;
+    }
+    return best;
   }
 
   // A sprite, not a quad: it faces the camera on its own, so it stays readable
@@ -330,5 +391,6 @@ export class ActorField {
     this.players.clear();
     this.creatures.clear();
     this.self = null;
+    this.lockName = null;
   }
 }

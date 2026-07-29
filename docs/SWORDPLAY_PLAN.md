@@ -1,6 +1,16 @@
 # Swordplay Plan — A Witcher-Style Action Camera and Duels Worth Watching
 
-> **Status:** 📋 Brainstorm / design. Nothing here is built yet.
+> **Status:** ✅ Phases 1–2 shipped. `V` toggles the over-the-shoulder action
+> camera in the browser client (pointer-lock mouse-look, camera-relative WASD,
+> `face:N` aiming); every player is now an articulated, procedurally-animated
+> rig with their wielded weapon in hand; and the fencer's verb set is live —
+> fast strike (click), strong strike (hold, `F`), dodge with server-side
+> i-frames (Space), guard/parry/riposte (hold right mouse) with the attacker
+> stagger, and lock-on (`Q`). Swings broadcast via `EventPlayerActed`, whiffs
+> included, so duels read from every client. All referee rulings
+> (`world.StrikeOutcome`) resolve under the world mutex; protocol bumped to v2.
+> Phases 3–4 (blocking parity in terminal HUDs, `/duel`, the Fight Pit, sound)
+> remain open.
 >
 > How the browser client grows a third-person action mode — your character a
 > real 3D figure in front of the camera, Witcher-style, with fast and strong

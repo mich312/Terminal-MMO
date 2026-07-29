@@ -74,6 +74,13 @@ type Player struct {
 	LastHurt    time.Time // last time this player took damage (gates regen / "in combat" UI)
 	LastHurtBy  string    // who last struck this player (a tamed companion defends against them)
 	InvulnUntil time.Time // > now ⇒ briefly immune after respawn, so no spawn-camping
+
+	// Swordplay verbs (docs/SWORDPLAY_PLAN.md): the defensive state the referee
+	// (Strike) consults under the mutex. Like HP, live session state only.
+	Guarding     bool      // blade raised: incoming blows are softened
+	GuardStart   time.Time // when the guard went up (a blow inside ParryWindow is parried)
+	DodgeUntil   time.Time // > now ⇒ mid-dodge, briefly untouchable
+	RiposteUntil time.Time // > now ⇒ a parry earned a bonus on the next strike
 }
 
 // DefaultMaxHP is every player's starting and full health.
@@ -82,6 +89,16 @@ const DefaultMaxHP = 10
 // RespawnImmunity is how long a freshly revived player can't be struck — an
 // anti-grief floor so a knock-out can't be chained into a spawn-camp.
 const RespawnImmunity = 3 * time.Second
+
+// ParryWindow is how fresh a guard must be for an incoming blow to be parried
+// rather than merely blocked. Judged on the server's own clocks (guard raise
+// and blow landing are both stamped under the mutex), so latency shifts a
+// player's inputs but never the referee's ruling.
+const ParryWindow = 250 * time.Millisecond
+
+// RiposteWindow is how long a successful parry keeps the bonus on the
+// parrier's next strike.
+const RiposteWindow = 1200 * time.Millisecond
 
 const eventBuffer = 64
 

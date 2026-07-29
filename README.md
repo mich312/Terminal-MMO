@@ -94,6 +94,14 @@ for help — so there's no second vocabulary to learn. Scroll to zoom; hold the
 right mouse button and drag to swing the camera around your character when a
 building is in the way.
 
+**V** raises the action camera (docs/SWORDPLAY_PLAN.md): an over-the-shoulder
+duel view with mouse-look, your character animated in frame. Click to swing,
+hold the click for a strong blow that smashes guards, hold the right button to
+guard (a guard raised at the last instant *parries* — the attacker staggers and
+your next strike carries a riposte), **Space** to dodge-roll through a blow,
+**Q** to lock onto an opponent. Every verb resolves server-side under the same
+rules as the terminal clients; PvP still only works out in the open Wilds.
+
 Everything renders in 3D: the Wilds' biomes and villages, the hand-built rooms,
 and the arcade cabinets as 3D boards. The only exception is **Doom**, which is a
 first-person raycaster painting a pixel buffer and has no browser equivalent

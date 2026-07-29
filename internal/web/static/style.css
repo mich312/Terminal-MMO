@@ -324,6 +324,35 @@ html, body {
 
 .hurt.on { opacity: 1; transition: opacity 0.05s; }
 
+/* ---------- the action camera's overlays (docs/SWORDPLAY_PLAN.md) ---------- */
+
+/* A quiet dot, not a crosshair: strikes aim by facing, so the reticle only
+   needs to mark "ahead", never a pixel. */
+#reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: rgba(232, 236, 241, 0.8);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+#action-hint {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.78rem;
+  color: var(--dim);
+  text-shadow: 0 2px 8px #000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* ---------- panels ---------- */
 
 .panel {
