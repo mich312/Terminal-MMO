@@ -159,6 +159,12 @@ export class WorldScene {
     this.scene.add(this.hemi);
     this.fill = new THREE.AmbientLight(0xffffff, 0.25);
     this.scene.add(this.fill);
+    // The lantern: a warm point light that rides the player wherever the
+    // area's radial light says Warm (the caves). Underground was previously
+    // lit by a dim blue sun shining through solid rock; a real local light
+    // with falloff on the stalagmites is most of the cave's mood.
+    this.lantern = new THREE.PointLight(0xffb454, 0, 0, 2);
+    this.scene.add(this.lantern);
 
     this.fog = new THREE.Fog(0x0d1014, 40, 90);
     this.scene.fog = this.fog;
@@ -326,21 +332,43 @@ export class WorldScene {
       ? anchor + (windowTiles / 2) * 0.85
       : Infinity;
 
-    if (light && light.r > 0) {
-      // A radial light becomes fog: you can see a circle around yourself and
-      // the world falls away into the dark beyond it. The camera sits back from
-      // the player, so the distances are offset by the camera's own distance.
-      this.fog.far = Math.min(anchor + light.r * 1.05, edge);
-      this.fog.near = Math.min(anchor + light.r * 0.35, this.fog.far - 4);
-      if (light.sunless) {
-        // Underground: no sky at all, so the fog goes to black rather than to
-        // whatever color the sky above happens to be.
-        this.fog.color.setHex(0x04060a);
-        this.scene.background = new THREE.Color(0x04060a);
-      }
+    // The light's floor is how much of the world stays visible *outside* the
+    // radius — the terminal fades its sight circle out toward midday
+    // (DayFadedLight), and honoring it here is what opens the daytime vista:
+    // at noon the fog retreats to the window edge and the new hills are
+    // actually on screen; after dark the same numbers close back into a torch.
+    const floor = light?.floor ?? 0;
+    if (light && light.r > 0 && floor < 0.95) {
+      const reach = light.r * (1 + 2.2 * floor);
+      this.fog.far = Math.min(anchor + reach * 1.05, edge);
+      this.fog.near = Math.min(anchor + reach * 0.35, this.fog.far - 4);
     } else {
       this.fog.far = Math.min(anchor + 60, edge);
-      this.fog.near = Math.max(anchor * 0.5, this.fog.far - 26);
+      // Keep the player's own surroundings out of the haze entirely.
+      this.fog.near = Math.max(Math.min(anchor + 6, this.fog.far - 4), this.fog.far - 26);
+    }
+
+    // Underground: no sky at all. The dome must actually be hidden (its
+    // material ignores fog, so it shines through any amount of black), the
+    // sun cannot reach under rock, and the lantern takes over as the key.
+    const sunless = !!(light && light.sunless);
+    this.sky.mesh.visible = !sunless;
+    if (sunless) {
+      this.fog.color.setHex(0x04060a);
+      this.scene.background = new THREE.Color(0x04060a);
+      this.sun.intensity = 0;
+      this.hemi.intensity = 0.06;
+      this.hemi.color.setHex(0x2a3340);
+      this.hemi.groundColor.setHex(0x100c08);
+      this.fill.intensity = 0.05;
+    }
+    const warm = !!(light && light.warm && light.r > 0);
+    this.lantern.visible = warm;
+    if (warm) {
+      // Sized to the lantern's live radius, so a guttering flame visibly
+      // closes in — warm, the way the terminal draws it.
+      this.lantern.intensity = 9 * (light.r / 11);
+      this.lantern.distance = light.r * 1.3;
     }
   }
 
@@ -357,9 +385,10 @@ export class WorldScene {
     this.scene.environment = baked.texture;
   }
 
-  /** follow points the camera at a world position. */
-  follow(x, z, instant = false) {
-    this.target.set(x, 0, z);
+  /** follow points the camera at a world position. y is the terrain height
+   *  under the player, so the camera rides the hills. */
+  follow(x, z, y = 0, instant = false) {
+    this.target.set(x, y, z);
     if (instant) this.smoothed.copy(this.target);
   }
 
@@ -377,11 +406,14 @@ export class WorldScene {
       const vert = Math.sin(PITCH) * this.zoom;
       this.camera.position.set(
         this.smoothed.x + Math.sin(this.yaw) * horiz,
-        vert,
+        this.smoothed.y + vert, // ride the terrain under the player
         this.smoothed.z + Math.cos(this.yaw) * horiz,
       );
       this.camera.lookAt(this.smoothed);
     }
+
+    // The lantern rides just over the player's head (see applyLighting).
+    this.lantern.position.set(this.smoothed.x, this.smoothed.y + 1.2, this.smoothed.z);
 
     // The sky is infinitely far away, so it rides with the camera. Without
     // this it would sit at the world origin, and walking a few hundred tiles
@@ -430,12 +462,12 @@ export class WorldScene {
     const lift = this.actDist * Math.sin(this.camPitch);
     this.camera.position.set(
       this.smoothed.x - fx * horiz + rx * ACT_SHOULDER,
-      ACT_EYE + lift,
+      this.smoothed.y + ACT_EYE + lift, // the hills carry the eye with them
       this.smoothed.z - fz * horiz + rz * ACT_SHOULDER,
     );
     this.camera.lookAt(
       this.smoothed.x + fx * 3 + rx * ACT_SHOULDER,
-      ACT_EYE - this.camPitch * 1.6,
+      this.smoothed.y + ACT_EYE - this.camPitch * 1.6,
       this.smoothed.z + fz * 3 + rz * ACT_SHOULDER,
     );
   }

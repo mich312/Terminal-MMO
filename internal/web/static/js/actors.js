@@ -74,15 +74,19 @@ function buildBody(parts, color) {
   const c = new THREE.Color();
   const lit = [];
   for (const p of parts) {
-    const material = p.glow > 0
-      ? new THREE.MeshBasicMaterial({ color: 0xffffff })
-      : new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        // Bodies are a touch smoother than the world around them, so a player
-        // catches a highlight and reads as the thing that's alive on screen.
-        roughness: p.rough ?? 0.62,
-        metalness: p.metal ?? 0.04,
-      });
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      // Bodies are a touch smoother than the world around them, so a player
+      // catches a highlight and reads as the thing that's alive on screen.
+      roughness: p.rough ?? 0.62,
+      metalness: p.metal ?? 0.04,
+    });
+    if (p.glow > 0) {
+      // Lit-but-emissive, like the field's glow pools: strength honored,
+      // shading kept, hue from the body color set below.
+      material.emissive.copy(color);
+      material.emissiveIntensity = p.glow;
+    }
     if (p.double) material.side = THREE.DoubleSide;
     if (p.fixed != null) c.setHex(p.fixed);
     else c.copy(color).multiplyScalar(p.tint);
@@ -98,10 +102,11 @@ function buildBody(parts, color) {
 }
 
 class Actor {
-  constructor(scene, group, rig) {
+  constructor(scene, group, rig, terrain) {
     this.scene = scene;
     this.group = group;
     this.rig = rig || null;
+    this.terrain = terrain || null; // the tile field, for standing on hills
     this.x = 0; this.z = 0;         // current interpolated position
     this.fromX = 0; this.fromZ = 0; // where the glide started
     this.toX = 0; this.toZ = 0;     // where the server says we are
@@ -139,7 +144,10 @@ class Actor {
     const moving = this.t < 1;
     // Rigs plant their own feet; simple bodies keep the classic hop.
     const bob = moving && !this.rig ? Math.abs(Math.sin(time * 12)) * BOB_HEIGHT : 0;
-    this.group.position.set(this.x, bob, this.z);
+    // Stand on the terrain: the interpolated position samples the same
+    // heightfield the ground is displaced by, so feet track a slope mid-glide.
+    const ground = this.terrain ? this.terrain.heightAt(this.x, this.z) : 0;
+    this.group.position.set(this.x, ground + bob, this.z);
 
     // Turn the short way round toward the facing the server reported.
     let d = this.targetAngle - this.angle;
@@ -164,8 +172,9 @@ class Actor {
 }
 
 export class ActorField {
-  constructor(scene) {
+  constructor(scene, terrain) {
     this.scene = scene;
+    this.terrain = terrain || null; // the tile field, for terrain heights
     this.players = new Map();
     this.creatures = new Map();
     this.shapes = {};
@@ -241,7 +250,7 @@ export class ActorField {
       // mystery box wandering the fields
       group = buildBody(parts, color);
     }
-    return new Actor(this.scene, group, rig);
+    return new Actor(this.scene, group, rig, this.terrain);
   }
 
   /** stylePlayer reflects live state a player's body should show: the wielded

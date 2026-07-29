@@ -15,7 +15,7 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 
 const NAME_KEY = 'durstworld.name';
-const PROTOCOL = 2;
+const PROTOCOL = 3;
 
 const gate = document.getElementById('gate');
 const gameEl = document.getElementById('game');
@@ -61,7 +61,7 @@ function start(name) {
   }
 
   const field = new TileField(scene.scene);
-  const actors = new ActorField(scene.scene);
+  const actors = new ActorField(scene.scene, field);
   let ui, input, conn;
 
   let lastScene = null;
@@ -138,6 +138,7 @@ function start(name) {
     actors.sync(msg, field.palette);
     scene.applyLighting(msg.ambient, msg.light, Math.min(msg.w || 0, msg.h || 0));
     actors.setNight(msg.ambient?.night);
+    field.setNight(msg.ambient?.night);
 
     ui.setArea(msg.areaName || '', msg.flare);
     ui.setClaim(msg.claim);
@@ -160,7 +161,7 @@ function start(name) {
     if (self) {
       if (firstScene || msg.reset) {
         self.place(self.toX, self.toZ);
-        scene.follow(self.toX, self.toZ, true);
+        scene.follow(self.toX, self.toZ, field.heightAt(self.toX, self.toZ), true);
         firstScene = false;
       }
     }
@@ -191,7 +192,7 @@ function start(name) {
     field.update(time);
 
     const self = actors.self;
-    if (self) scene.follow(self.x, self.z);
+    if (self) scene.follow(self.x, self.z, field.heightAt(self.x, self.z));
     // Locked on: the camera steers to keep both fighters in frame.
     const lock = actors.lockName ? actors.players.get(actors.lockName) : null;
     scene.lockPoint = lock ? { x: lock.x, z: lock.z } : null;
