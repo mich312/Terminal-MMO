@@ -28,6 +28,16 @@ var biomeItems = map[worldgen.Biome][]string{
 // earned rather than carpeting the ground.
 const itemRate = 0.011
 
+// Forage gathers in patches rather than an even statistical sprinkle: a smooth
+// low-frequency field swings the roll from near-barren stretches to berry
+// thickets, and the patch — not the cell — picks the species, so finding one
+// mushroom means there's a ring of them here. The long empty walks between
+// patches are what make stumbling into one a moment.
+const (
+	patchSalt   uint64 = 0x9A7CB_F00D5_EED77
+	patchPeriod        = 12 // patch scale in tiles
+)
+
 const (
 	itemSalt   uint64 = 0x1726E_17E45_C0DE1
 	itemSalt2  uint64 = 0x5A1771_C0FFEE_2B0B
@@ -98,10 +108,15 @@ func itemAt(c worldgen.Cell, x, y int) (game.Item, bool) {
 	if !ok || len(ids) == 0 {
 		return game.Item{}, false
 	}
-	if hash01(x, y, itemSalt) >= itemRate {
+	// The patch field gates the roll (0.25×…2.15× the base rate; the mean sits
+	// near the old flat rate, so overall density holds) and picks the species
+	// for the whole patch.
+	patch := patch01(x, y, patchPeriod, patchSalt)
+	if hash01(x, y, itemSalt) >= itemRate*(0.25+1.9*patch) {
 		return game.Item{}, false
 	}
-	id := ids[int(hash01(x, y, itemSalt2)*float64(len(ids)))%len(ids)]
+	sp := hash01(floorDiv(x, patchPeriod), floorDiv(y, patchPeriod), itemSalt2)
+	id := ids[int(sp*float64(len(ids)))%len(ids)]
 	it, ok := game.ItemByID(id)
 	if !ok {
 		return game.Item{}, false
@@ -208,6 +223,24 @@ func hatAt(c worldgen.Cell, x, y int) (hatLoot, bool) {
 		}
 	}
 	return hatLoot{}, false
+}
+
+// patch01 is smooth [0,1) noise over a coarse lattice: hash01 at the four
+// surrounding lattice corners, bilinearly interpolated with a smoothstep fade.
+// The cheap way to a clustered field without reaching into the terrain
+// generator (and so, like hash01, independent of biome edges).
+func patch01(x, y, period int, salt uint64) float64 {
+	gx, gy := floorDiv(x, period), floorDiv(y, period)
+	fade := func(t float64) float64 { return t * t * (3 - 2*t) }
+	tx := fade(float64(x-gx*period) / float64(period))
+	ty := fade(float64(y-gy*period) / float64(period))
+	v00 := hash01(gx, gy, salt)
+	v10 := hash01(gx+1, gy, salt)
+	v01 := hash01(gx, gy+1, salt)
+	v11 := hash01(gx+1, gy+1, salt)
+	a := v00 + tx*(v10-v00)
+	b := v01 + tx*(v11-v01)
+	return a + ty*(b-a)
 }
 
 // hash01 is a deterministic [0,1) hash of (worldSeed, salt, x, y), independent

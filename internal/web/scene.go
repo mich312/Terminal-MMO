@@ -1,6 +1,7 @@
 package web
 
 import (
+	"math"
 	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
@@ -42,6 +43,7 @@ type tileWire struct {
 	prop  int
 	pcol  int
 	flags int
+	elev  int // quantized surface elevation — part of equality, so a height change resends
 }
 
 func newSceneState() *sceneState {
@@ -145,7 +147,7 @@ func (s *sceneState) Build(in sceneInput) *Scene {
 			}
 			s.tiles[key] = tw
 			sc.Tiles = append(sc.Tiles,
-				ax, ay, tw.kind, tw.tex, tw.gcol, tw.prop, tw.pcol, tw.flags)
+				ax, ay, tw.kind, tw.tex, tw.gcol, tw.prop, tw.pcol, tw.flags, tw.elev)
 			if t.Kind == game.TilePortal && t.Label != "" {
 				sc.Labels = append(sc.Labels, Label{X: ax, Y: ay, Text: t.Label, Kind: "portal"})
 			}
@@ -306,6 +308,12 @@ func (s *sceneState) encode(t game.Tile) tileWire {
 	if propHex == "" {
 		propHex = t.Color
 	}
+	elev := int(math.Round(t.Elev * 255))
+	if elev < 0 {
+		elev = 0
+	} else if elev > 255 {
+		elev = 255
+	}
 	return tileWire{
 		kind:  int(t.Kind),
 		tex:   int(t.Tex),
@@ -313,6 +321,7 @@ func (s *sceneState) encode(t game.Tile) tileWire {
 		prop:  int(t.Prop),
 		pcol:  s.color(propHex),
 		flags: flags,
+		elev:  elev,
 	}
 }
 

@@ -165,6 +165,10 @@ type Tile struct {
 	Ground   string    // HD ground base color (hex); falls back to Color if empty
 	Prop     TileProp  // HD decoration sprite drawn over the ground
 	PropHex  string    // HD prop color (hex); falls back to Color if empty
+	// Elev is the tile's surface elevation (0 water bed … 1 peak), used by the
+	// 3D browser client to raise real terrain. The glyph and HD renderers
+	// ignore it, and hand-built areas leave it zero (flat ground).
+	Elev float64
 }
 
 // TileAnim makes a tile come alive: its glyph cycles through Frames and its

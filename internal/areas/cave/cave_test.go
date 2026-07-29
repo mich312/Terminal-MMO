@@ -24,7 +24,7 @@ func TestGenCaveConnected(t *testing.T) {
 	}
 	for _, overDoors := range layouts {
 		for seed := int64(0); seed < 25; seed++ {
-			m, doors, _, w, h := genCaveFromWilds(gen, overDoors, rand.New(rand.NewSource(seed)))
+			m, doors, _, _, _, w, h := genCaveFromWilds(gen, overDoors, rand.New(rand.NewSource(seed)))
 			if len(doors) != len(overDoors) {
 				t.Fatalf("%d mouths in, %d out", len(overDoors), len(doors))
 			}
@@ -56,7 +56,7 @@ func TestGenCaveConnected(t *testing.T) {
 }
 
 // A real 3-mouth cave system under the fixed overworld seed (origin first).
-var multiCave = [][2]int{{-484, 28}, {-517, 40}, {-505, 45}}
+var multiCave = [][2]int{{-32, -741}, {-20, -755}, {-32, -724}}
 
 // TestLanternFuel checks the lantern burns down as you walk the dark and its
 // light shrinks with it, that it never falls below the guttering floor, and that
@@ -68,13 +68,28 @@ func TestLanternFuel(t *testing.T) {
 	if a.fuel != fuelMax || a.lanternRadius() != lanternR {
 		t.Fatalf("fresh lantern should be full: fuel=%d radius=%d", a.fuel, a.lanternRadius())
 	}
-	step := func(c rune) { a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{c}}) }
-
-	// Drain it hard, far from any glow, and check it shrinks but holds the floor.
+	// Drain it hard, far from any glow, and check it shrinks but holds the
+	// floor. The vestibule now guarantees daylight beside every mouth, so the
+	// drain has to happen away from the entrance: park on a glow-free floor
+	// cell and burn there.
+	found := false
+	for y := 0; y < a.h && !found; y++ {
+		for x := 0; x < a.w && !found; x++ {
+			if !a.Map.At(x, y).Walkable {
+				continue
+			}
+			a.X, a.Y = x, y
+			if !a.nearGlow() {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Skip("no glow-free floor in this cave to test draining")
+	}
 	a.fuel = fuelBurn // pretend we're almost dry
 	for i := 0; i < 30; i++ {
-		step('d')
-		step('a') // pace in place-ish; some steps hit walls, all try to move
+		a.burnLantern()
 	}
 	if a.lanternRadius() < lanternLo {
 		t.Fatalf("lantern shrank past its floor: radius=%d < %d", a.lanternRadius(), lanternLo)
@@ -85,7 +100,7 @@ func TestLanternFuel(t *testing.T) {
 
 	// Park on a glow source and confirm the oil climbs back.
 	var glow [2]int
-	found := false
+	found = false
 	for y := 0; y < a.h && !found; y++ {
 		for x := 0; x < a.w && !found; x++ {
 			if isGlow(a.Map.At(x, y).Prop) {

@@ -20,7 +20,9 @@ package web
 // recognize, so a stale cached page fails loudly instead of rendering nonsense.
 // v2: swordplay — combat FX on the scene, guard state on actors, the held-
 // weapon vocabulary in the hello, and the face/dodge/guard client commands.
-const ProtocolVersion = 2
+// v3: terrain elevation — a ninth per-tile field carrying the surface height,
+// so the browser raises real rolling ground.
+const ProtocolVersion = 3
 
 // Message types, server → client.
 const (
@@ -114,7 +116,7 @@ type Scene struct {
 }
 
 // TileStride is how many ints EncodeTile writes per tile.
-const TileStride = 8
+const TileStride = 9
 
 // Tile field offsets within a stride, mirrored by the client's decoder.
 const (
@@ -126,6 +128,7 @@ const (
 	TileProp
 	TilePropColor // palette index
 	TileFlags
+	TileElev // surface elevation, quantized 0…255 (0.0…1.0)
 )
 
 // Tile flag bits.

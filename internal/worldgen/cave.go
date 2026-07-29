@@ -16,6 +16,8 @@ const (
 	caveHubKeep = 140              // keep caves out of the spawn hub
 	caveDoorMin = 16.0             // a secondary mouth's nearest distance from the origin
 	caveDoorMax = 44.0             // …and its farthest (well under caveCell)
+	caveSeekR   = 22               // how far the origin hunts for genuine high hill
+	caveApronR  = 2                // the cleared talus apron forced around a mouth
 )
 
 // CaveSystem is one cave's surface footprint: the origin mouth that names it and
@@ -50,8 +52,14 @@ func (g *Generator) computeCaveSystem(mx, my int) CaveSystem {
 	if abs(ox) < caveHubKeep && abs(oy) < caveHubKeep {
 		return s // keep the spawn hub clear
 	}
-	if !g.caveHill(ox, oy) {
-		return s // the origin must sit in the high hills, near the peaks
+	// The hashed point rarely lands in the narrow high-hill band, and rejecting
+	// those rolls outright made caves ~20× rarer than caveRate intends — the
+	// underground was effectively unshipped. Instead, hunt outward in growing
+	// rings for the nearest genuine high hill, the way artifacts already seek
+	// standable ground; only a macro-cell with no highland at all goes caveless.
+	ox, oy, ok := g.seekCaveHill(ox, oy)
+	if !ok {
+		return s
 	}
 	s.Origin = [2]int{ox, oy}
 	s.Doors = [][2]int{{ox, oy}}
@@ -79,6 +87,30 @@ func (g *Generator) computeCaveSystem(mx, my int) CaveSystem {
 func (g *Generator) caveHill(x, y int) bool {
 	elev, _, _, _ := g.climate(x, y)
 	return elev >= 0.70 && elev < 0.84
+}
+
+// seekCaveHill walks outward from (x,y) in growing rings looking for the
+// nearest genuine high hill to host a cave origin, staying clear of the hub.
+// ok is false when no highland exists within caveSeekR — a genuinely flat
+// macro-cell keeps no cave.
+func (g *Generator) seekCaveHill(x, y int) (int, int, bool) {
+	for r := 0; r <= caveSeekR; r += 2 { // stride-2 rings: cheap, and the apron forgives it
+		for dy := -r; dy <= r; dy += 2 {
+			for dx := -r; dx <= r; dx += 2 {
+				if abs(dx) != r && abs(dy) != r {
+					continue // ring perimeter only
+				}
+				cx, cy := x+dx, y+dy
+				if abs(cx) < caveHubKeep && abs(cy) < caveHubKeep {
+					continue
+				}
+				if g.caveHill(cx, cy) {
+					return cx, cy, true
+				}
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 // caveLand reports whether a cell is walkable land a secondary mouth may open
@@ -132,6 +164,44 @@ func (g *Generator) caveMouthCell(x, y int) (Cell, bool) {
 			Walkable: true, Object: true, Portal: "cave"}, true
 	}
 	return Cell{}, false
+}
+
+// caveApronCell stages the ground around a mouth: a cleared talus apron so an
+// entrance is never walled in by crags, boulders or peaks, framed by two
+// flanking crags at its shoulders and a scatter of fallen rock — the visual
+// grammar of a passage cut into the mountainside, and a guaranteed approach.
+func (g *Generator) caveApronCell(x, y int) (Cell, bool) {
+	m, ok := g.nearMouth(x, y)
+	if !ok {
+		return Cell{}, false
+	}
+	dx, dy := x-m[0], y-m[1]
+	if dy == -1 && (dx == -2 || dx == 2) { // the mouth's shoulder crags
+		return Cell{Biome: Hill, Glyph: 'Δ', Color: "#8C8475"}, true
+	}
+	if g.prop(x, y) < 0.10 { // talus underfoot (walkable)
+		return Cell{Biome: Hill, Glyph: '°', Color: "#9AA0A8", Walkable: true}, true
+	}
+	return Cell{Biome: Hill, Glyph: '·', Color: "#9C8D67", Walkable: true}, true
+}
+
+// nearMouth finds a cave mouth within the apron radius of (x,y), if any.
+func (g *Generator) nearMouth(x, y int) ([2]int, bool) {
+	mx, my := floorDiv(x, caveCell), floorDiv(y, caveCell)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			s := g.caveSystemFor(mx+dx, my+dy)
+			if !s.valid {
+				continue
+			}
+			for _, d := range s.Doors {
+				if abs(d[0]-x) <= caveApronR && abs(d[1]-y) <= caveApronR {
+					return d, true
+				}
+			}
+		}
+	}
+	return [2]int{}, false
 }
 
 func hasCell(cs [][2]int, c [2]int) bool {

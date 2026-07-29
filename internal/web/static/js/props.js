@@ -18,12 +18,15 @@
 import * as THREE from 'three';
 
 /* Fixed colors for the few materials that aren't the prop's own: wood is wood
-   whatever grows on it. */
-const WOOD = 0x6b4b32;
+   whatever grows on it. WOOD matches the canonical trunk #6B4A2B from the
+   tileset (this file once carried a typo'd near-miss, 0x6b4b32 — same tree,
+   two woods). */
+const WOOD = 0x6b4a2b;
 const DARKWOOD = 0x4a3423;
 const STONE = 0x8a8f96;
 const THATCH = 0x9c7c4a;
 const GLASS = 0xffd9a0;
+const ACCENT = 0x7df0ff; // palette.Accent2 — the "this is a find" cue
 
 /** part wraps a geometry with how it should be colored and lit. */
 function part(geom, opts = {}) {
@@ -33,6 +36,7 @@ function part(geom, opts = {}) {
     fixed: opts.fixed ?? null,   // an absolute color, ignoring the prop's
     glow: opts.glow ?? 0,        // emissive strength
     sway: opts.sway ?? 0,        // how much wind moves this part
+    bob: opts.bob ?? false,      // hover-and-bob (pickups)
     rough: opts.rough,           // PBR roughness; undefined takes the default
     metal: opts.metal,           // PBR metalness
     // Draw this part from both sides. Nothing needs it today — foliage solves
@@ -41,6 +45,14 @@ function part(geom, opts = {}) {
     // blades). Kept for a part that genuinely wants it.
     double: opts.double ?? false,
   };
+}
+
+/** vhash gives a builder a stable stream of [0,1) values for one variant, so
+ *  variant 2 of a conifer is the same conifer everywhere, forever. */
+function vhash(v, salt) {
+  let h = Math.imul(v + 1, 668265263) ^ Math.imul(salt | 0, 374761393);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 /* Geometry helpers. Each returns geometry already positioned relative to the
@@ -172,42 +184,101 @@ function mergeSame(geoms) {
 /* ---------- the builders ---------- */
 
 const builders = {
-  tree(s) {
+  tree(s, v = 0) {
     const h = s.h;
     switch (s.style) {
       case 'conifer': {
-        const parts = [part(cyl(0.06, 0.09, h * 0.35, 6), { fixed: DARKWOOD })];
-        // Three stacked cones, each smaller — a fir silhouette.
-        for (let i = 0; i < 3; i++) {
-          const t = i / 3;
-          parts.push(part(
-            cone(0.42 * (1 - t * 0.45), h * 0.4, 7, 0, h * (0.25 + t * 0.25), 0),
-            { tint: 1 - i * 0.1, sway: s.sway }));
+        // A tapering trunk with a root flare, then five stacked cones — each
+        // turned and nudged off-axis by the variant, with a thin spike on top,
+        // so the silhouette is a fir rather than a stack of party hats.
+        const parts = [part(cyl(0.05, 0.11, h * 0.4, 6), { fixed: DARKWOOD })];
+        const tiers = 5;
+        for (let i = 0; i < tiers; i++) {
+          const t = i / tiers;
+          const r = 0.46 * (1 - t * 0.62) * (0.9 + vhash(v, i) * 0.2);
+          const g = cone(r, h * 0.30, 7, (vhash(v, i + 8) - 0.5) * 0.08,
+            h * (0.16 + t * 0.15), (vhash(v, i + 16) - 0.5) * 0.08);
+          g.rotateY(vhash(v, i + 24) * Math.PI);
+          parts.push(part(g, { tint: 1 - i * 0.06, sway: s.sway }));
         }
+        parts.push(part(cone(0.09, h * 0.22, 5, 0, h * 0.9, 0),
+          { tint: 0.78, sway: s.sway * 1.2 }));
         return parts;
       }
       case 'palm': {
-        const trunk = cyl(0.07, 0.11, h * 0.8, 6);
-        trunk.rotateZ(0.12); // palms lean
+        // A leaning trunk under a burst of drooping fronds (mirrored quads
+        // with up-normals, like blades) and a coconut cluster. The old single
+        // sphere read as a lollipop, not a palm.
+        const lean = 0.10 + vhash(v, 1) * 0.08;
+        const trunk = cyl(0.06, 0.11, h * 0.8, 6);
+        trunk.rotateZ(lean);
+        const top = { x: -Math.sin(lean) * h * 0.75, y: h * 0.76 };
+        const parts = [part(trunk, { fixed: WOOD })];
+        const fronds = [];
+        const n = 7;
+        for (let i = 0; i < n; i++) {
+          for (const flip of [0, Math.PI]) {
+            const f = new THREE.PlaneGeometry(0.22, 1.15, 1, 3);
+            // Droop: bend the frond down along its length.
+            const pos = f.attributes.position;
+            for (let k = 0; k < pos.count; k++) {
+              const yy = pos.getY(k) + 0.575; // 0 at base … 1.15 at tip
+              pos.setZ(k, pos.getZ(k) + yy * yy * 0.35); // tips curl down after the tilt
+            }
+            f.rotateX(Math.PI / 2 - 0.5); // splay outward and down
+            f.rotateY((i / n) * Math.PI * 2 + vhash(v, i) * 0.5 + flip);
+            f.translate(top.x, top.y, 0);
+            fronds.push(f);
+          }
+        }
+        const merged = mergeSame(fronds);
+        const normals = merged.attributes.normal;
+        for (let k = 0; k < normals.count; k++) normals.setXYZ(k, 0, 1, 0);
+        normals.needsUpdate = true;
+        parts.push(part(merged, { sway: s.sway * 1.4 }));
+        parts.push(part(sphere(0.09, top.x, top.y - 0.12, 0, 6, 4), { fixed: WOOD }));
+        parts.push(part(sphere(0.08, top.x + 0.1, top.y - 0.1, 0.06, 6, 4), { fixed: DARKWOOD }));
+        return parts;
+      }
+      case 'acacia': {
+        // A forked trunk under layered, offset canopy discs — the fork and
+        // the flat top are the acacia's whole read.
+        const t1 = cyl(0.07, 0.12, h * 0.58, 6);
+        t1.rotateZ(0.16);
+        const t2 = cyl(0.06, 0.09, h * 0.5, 6);
+        t2.rotateZ(-0.22);
+        t2.translate(0.1, h * 0.08, 0.04);
         return [
-          part(trunk, { fixed: WOOD }),
-          part(sphere(0.5, 0.1, h * 0.72, 0, 7, 4), { sway: s.sway * 1.4 }),
+          part(t1, { fixed: WOOD }),
+          part(t2, { fixed: WOOD }),
+          part(cyl(0.74, 0.52, h * 0.13, 9, -0.06, h * 0.58, 0), { sway: s.sway }),
+          part(cyl(0.5, 0.36, h * 0.10, 8, 0.22 + vhash(v, 2) * 0.1, h * 0.68, 0.1),
+            { tint: 1.12, sway: s.sway * 1.2 }),
         ];
       }
-      case 'acacia':
-        return [
-          part(cyl(0.08, 0.13, h * 0.62, 6), { fixed: WOOD }),
-          // The flat-topped umbrella canopy that makes a savanna read as savanna.
-          part(cyl(0.72, 0.5, h * 0.16, 9, 0, h * 0.6, 0), { sway: s.sway }),
-        ];
       case 'stump':
         return [part(cyl(0.22, 0.26, h, 7), { fixed: WOOD })];
-      default:
-        return [
-          part(cyl(0.08, 0.12, h * 0.55, 6), { fixed: WOOD }),
-          part(blob(0.46, 0, h * 0.5, 0, 1), { sway: s.sway }),
-          part(blob(0.3, 0.12, h * 0.72, 0.08, 0), { tint: 1.12, sway: s.sway * 1.3 }),
+      default: {
+        // A broadleaf: tapered trunk with a root flare, and a crown of three
+        // to four lumpy lobes on a variant-hashed ring — leaf mass with a
+        // silhouette, not one ball on a stick.
+        const parts = [
+          part(cyl(0.07, 0.13, h * 0.55, 6), { fixed: WOOD }),
+          part(cyl(0.16, 0.2, h * 0.06, 6), { fixed: DARKWOOD }),
         ];
+        const lobes = 3 + (v % 2);
+        for (let i = 0; i < lobes; i++) {
+          const a = (i / lobes) * Math.PI * 2 + vhash(v, i) * 1.2;
+          const rr = 0.14 + vhash(v, i + 8) * 0.12;
+          parts.push(part(
+            blob(0.30 + vhash(v, i + 16) * 0.10,
+              Math.cos(a) * rr, h * (0.46 + vhash(v, i + 24) * 0.18), Math.sin(a) * rr,
+              i % 2),
+            { tint: 1 + (i - lobes / 2) * 0.07, sway: s.sway * (1 + i * 0.12) }));
+        }
+        parts.push(part(blob(0.24, 0, h * 0.72, 0, 0), { tint: 1.14, sway: s.sway * 1.3 }));
+        return parts;
+      }
     }
   },
 
@@ -238,14 +309,40 @@ const builders = {
     }
   },
 
-  rock(s) {
+  rock(s, v = 0) {
     switch (s.style) {
-      case 'spire':
-        return [part(cone(s.w * 0.45, s.h, 6), { tint: 0.95 })];
-      case 'column':
-        return [part(cyl(s.w * 0.35, s.w * 0.45, s.h, 7), { tint: 0.9 })];
+      case 'spire': {
+        // A cluster of three sheared prisms at differing tilts and heights —
+        // hard rock with a ridgeline, where one cone read as a tent. This is
+        // also what mountain peaks wear, so it earns its silhouette.
+        const parts = [];
+        const spikes = [[0, 0, 1], [-0.22, 0.1, 0.62], [0.2, -0.14, 0.5]];
+        for (let i = 0; i < spikes.length; i++) {
+          const [sx, sz, sh] = spikes[i];
+          const g = cone(s.w * (0.3 - i * 0.05), s.h * sh, 5, sx, 0, sz);
+          g.rotateY(vhash(v, i) * Math.PI);
+          const tilt = 0.08 + vhash(v, i + 8) * 0.14;
+          if (i === 1) g.rotateZ(tilt);
+          if (i === 2) g.rotateX(-tilt);
+          parts.push(part(g, { tint: 0.95 + i * 0.06 }));
+        }
+        return parts;
+      }
+      case 'column': {
+        // A speleothem column: a drip-waisted stack, not a plain cylinder.
+        return [
+          part(cyl(s.w * 0.4, s.w * 0.5, s.h * 0.22, 8), { tint: 0.85 }),
+          part(cyl(s.w * 0.22, s.w * 0.34, s.h * 0.56, 8, 0, s.h * 0.22), { tint: 0.92 }),
+          part(cyl(s.w * 0.38, s.w * 0.24, s.h * 0.22, 8, 0, s.h * 0.78), { tint: 0.85 }),
+        ];
+      }
       case 'flowstone':
-        return [part(cone(s.w * 0.5, s.h, 7), { tint: 1.05 })];
+        // Overlapping drips draping a face, rather than one cone.
+        return [
+          part(cone(s.w * 0.4, s.h, 7, -0.1, 0, 0.05), { tint: 1.05 }),
+          part(cone(s.w * 0.3, s.h * 0.72, 6, 0.14, 0, -0.08), { tint: 1.12 }),
+          part(cone(s.w * 0.22, s.h * 0.5, 5, 0.02, 0, 0.16), { tint: 0.98 }),
+        ];
       case 'rubble':
         return [
           part(blob(s.h * 0.6, -0.15, 0, 0.1), { tint: 0.95 }),
@@ -478,18 +575,45 @@ const builders = {
   },
 
   item(s) {
+    // Every pickup gets the same ground grammar: a soft dark contact disc
+    // (the "something hovers here" anchor that survives any biome color) and
+    // a thin accent ring in the palette's find-cyan — readable at full zoom
+    // where the trinket itself is four pixels. The trinket bobs above it.
+    const ground = [
+      part(new THREE.CylinderGeometry(0.2, 0.2, 0.012, 14).translate(0, 0.012, 0),
+        { fixed: 0x0a0d12 }),
+      part(new THREE.TorusGeometry(0.24, 0.016, 6, 20).rotateX(Math.PI / 2)
+        .translate(0, 0.03, 0), { fixed: ACCENT, glow: 0.5 }),
+    ];
     if (s.style === 'hat') {
       return [
-        part(cyl(0.24, 0.26, 0.05, 10, 0, 0.02), { tint: 1 }),
-        part(cyl(0.13, 0.15, s.h, 10, 0, 0.07), { tint: 1.2, glow: s.glow }),
+        ...ground,
+        part(cyl(0.24, 0.26, 0.05, 10, 0, 0.14), { tint: 1, bob: true }),
+        part(cyl(0.13, 0.15, s.h, 10, 0, 0.19), { tint: 1.2, glow: s.glow, bob: true }),
+        part(cyl(0.155, 0.165, 0.05, 10, 0, 0.2), { tint: 0.6, bob: true }),
       ];
     }
     if (s.style === 'fish') {
-      return [part(new THREE.OctahedronGeometry(s.h).scale(1.6, 0.7, 0.5)
-        .translate(0, s.h * 0.6, 0), { tint: 1 })];
+      return [
+        ...ground,
+        part(new THREE.OctahedronGeometry(s.h).scale(1.6, 0.7, 0.5)
+          .translate(0, s.h * 0.9, 0), { tint: 1, bob: true }),
+        // The tail fin: two triangles that make a fish a fish.
+        part(new THREE.ConeGeometry(s.h * 0.45, s.h * 0.7, 3)
+          .rotateZ(Math.PI / 2).translate(-s.h * 1.7, s.h * 0.9, 0),
+          { tint: 0.85, bob: true }),
+      ];
     }
-    return [part(new THREE.OctahedronGeometry(s.h * 0.7).translate(0, s.h * 0.7, 0),
-      { tint: 1.2, glow: s.glow })];
+    // A gem is a brilliant cut, not a lump: a faceted crown over a pavilion
+    // cone, flat-shaded so the facets glint as it bobs.
+    const r = s.h * 0.5;
+    return [
+      ...ground,
+      part(new THREE.CylinderGeometry(r * 0.55, r * 0.95, s.h * 0.35, 8)
+        .translate(0, s.h * 0.95, 0), { tint: 1.25, glow: s.glow, bob: true }),
+      part(new THREE.ConeGeometry(r * 0.95, s.h * 0.6, 8).rotateX(Math.PI)
+        .translate(0, s.h * 0.48, 0), { tint: 1.05, glow: s.glow, bob: true }),
+    ];
   },
 
   creature(s) {
@@ -554,18 +678,22 @@ function fallback() {
 
 const cache = new Map();
 
-/** partsFor returns (and caches) the geometry parts for a shape key. */
-export function partsFor(key, shape) {
-  if (cache.has(key)) return cache.get(key);
+/** partsFor returns (and caches) the geometry parts for a shape key and
+ *  variant. Variants give grown things (trees, rocks) a few genuinely
+ *  different silhouettes per species — a forest of one mesh, spun, still
+ *  reads as one mesh. */
+export function partsFor(key, shape, variant = 0) {
+  const ck = key + '#' + variant;
+  if (cache.has(ck)) return cache.get(ck);
   const build = builders[shape.build];
   let parts;
   try {
-    parts = build ? build(shape) : fallback();
+    parts = build ? build(shape, variant) : fallback();
   } catch (err) {
     console.warn('durstworld: could not build shape', key, err);
     parts = fallback();
   }
   if (!parts || !parts.length) parts = fallback();
-  cache.set(key, parts);
+  cache.set(ck, parts);
   return parts;
 }
