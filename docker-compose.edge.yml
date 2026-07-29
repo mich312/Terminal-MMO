@@ -1,0 +1,19 @@
+# Front the browser client at https://mmo.mich312.com via the shared edge proxy,
+# which terminates TLS and passes the /ws WebSocket upgrade through transparently.
+# The SSH world (2222) is NOT proxied — it stays a direct host port. Layer on top
+# of the base compose:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.edge.yml up -d --build
+#
+# Joins the `mmo` service to the external `edge` network so the proxy can reach
+# it by name (port 8080). The base compose stays standalone for local dev. The
+# `edge` network is owned by the edge stack; create it (or start edge) first.
+services:
+  mmo:
+    networks:
+      - default
+      - edge
+
+networks:
+  edge:
+    external: true
