@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,9 +55,11 @@ type area struct {
 	game.Walker
 	w, h           int               // this cave's size (the bbox of its mouths, padded)
 	caveKey        string            // this cave's id (its origin mouth), for persistence
+	caveName       string            // the mood's name for this cave ("an ice cave", …)
 	overworldDoors [][2]int          // each surface mouth's overworld cell
 	interiorDoors  [][2]int          // …and the matching mouth inside the cave (parallel)
 	nodes          map[[2]int]string // gatherable position → item id
+	floors         map[[2]int]game.Tile // the dressed floor under each node, for restore on gather
 	mined          map[[2]int]bool   // worked out this visit
 	discovered     map[[2]int]uint64 // uncovered fog chunks (chunk coord → 64-cell mask)
 	dirty          map[[2]int]bool   // chunks changed since the last flush
@@ -69,7 +72,12 @@ type area struct {
 	toastUntil     time.Time
 }
 
-func (a *area) Name() string { return "a cave" }
+func (a *area) Name() string {
+	if a.caveName != "" {
+		return a.caveName // the mood names the cave: "an ice cave", "a glowspore cavern", …
+	}
+	return "a cave"
+}
 
 // Init carves the cavern. The cave mouth the player stepped through (carried on
 // the player at transition time) resolves to a cave system — its origin and its
@@ -89,7 +97,7 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	a.caveKey = fmt.Sprintf("%d,%d", sys.Origin[0], sys.Origin[1])
 	ox, oy := sys.Origin[0], sys.Origin[1]
 	seed := int64(uint64(uint32(ox))*0x9E3779B1 ^ uint64(uint32(oy))*0x85EBCA77 ^ 0x0CA7E)
-	a.Map, a.interiorDoors, a.nodes, a.w, a.h = genCaveFromWilds(gen, sys.Doors, rand.New(rand.NewSource(seed)))
+	a.Map, a.interiorDoors, a.nodes, a.floors, a.caveName, a.w, a.h = genCaveFromWilds(gen, sys.Doors, rand.New(rand.NewSource(seed)))
 	a.mined = map[[2]int]bool{}
 	a.fuel = fuelMax // a freshly-trimmed lantern each descent
 	a.discovered = a.Ctx.Store.LoadCaveDiscovery(a.Ctx.Name, a.caveKey)
@@ -277,7 +285,14 @@ func isForage(item string) bool {
 // the spot becomes plain cave floor, and a toast confirms the haul.
 func (a *area) gather(pos [2]int, item string) {
 	a.mined[pos] = true
-	a.Map.Tiles[pos[1]][pos[0]] = caveFloor
+	// Restore the dressed floor that was under the node — shaded, mood-tinted
+	// stone — not the raw caveFloor constant, which left flat grey holes in a
+	// moss-green or ochre cave.
+	if t, ok := a.floors[pos]; ok {
+		a.Map.Tiles[pos[1]][pos[0]] = t
+	} else {
+		a.Map.Tiles[pos[1]][pos[0]] = caveFloor
+	}
 	yield := 1
 	if a.Ctx.ForagerBoon() { // a gatherer's wearable draws a richer haul
 		yield = 2
@@ -342,12 +357,41 @@ func (a *area) Hint() string {
 		return "e — " + verb + " the " + name
 	}
 	if a.fuel <= fuelLow {
-		return "🕯 your lantern is guttering — rest beside the glow (mushrooms, pools, daylight) to rekindle it"
+		return "🕯 your lantern is guttering — " + a.mouthBearing() + " · rest beside the glow to rekindle it"
 	}
 	if h := a.PortalHint(); h != "" {
 		return h
 	}
 	return "🕯 a cave — follow the glow into the dark · ∩ return to the mouth to leave"
+}
+
+// mouthBearing names the compass direction and rough distance to the nearest
+// mouth, so a guttering lantern comes with a way out instead of blind panic.
+func (a *area) mouthBearing() string {
+	best, bestD := a.interiorDoors[0], 1<<30
+	for _, d := range a.interiorDoors {
+		if dd := abs(d[0]-a.X) + abs(d[1]-a.Y); dd < bestD {
+			best, bestD = d, dd
+		}
+	}
+	dx, dy := best[0]-a.X, best[1]-a.Y
+	dir := ""
+	switch {
+	case dy < -2:
+		dir = "N"
+	case dy > 2:
+		dir = "S"
+	}
+	switch {
+	case dx > 2:
+		dir += "E"
+	case dx < -2:
+		dir += "W"
+	}
+	if dir == "" {
+		return "the mouth is here"
+	}
+	return fmt.Sprintf("the mouth lies %s, ~%d paces", dir, bestD)
 }
 
 // lanternRadius is how far the light currently throws — full at a brimming
@@ -459,7 +503,11 @@ func (a *area) window(vw, vh int) (*game.TileMap, int, int) {
 			if wx, wy := ox+lx, oy+ly; a.seen(wx, wy) {
 				row[lx] = a.Map.At(wx, wy)
 			} else {
-				row[lx] = caveFog()
+				// The dark keeps the floor's shape (like the Wilds' fog), so
+				// the 3D relief doesn't jump at the lantern's edge.
+				f := caveFog()
+				f.Elev = a.Map.At(wx, wy).Elev
+				row[lx] = f
 			}
 		}
 		tiles[ly] = row
@@ -645,26 +693,44 @@ var nb4 = [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 // cavePalette is a cave's colour mood — a rock hue and the colours its life and
 // crystal glow — taken from the land overhead so no two stretches of cave look
 // quite alike: ice under the cold heights, moss under wet woods, ochre under
-// warm dry country, cool slate under temperate hills.
+// warm dry country, and one of three slates under temperate hills. The mood
+// also bends the cave's structure (how gladly it opens chasms, how thickly its
+// life glows) and names the cave, so a haul and a memory both say where you
+// were.
 type cavePalette struct {
+	name     string         // what the HUD calls this cave
 	rock     colorful.Color // hue the rock (walls, floor, stone) is shifted toward
 	glow     string         // bioluminescence: mushrooms and pools
 	crystal  string         // crystal seams and the geode core
 	material string         // the signature thing its glowing life is gathered as
-	slate    bool           // the default mood — leave the rock as authored
+	chasmDiv int            // chasm density divisor — smaller is more chasms
+	glowDiv  int            // glow-cluster density divisor — smaller is more life
 }
 
-func paletteFor(temp, moist float64) cavePalette {
+func paletteFor(temp, moist, variant float64) cavePalette {
 	switch {
-	case temp < 0.34: // cold heights: blue ice and frost
-		return cavePalette{rock: mustHex("#3B4A6B"), glow: "#8FE0FF", crystal: "#CFEEFF", material: "crystal"}
-	case moist > 0.60: // wet woods: green moss and glowspore
-		return cavePalette{rock: mustHex("#36482F"), glow: "#8BF29C", crystal: "#7DF0C6", material: "spore"}
+	case temp < 0.34: // cold heights: blue ice and frost — harsh, sparse life, split floors
+		return cavePalette{name: "an ice cave", rock: mustHex("#3B4A6B"),
+			glow: "#8FE0FF", crystal: "#CFEEFF", material: "crystal", chasmDiv: 45, glowDiv: 140}
+	case moist > 0.60: // wet woods: green moss and glowspore — a lush resting cave
+		return cavePalette{name: "a glowspore cavern", rock: mustHex("#36482F"),
+			glow: "#8BF29C", crystal: "#7DF0C6", material: "spore", chasmDiv: 140, glowDiv: 50}
 	case temp > 0.60 && moist < 0.42: // warm dry country: ochre sandstone and amber
-		return cavePalette{rock: mustHex("#54422C"), glow: "#FFC871", crystal: "#FFE3A0", material: "amber"}
-	default: // temperate hills: cool slate (as authored)
-		return cavePalette{glow: "#7CF2C4", crystal: "#7DF0FF", material: "mushroom", slate: true}
+		return cavePalette{name: "an amber cave", rock: mustHex("#54422C"),
+			glow: "#FFC871", crystal: "#FFE3A0", material: "amber", chasmDiv: 90, glowDiv: 90}
 	}
+	// Temperate hills: the commonest case once got no treatment at all, which
+	// is why most caves looked identical. Three close-but-distinct slates now
+	// split it, picked per cave.
+	slates := []cavePalette{
+		{name: "a slate cavern", rock: mustHex("#4A4458")},
+		{name: "a bluestone cavern", rock: mustHex("#3E4756")},
+		{name: "a greenstone cavern", rock: mustHex("#414F49")},
+	}
+	pal := slates[int(variant*float64(len(slates)))%len(slates)]
+	pal.glow, pal.crystal, pal.material = "#7CF2C4", "#7DF0FF", "mushroom"
+	pal.chasmDiv, pal.glowDiv = 90, 90
+	return pal
 }
 
 // moodTint shifts a colour toward the palette's hue and chroma while keeping its
@@ -685,9 +751,6 @@ func moodTint(hex string, mood colorful.Color, amt float64) string {
 // the mood hue; the living glow and crystal take the palette's colours; daylight
 // shafts, relics and timber keep their own.
 func (c *carver) recolour(tiles [][]game.Tile, pal cavePalette) {
-	if pal.slate {
-		return
-	}
 	for y := range tiles {
 		for x := range tiles[y] {
 			t := &tiles[y][x]
@@ -724,28 +787,121 @@ var (
 	crystalSeam = seam{"crystal", game.Tile{Kind: game.TileObject, Ch: '◆', Walkable: true, Color: "#7DF0FF", Tex: game.TexRock, Ground: "#6A6270", Prop: game.PropGemGlow, PropHex: "#7DF0FF"}}
 )
 
-// seamFor picks a mineral seam for a rock face by the height of the land above:
-// under the peaks the rock runs to gold and glittering crystal, while the lower
-// hills give up mostly plain stone.
-func seamFor(surf float64, rng *rand.Rand) seam {
+// seamAt picks a mineral seam for a rock face by how deep into the cave it
+// lies — near the mouths the rock gives up plain stone, the mid-cave runs to
+// gold, and the deep glitters. Depth is something the player can feel and
+// learn (the old key, the height of the land overhead, was invisible from
+// underground); the peaks still add their bonus tier on top.
+func (c *carver) seamAt(p [2]int, rng *rand.Rand) seam {
+	tier := c.tierAt(p)
+	if c.surf[p[1]][p[0]] >= caveDeepElev && tier < 2 {
+		tier++ // under the mountains the veins run one tier richer
+	}
 	r := rng.Float64()
-	if surf >= caveDeepElev { // under the mountains — the precious veins
-		switch {
-		case r < 0.34:
-			return crystalSeam
-		case r < 0.66:
-			return goldSeam
-		default:
+	switch tier {
+	case 0:
+		if r < 0.92 {
 			return stoneSeam
 		}
-	}
-	switch {
-	case r < 0.80:
-		return stoneSeam
-	case r < 0.93:
 		return goldSeam
+	case 1:
+		switch {
+		case r < 0.60:
+			return stoneSeam
+		case r < 0.88:
+			return goldSeam
+		default:
+			return crystalSeam
+		}
 	default:
-		return crystalSeam
+		switch {
+		case r < 0.25:
+			return stoneSeam
+		case r < 0.60:
+			return goldSeam
+		default:
+			return crystalSeam
+		}
+	}
+}
+
+// tierAt is a cell's depth tier: 0 by the mouths, 1 in the mid-cave, 2 in the
+// deep. The thresholds scale with the cave, so a small cave still has a deep.
+func (c *carver) tierAt(p [2]int) int {
+	d := c.depth[p[1]][p[0]]
+	switch {
+	case d < 0 || d < c.d1:
+		return 0
+	case d < c.d2:
+		return 1
+	}
+	return 2
+}
+
+// computeDepth is a multi-source BFS from every mouth across the open floor —
+// the "how far in am I" field the reward tiers key off.
+func (c *carver) computeDepth(doors [][2]int) {
+	c.depth = make([][]int, c.h)
+	for y := range c.depth {
+		c.depth[y] = make([]int, c.w)
+		for x := range c.depth[y] {
+			c.depth[y][x] = -1
+		}
+	}
+	var q [][2]int
+	for _, d := range doors {
+		if !c.wall[d[1]][d[0]] {
+			c.depth[d[1]][d[0]] = 0
+			q = append(q, d)
+		}
+	}
+	for len(q) > 0 {
+		p := q[0]
+		q = q[1:]
+		for _, d := range nb4 {
+			nx, ny := p[0]+d[0], p[1]+d[1]
+			if nx >= 0 && ny >= 0 && nx < c.w && ny < c.h && !c.wall[ny][nx] && c.depth[ny][nx] < 0 {
+				c.depth[ny][nx] = c.depth[p[1]][p[0]] + 1
+				q = append(q, [2]int{nx, ny})
+			}
+		}
+	}
+}
+
+// pruneDeadEnds fills the CA fringe's dead-end nubs — one-wide pockets that
+// cost attention and pay nothing — while sparing the mouths and chamber cores.
+func (c *carver) pruneDeadEnds(doors [][2]int) {
+	keep := map[[2]int]bool{}
+	for _, d := range doors {
+		keep[d] = true
+	}
+	for _, ch := range c.chambers {
+		keep[[2]int{ch[0], ch[1]}] = true
+	}
+	for round := 0; round < 3; round++ {
+		var fill [][2]int
+		for y := 1; y < c.h-1; y++ {
+			for x := 1; x < c.w-1; x++ {
+				if c.wall[y][x] || keep[[2]int{x, y}] {
+					continue
+				}
+				n := 0
+				for _, d := range nb4 {
+					if !c.wall[y+d[1]][x+d[0]] {
+						n++
+					}
+				}
+				if n <= 1 {
+					fill = append(fill, [2]int{x, y})
+				}
+			}
+		}
+		if len(fill) == 0 {
+			break
+		}
+		for _, p := range fill {
+			c.wall[p[1]][p[0]] = true
+		}
 	}
 }
 
@@ -766,7 +922,7 @@ const (
 	caveLowElev   = 0.58 // …below which cave water gathers (under the low ground)
 )
 
-func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand) (*game.TileMap, [][2]int, map[[2]int]string, int, int) {
+func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand) (*game.TileMap, [][2]int, map[[2]int]string, map[[2]int]game.Tile, string, int, int) {
 	minX, minY, maxX, maxY := overDoors[0][0], overDoors[0][1], overDoors[0][0], overDoors[0][1]
 	for _, d := range overDoors {
 		minX, minY = min(minX, d[0]), min(minY, d[1])
@@ -780,11 +936,23 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 		doors[i] = [2]int{d[0] - c.ox, d[1] - c.oy}
 	}
 	c.carve(doors)
+	c.pruneDeadEnds(doors)
 	region := c.flood(doors[0])
 	if len(region) < 60 { // pathological (no hills?) — open a plain chamber instead
 		c.openInterior()
 		region = c.flood(doors[0])
 	}
+	// The depth field: how far each floor cell lies from the nearest mouth.
+	// Its tiers scale with the cave, so even a small cave has a deep to earn.
+	c.computeDepth(doors)
+	maxD := 0
+	for _, p := range region {
+		if d := c.depth[p[1]][p[0]]; d > maxD {
+			maxD = d
+		}
+	}
+	c.d1, c.d2 = max(8, maxD*35/100), max(16, maxD*70/100)
+
 	inMain := make(map[[2]int]bool, len(region))
 	for _, p := range region {
 		inMain[p] = true
@@ -804,12 +972,38 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 		tiles[d[1]][d[0]] = caveMouth
 	}
 	texture(tiles, c.w, c.h)
-	nodes := c.scatterLife(rng, tiles, region, doors)
-	c.special(tiles, region, doors, nodes)
-	clutter(rng, tiles, region, c.w, c.h)
+	// Snapshot the dressed, empty floor before any content is stamped on it:
+	// gathering a seam later restores this exact tile, so a worked-out spot
+	// keeps its shading and mood instead of reverting to flat slate.
+	base := make([][]game.Tile, c.h)
+	for y := range tiles {
+		base[y] = append([]game.Tile(nil), tiles[y]...)
+	}
 	_, moist, temp := g.Climate(overDoors[0][0], overDoors[0][1]) // mood from the land above
-	pal := paletteFor(temp, moist)
+	pal := paletteFor(temp, moist, rng.Float64())
+	nodes := c.scatterLife(rng, tiles, region, doors, pal)
+	c.special(tiles, region, doors, nodes, pal)
+	c.vestibules(tiles, doors, nodes)
+	c.clutter(rng, tiles, region)
 	c.recolour(tiles, pal)
+	c.recolour(base, pal)
+	// The floor keeps a gentle echo of the land overhead, so chambers under
+	// the peaks rise and the low galleries dip in the 3D client. Imposed last,
+	// over every stamped tile, so no content pass can flatten it.
+	for y := 0; y < c.h; y++ {
+		for x := 0; x < c.w; x++ {
+			e := 0.34 + (c.surf[y][x]-0.50)*0.35
+			if e < 0.30 {
+				e = 0.30
+			}
+			tiles[y][x].Elev = e
+			base[y][x].Elev = e
+		}
+	}
+	floors := make(map[[2]int]game.Tile, len(nodes))
+	for p := range nodes {
+		floors[p] = base[p[1]][p[0]]
+	}
 	// The cave's glowing life is gathered as its mood's signature material, so a
 	// haul tells you which cave it came from: spores from moss, amber from ochre.
 	if pal.material != "mushroom" {
@@ -819,7 +1013,7 @@ func genCaveFromWilds(g *worldgen.Generator, overDoors [][2]int, rng *rand.Rand)
 			}
 		}
 	}
-	return &game.TileMap{W: c.w, H: c.h, Tiles: tiles}, doors, nodes, c.w, c.h
+	return &game.TileMap{W: c.w, H: c.h, Tiles: tiles}, doors, nodes, floors, pal.name, c.w, c.h
 }
 
 // carver hollows one cave out of the rock under a patch of Wilds.
@@ -830,6 +1024,11 @@ type carver struct {
 	ox, oy int // overworld coordinates of local (0,0)
 	wall   [][]bool
 	surf   [][]float64 // surface elevation overhead, per cell — the cave's echo of the land
+	// The chamber graph (see carve): the CA mask supplies the rock's texture,
+	// but rooms, corridors and loops come from a deliberate structure over it.
+	chambers [][3]int // chamber cores: x, y, radius
+	depth    [][]int  // BFS steps from the nearest mouth; -1 in rock
+	d1, d2   int      // depth-tier thresholds (mouth / mid / deep)
 }
 
 func (c *carver) border(x, y int) bool { return x == 0 || y == 0 || x == c.w-1 || y == c.h-1 }
@@ -838,8 +1037,12 @@ func (c *carver) border(x, y int) bool { return x == 0 || y == 0 || x == c.w-1 |
 // out here; under valleys and water the rock stays solid.
 func (c *carver) hill(x, y int) bool { return c.surf[y][x] >= caveFloorElev }
 
-// carve hollows chambers where the hills rise, then links every mouth to the
-// first by a winding passage bored at the mouths' true offsets.
+// carve hollows the cave in two registers. The cellular automaton supplies the
+// organic register — ragged rock shaped by the land overhead — and a chamber
+// graph supplies the deliberate one: readable rooms at the mask's natural
+// centres, corridors that vary in width, and guaranteed loops so there is
+// always a second way back. A pure CA blob has no rooms, no thresholds and no
+// loops; a pure graph has no geology. The cave needs both.
 func (c *carver) carve(doors [][2]int) {
 	c.wall = make([][]bool, c.h)
 	c.surf = make([][]float64, c.h)
@@ -859,13 +1062,231 @@ func (c *carver) carve(doors [][2]int) {
 			}
 		}
 	}
-	for _, d := range doors {
-		c.openDisc(d[0], d[1], 3) // a clearing at every mouth
+
+	// Chamber cores: the deep interior points of the CA mask, found with a
+	// distance transform — where the rock naturally wants a room.
+	dist := c.distTransform()
+	c.chambers = c.chamberCores(dist)
+
+	// The node set: every mouth, then every chamber. Their order is fixed, so
+	// the MST below is deterministic.
+	nodes := make([][2]int, 0, len(doors)+len(c.chambers))
+	nodes = append(nodes, doors...)
+	for _, ch := range c.chambers {
+		nodes = append(nodes, [2]int{ch[0], ch[1]})
 	}
-	for i := 1; i < len(doors); i++ {
-		c.tunnel(doors[i], doors[0]) // link the mouths, mapped 1:1 to the surface
+
+	// A minimum spanning tree links every room and mouth; a few extra edges
+	// between far-apart nodes turn the tree into a network. Loops are the
+	// difference between "backtrack through everything you've seen" and "come
+	// out a different way" — the single cheapest navigability feature a cave
+	// can have.
+	mst, extra := c.planEdges(nodes)
+
+	// Vestibules first, so every mouth opens into a real entry chamber.
+	for _, d := range doors {
+		c.openDisc(d[0], d[1], 4)
+	}
+	// Carve the network. Trunk corridors (touching a mouth) run wide; the rest
+	// vary between snug and comfortable — never below the 2×2 body's passage.
+	for _, e := range mst {
+		wdt := 2
+		if e[0] < len(doors) || e[1] < len(doors) {
+			wdt = 3
+		}
+		c.tunnel(nodes[e[0]], nodes[e[1]], wdt)
+	}
+	for _, e := range extra {
+		c.tunnel(nodes[e[0]], nodes[e[1]], 2)
+	}
+	// Open the chambers themselves out to their natural radius.
+	for _, ch := range c.chambers {
+		c.openDisc(ch[0], ch[1], clamp(ch[2], 3, 7))
 	}
 }
+
+// distTransform is the L1 distance from every open cell to the nearest rock,
+// by the classic two-pass sweep. Rock is 0.
+func (c *carver) distTransform() [][]int {
+	const inf = 1 << 20
+	d := make([][]int, c.h)
+	for y := 0; y < c.h; y++ {
+		d[y] = make([]int, c.w)
+		for x := 0; x < c.w; x++ {
+			if c.wall[y][x] {
+				d[y][x] = 0
+			} else {
+				d[y][x] = inf
+			}
+		}
+	}
+	for y := 0; y < c.h; y++ {
+		for x := 0; x < c.w; x++ {
+			if y > 0 && d[y-1][x]+1 < d[y][x] {
+				d[y][x] = d[y-1][x] + 1
+			}
+			if x > 0 && d[y][x-1]+1 < d[y][x] {
+				d[y][x] = d[y][x-1] + 1
+			}
+		}
+	}
+	for y := c.h - 1; y >= 0; y-- {
+		for x := c.w - 1; x >= 0; x-- {
+			if y < c.h-1 && d[y+1][x]+1 < d[y][x] {
+				d[y][x] = d[y+1][x] + 1
+			}
+			if x < c.w-1 && d[y][x+1]+1 < d[y][x] {
+				d[y][x] = d[y][x+1] + 1
+			}
+		}
+	}
+	return d
+}
+
+// chamberCores picks the mask's natural room centres: local maxima of the
+// distance transform, greedily thinned so cores keep their elbow room.
+func (c *carver) chamberCores(dist [][]int) [][3]int {
+	type core struct{ x, y, r int }
+	var cand []core
+	for y := 1; y < c.h-1; y++ {
+		for x := 1; x < c.w-1; x++ {
+			r := dist[y][x]
+			if r < 3 {
+				continue
+			}
+			peak := true
+			for dy := -1; dy <= 1 && peak; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					if dist[y+dy][x+dx] > r {
+						peak = false
+						break
+					}
+				}
+			}
+			if peak {
+				cand = append(cand, core{x, y, r})
+			}
+		}
+	}
+	// Deepest first; a stable sort keeps scan order on ties, so the pick is
+	// deterministic.
+	sort.SliceStable(cand, func(i, j int) bool { return cand[i].r > cand[j].r })
+	var out [][3]int
+	for _, cd := range cand {
+		ok := true
+		for _, o := range out {
+			dx, dy := cd.x-o[0], cd.y-o[1]
+			if dx*dx+dy*dy < 9*9 {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			out = append(out, [3]int{cd.x, cd.y, cd.r})
+		}
+	}
+	return out
+}
+
+// planEdges builds a Prim MST over the nodes plus a few loop edges between
+// nodes that the tree leaves far apart (≥4 hops), so the cave is a network
+// rather than a corridor tree.
+func (c *carver) planEdges(nodes [][2]int) (mst, extra [][2]int) {
+	n := len(nodes)
+	if n < 2 {
+		return nil, nil
+	}
+	d2 := func(a, b [2]int) int {
+		dx, dy := a[0]-b[0], a[1]-b[1]
+		return dx*dx + dy*dy
+	}
+	in := make([]bool, n)
+	best := make([]int, n)   // cheapest cost into the tree
+	parent := make([]int, n) // …and via which node
+	for i := range best {
+		best[i] = 1 << 30
+		parent[i] = -1
+	}
+	in[0], best[0] = true, 0
+	for i := 1; i < n; i++ {
+		best[i] = d2(nodes[0], nodes[i])
+		parent[i] = 0
+	}
+	adj := make([][]int, n)
+	for range make([]struct{}, n-1) {
+		pick, pc := -1, 1<<30
+		for i := 0; i < n; i++ {
+			if !in[i] && best[i] < pc {
+				pick, pc = i, best[i]
+			}
+		}
+		if pick < 0 {
+			break
+		}
+		in[pick] = true
+		mst = append(mst, [2]int{parent[pick], pick})
+		adj[parent[pick]] = append(adj[parent[pick]], pick)
+		adj[pick] = append(adj[pick], parent[pick])
+		for i := 0; i < n; i++ {
+			if !in[i] {
+				if d := d2(nodes[pick], nodes[i]); d < best[i] {
+					best[i], parent[i] = d, pick
+				}
+			}
+		}
+	}
+	// Loop edges: the shortest non-tree edges whose endpoints sit ≥4 hops
+	// apart in the tree, up to one per five nodes (at least one).
+	type ced struct{ a, b, d int }
+	var cands []ced
+	for a := 0; a < n; a++ {
+		for b := a + 1; b < n; b++ {
+			cands = append(cands, ced{a, b, d2(nodes[a], nodes[b])})
+		}
+	}
+	sort.SliceStable(cands, func(i, j int) bool { return cands[i].d < cands[j].d })
+	want := n/5 + 1
+	for _, e := range cands {
+		if want == 0 {
+			break
+		}
+		if hopDist(adj, e.a, e.b) >= 4 {
+			extra = append(extra, [2]int{e.a, e.b})
+			adj[e.a] = append(adj[e.a], e.b)
+			adj[e.b] = append(adj[e.b], e.a)
+			want--
+		}
+	}
+	return mst, extra
+}
+
+// hopDist is the BFS hop count between two nodes of the small chamber graph.
+func hopDist(adj [][]int, a, b int) int {
+	if a == b {
+		return 0
+	}
+	seen := make([]int, len(adj))
+	for i := range seen {
+		seen[i] = -1
+	}
+	seen[a] = 0
+	q := []int{a}
+	for len(q) > 0 {
+		cur := q[0]
+		q = q[1:]
+		for _, nx := range adj[cur] {
+			if seen[nx] < 0 {
+				seen[nx] = seen[cur] + 1
+				if nx == b {
+					return seen[nx]
+				}
+				q = append(q, nx)
+			}
+		}
+	}
+	return 1 << 30
+}
+
 
 func (c *carver) smooth(passes int) {
 	for it := 0; it < passes; it++ {
@@ -907,14 +1328,18 @@ func (c *carver) openDisc(cx, cy, r int) {
 	}
 }
 
-// tunnel bores a winding two-wide passage from a toward b (a drunkard's walk
-// biased at the target) — it will dig under a valley if the mouths sit on
-// separate hills.
-func (c *carver) tunnel(a, b [2]int) {
+// tunnel bores a winding passage from a toward b (a drunkard's walk biased at
+// the target) — it will dig under a valley if the endpoints sit on separate
+// hills. wdt is the brush width in cells; 2 is the floor (the player's 2×2
+// body must fit), 3 is a trunk corridor.
+func (c *carver) tunnel(a, b [2]int, wdt int) {
+	if wdt < 2 {
+		wdt = 2
+	}
 	x, y := a[0], a[1]
 	open := func(px, py int) {
-		for dy := 0; dy <= 1; dy++ {
-			for dx := 0; dx <= 1; dx++ {
+		for dy := 0; dy < wdt; dy++ {
+			for dx := 0; dx < wdt; dx++ {
 				if nx, ny := px+dx, py+dy; nx > 0 && ny > 0 && nx < c.w-1 && ny < c.h-1 {
 					c.wall[ny][nx] = false
 				}
@@ -984,7 +1409,7 @@ func (c *carver) in(p [2]int) bool { return p[0] >= 0 && p[1] >= 0 && p[0] < c.w
 // shafts of daylight where the rock runs thinnest, a glittering cache in the
 // chamber deepest from any mouth, and — under a notable surface feature — an old
 // mine beneath a peak or ruins beneath a landmark. Gatherable spots go into nodes.
-func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[[2]int]string) {
+func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[[2]int]string, pal cavePalette) {
 	plain := func(p [2]int) bool {
 		t := tiles[p[1]][p[0]]
 		return t.Kind == game.TileFloor && t.Prop == game.PropNone
@@ -1029,6 +1454,8 @@ func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[
 	// 2) Chasms split the open chambers — only in wide-open ground (so you can
 	// always round them) and clear of the mouths, never in a passage (they stay
 	// walkable, so they can't wall a route off; you just don't want to walk in).
+	// The mood sets their number: an ice cave's floor is riven, a moss cavern's
+	// barely at all.
 	var brink [][2]int
 	for _, p := range region {
 		if plain(p) && openAround(p) == 8 && far(p, 8) {
@@ -1036,27 +1463,24 @@ func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[
 		}
 	}
 	c.rng.Shuffle(len(brink), func(i, j int) { brink[i], brink[j] = brink[j], brink[i] })
-	for i := 0; i < len(brink)/90+1 && i < len(brink); i++ {
+	for i := 0; i < len(brink)/pal.chasmDiv+1 && i < len(brink); i++ {
 		put(brink[i], chasm, "")
 	}
 
-	// 4) A treasure cache in the deepest chamber: a glowing geode ringed in crystal.
+	// 3) A treasure cache in the deepest chamber: a glowing geode ringed in
+	// crystal. Deepest by walked distance (the depth field), and required to
+	// sit in open ground, so the prize crowns a real room rather than hiding
+	// in a crack.
 	deep, bestD := [2]int{}, -1
 	for _, p := range region {
-		if !plain(p) {
+		if !plain(p) || openAround(p) < 7 {
 			continue
 		}
-		md := 1 << 30
-		for _, m := range doors {
-			if d := abs(p[0]-m[0]) + abs(p[1]-m[1]); d < md {
-				md = d
-			}
-		}
-		if md > bestD {
-			bestD, deep = md, p
+		if d := c.depth[p[1]][p[0]]; d > bestD {
+			bestD, deep = d, p
 		}
 	}
-	if bestD > 6 {
+	if bestD > c.d1 {
 		put(deep, geodeTile, "geode")
 		for _, d := range nb8 {
 			if n := [2]int{deep[0] + d[0], deep[1] + d[1]}; c.in(n) && plain(n) && c.rng.Float64() < 0.6 {
@@ -1065,7 +1489,7 @@ func (c *carver) special(tiles [][]game.Tile, region, doors [][2]int, nodes map[
 		}
 	}
 
-	// 5) A chamber under a notable surface feature. A surface landmark/gate overhead
+	// 4) A chamber under a notable surface feature. A surface landmark/gate overhead
 	// makes ruins with a relic to recover; failing that, a peak overhead makes an
 	// old mine — support timbers and a rich vein.
 	var landmark [2]int
@@ -1222,14 +1646,17 @@ func wallFracR2(tiles [][]game.Tile, x, y, w, h int) float64 {
 
 // clutter strews the floor with breakdown — small rocks gathered at the foot of
 // walls, the odd boulder or stalagmite out in the open — so chambers read as
-// rubble-strewn rock rather than swept grey rooms.
-func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, w, h int) {
-	for _, c := range region {
-		x, y := c[0], c[1]
+// rubble-strewn rock rather than swept grey rooms. The entry halls stay clear
+// of blocking breakdown, so a mouth never opens onto an obstacle course.
+func (c *carver) clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int) {
+	w, h := c.w, c.h
+	for _, cell := range region {
+		x, y := cell[0], cell[1]
 		t := &tiles[y][x]
 		if t.Kind != game.TileFloor || t.Prop != game.PropNone {
 			continue
 		}
+		nearMouth := c.depth[y][x] >= 0 && c.depth[y][x] < 10
 		wf := wallFrac(tiles, x, y, w, h)
 		r := rng.Float64()
 		switch {
@@ -1237,10 +1664,10 @@ func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, w, h int) {
 			t.Prop, t.PropHex, t.Ch = game.PropFlowstone, "#BBAA86", '╫'
 		case wf > 0 && wf < 0.30 && r < 0.06: // a stalagmite rising near a wall
 			t.Prop, t.PropHex, t.Ch = game.PropStalagmite, "#9A92A0", '▲'
-		case wf == 0 && r < 0.016: // a column in a wide chamber (floor-to-ceiling, blocks)
+		case wf == 0 && r < 0.016 && !nearMouth: // a column in a wide chamber (floor-to-ceiling, blocks)
 			t.Kind, t.Walkable = game.TileDecor, false
 			t.Prop, t.PropHex, t.Ch = game.PropColumn, "#A1937B", '█'
-		case wf == 0 && r < 0.034: // a boulder fallen in the open chamber (blocks)
+		case wf == 0 && r < 0.034 && !nearMouth: // a boulder fallen in the open chamber (blocks)
 			t.Kind, t.Walkable = game.TileDecor, false
 			t.Prop, t.PropHex = game.PropBoulder, mustHex("#46414E").Hex()
 		case wf >= 0.25 && r < 0.20: // scree banked against the walls
@@ -1251,11 +1678,48 @@ func clutter(rng *rand.Rand, tiles [][]game.Tile, region [][2]int, w, h int) {
 	}
 }
 
+// vestibules dresses every entry chamber: a shaft of daylight just inside the
+// mouth (the "day behind you" read, and a guaranteed lantern top-up anchor at
+// the door), and a starter stone seam within reach — a first-time visitor
+// mines something inside their first ten steps.
+func (c *carver) vestibules(tiles [][]game.Tile, doors [][2]int, nodes map[[2]int]string) {
+	plain := func(x, y int) bool {
+		return c.in([2]int{x, y}) && tiles[y][x].Kind == game.TileFloor && tiles[y][x].Prop == game.PropNone
+	}
+	for _, d := range doors {
+		shaft := false
+		for _, o := range nb8 { // daylight breaks through beside the mouth
+			if x, y := d[0]+o[0], d[1]+o[1]; !shaft && plain(x, y) {
+				tiles[y][x] = lightShaft
+				shaft = true
+			}
+		}
+		seam := false
+		for r := 2; r <= 3 && !seam; r++ { // a starter seam a few steps in
+			for dy := -r; dy <= r && !seam; dy++ {
+				for dx := -r; dx <= r; dx++ {
+					if abs(dx) != r && abs(dy) != r {
+						continue
+					}
+					x, y := d[0]+dx, d[1]+dy
+					p := [2]int{x, y}
+					if _, taken := nodes[p]; !taken && plain(x, y) {
+						tiles[y][x] = stoneSeam.tile
+						nodes[p] = stoneSeam.item
+						seam = true
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 // scatterLife stocks the cave with its mineral and living features and returns
 // the gatherable ones (position → item). Mineral seams stud the rock faces; cave
 // mushrooms cluster on the floor of the deep dark away from the mouth; still
 // glow-pools pool in the wider chambers. All three light the dark.
-func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors [][2]int) map[[2]int]string {
+func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors [][2]int, pal cavePalette) map[[2]int]string {
 	w, h := c.w, c.h
 	nodes := map[[2]int]string{}
 	inBounds := func(p [2]int) bool { return p[0] >= 0 && p[1] >= 0 && p[0] < w && p[1] < h }
@@ -1280,8 +1744,8 @@ func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors 
 		return true
 	}
 
-	// Mineral seams on rock faces — you work the cavern walls. The land overhead
-	// sets what they yield: the richest veins lie under the peaks.
+	// Mineral seams on rock faces — you work the cavern walls. Depth into the
+	// cave sets what they yield (see seamAt): the deep is worked harder too.
 	var faces, richFaces [][2]int
 	for _, p := range region {
 		if !free(p) {
@@ -1290,8 +1754,8 @@ func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors 
 		for _, d := range nb4 {
 			if nx, ny := p[0]+d[0], p[1]+d[1]; nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[ny][nx].Kind == game.TileWall {
 				faces = append(faces, p)
-				if c.surf[p[1]][p[0]] >= caveDeepElev {
-					richFaces = append(richFaces, p) // under the mountains — work them harder
+				if c.tierAt(p) == 2 {
+					richFaces = append(richFaces, p) // the deep — work it harder
 				}
 				break
 			}
@@ -1301,7 +1765,7 @@ func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors 
 		if _, taken := nodes[p]; taken || !free(p) {
 			return
 		}
-		s := seamFor(c.surf[p[1]][p[0]], rng)
+		s := c.seamAt(p, rng)
 		nodes[p] = s.item
 		tiles[p[1]][p[0]] = s.tile
 	}
@@ -1314,15 +1778,18 @@ func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors 
 		place(richFaces[i])
 	}
 
-	// Mushroom clusters in the deep dark, well away from any mouth.
+	// Mushroom clusters in the deep dark — past the first depth tier, so the
+	// glow (and the lantern top-ups it carries) begins where the light ends.
+	// The mood sets how thickly the cave lives: moss caverns bloom, ice caves
+	// barely glimmer.
 	var deep [][2]int
 	for _, p := range region {
-		if free(p) && farFromMouths(p, 14) {
+		if free(p) && c.tierAt(p) >= 1 {
 			deep = append(deep, p)
 		}
 	}
 	rng.Shuffle(len(deep), func(i, j int) { deep[i], deep[j] = deep[j], deep[i] })
-	for i := 0; i < len(deep)/90+4 && i < len(deep); i++ {
+	for i := 0; i < len(deep)/pal.glowDiv+4 && i < len(deep); i++ {
 		for _, p := range append([][2]int{deep[i]}, neighboursOf(deep[i], rng)...) {
 			if free(p) {
 				if _, taken := nodes[p]; !taken {
@@ -1350,7 +1817,7 @@ func (c *carver) scatterLife(rng *rand.Rand, tiles [][]game.Tile, region, doors 
 		}
 	}
 	rng.Shuffle(len(basins), func(i, j int) { basins[i], basins[j] = basins[j], basins[i] })
-	for i := 0; i < len(basins)/30+2 && i < len(basins); i++ {
+	for i := 0; i < len(basins)/max(20, pal.glowDiv/3)+2 && i < len(basins); i++ {
 		for _, p := range append([][2]int{basins[i]}, neighboursOf(basins[i], rng)...) {
 			if free(p) {
 				if _, taken := nodes[p]; !taken {
