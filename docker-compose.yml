@@ -1,0 +1,26 @@
+# durstworld (Terminal-MMO) — an SSH + browser terminal MMO. The Go server runs
+# two listeners: the SSH world on 2222 and the browser client + game WebSocket
+# on 8080 (served same-origin). `docker compose up`, then:
+#   ssh -p 2222 you@localhost      or      open http://localhost:8080
+# Behind the shared edge proxy, add docker-compose.edge.yml — the web port is
+# fronted at https://mmo.mich312.com; the SSH world stays a direct host port.
+services:
+  mmo:
+    build: .
+    image: terminal-mmo
+    container_name: mmo
+    restart: unless-stopped
+    environment:
+      PORT: 2222       # SSH world
+      WEB_PORT: 8080   # browser client + game WebSocket (served same-origin)
+      # WEB_ORIGINS unset = same-origin only, which is correct behind the proxy:
+      # the page and the socket both come from https://mmo.mich312.com.
+    volumes:
+      - ./.ssh:/app/.ssh    # persistent Ed25519 host key (generated on first run)
+      - ./data:/app/data    # SQLite world DB
+    ports:
+      # SSH world — PUBLIC: players `ssh -p 2222 name@mmo.mich312.com`. Docker
+      # publishes this past the host firewall; also open 2222/tcp in ufw.
+      - '2222:2222'
+      # Web — loopback only; public access is via the edge proxy, not this port.
+      - '127.0.0.1:8080:8080'
