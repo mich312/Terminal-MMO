@@ -14,3 +14,8 @@ buildshots/
 /lootpreview
 /wildlifepreview
 /wildlifeshots/
+
+# Local-only Go workspace. Used to point the build at a stub for a dependency
+# that can't be fetched in a sandboxed environment; never part of a real build.
+/go.work
+/go.work.sum

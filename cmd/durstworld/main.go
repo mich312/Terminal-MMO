@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
+	"github.com/durst-group/durstworld/internal/web"
 	"github.com/durst-group/durstworld/internal/wildlife"
 	"github.com/durst-group/durstworld/internal/world"
 	"github.com/durst-group/durstworld/internal/worldgen"
@@ -58,6 +60,12 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "2222"
+	}
+	// WEB_PORT=off disables the browser client entirely, for a deployment that
+	// wants to stay SSH-only.
+	webPort := os.Getenv("WEB_PORT")
+	if webPort == "" {
+		webPort = "8080"
 	}
 
 	// One server-wide art style for the HD/sixel renderer, resolved at startup.
@@ -161,6 +169,22 @@ func main() {
 		log.Fatalf("could not create server: %v", err)
 	}
 
+	// The browser client: a third renderer on the same live world. It listens on
+	// its own port so the SSH server is untouched — a browser player and an ssh
+	// player stand in the same Wilds and see each other move.
+	webCtx, webCancel := context.WithCancel(context.Background())
+	defer webCancel()
+	if webPort != "off" {
+		websrv := web.New(w, st, webOrigins())
+		go func() {
+			addr := net.JoinHostPort("0.0.0.0", webPort)
+			log.Printf("browser client on http://localhost:%s", webPort)
+			if err := websrv.ListenAndServe(webCtx, addr); err != nil {
+				log.Printf("web server error: %v", err)
+			}
+		}()
+	}
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
@@ -174,12 +198,33 @@ func main() {
 
 	<-done
 	log.Println("shutting down Durst World…")
+	webCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	close(wlStop)
 	w.Close()
 	_ = st.Close()
+}
+
+// webOrigins reads the origins allowed to open a game websocket. The default
+// (none listed) is same-origin only, which is right when the page and the
+// socket come from this same server. Set WEB_ORIGINS to a comma-separated list
+// when the client is served from elsewhere, or to "*" to allow any origin —
+// convenient behind a reverse proxy you already trust, unwise on the open
+// internet.
+func webOrigins() []string {
+	raw := strings.TrimSpace(os.Getenv("WEB_ORIGINS"))
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // teaHandler creates one bubbletea program per SSH session. The session's

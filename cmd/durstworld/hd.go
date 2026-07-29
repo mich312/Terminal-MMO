@@ -7,11 +7,9 @@ import (
 	"image"
 	"image/color"
 	"log"
-	"math/rand"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 
@@ -20,7 +18,6 @@ import (
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
-	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -71,29 +68,11 @@ const compScrollPage = 6
 // before settling to the quiet top-left label.
 const areaFlare = 2500 * time.Millisecond
 
-// setupAvatar restores a player's persisted color/style/accessory, or — on a
-// first visit — rolls a random look and remembers it, so everyone spawns with a
-// distinct avatar that then stays theirs across reconnects.
+// setupAvatar restores a player's look, or rolls a new one on a first visit.
+// The logic is shared with every other client (game.SetupAvatar) so your
+// character is the same whether you arrive over SSH or in a browser.
 func setupAvatar(w *world.World, st store.Store, name string) {
-	if color, style, accessory, ok := st.LoadAvatar(name); ok {
-		if color != "" {
-			w.SetColor(name, lipgloss.Color(color))
-		}
-		w.SetAvatar(name, style, accessory)
-		// Grandfather a hat the player is already wearing into their owned set,
-		// so gating stays consistent for anyone from before hats were earned.
-		if accessory != 0 {
-			st.UnlockHat(name, accessory)
-		}
-		return
-	}
-	// New players spawn with a random body/color but no hat — hats are earned by
-	// exploring the Wilds.
-	color := ui.AvatarColorByIndex(rand.Intn(ui.NumAvatarColors()))
-	style := rand.Intn(game.NumAvatarStyles())
-	w.SetColor(name, color)
-	w.SetAvatar(name, style, 0)
-	st.SaveAvatar(name, string(color), style, 0)
+	game.SetupAvatar(w, st, name)
 }
 
 // wantsClassic reports whether a session asked for the classic glyph client

@@ -1,0 +1,446 @@
+/* Durst World — browser client.
+ *
+ * The visual language follows docs/STYLE_GUIDE.md: the world fills the screen
+ * and the chrome stays quiet. The area name sits top-left, a mini-legend
+ * top-right, and the bottom is empty until something is actually usable — then
+ * a button prompt appears for it. Everything else is one keypress away.
+ */
+
+:root {
+  --bg: #0d1014;
+  --ink: #e8ecf1;
+  --dim: #9aa3ad;
+  --accent: #2e8bff;
+  --warn: #f0a742;
+  --panel: rgba(16, 20, 26, 0.94);
+  --edge: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+/* The gate and the panels set an explicit `display`, which would otherwise beat
+   the user-agent's `[hidden] { display: none }` and leave them permanently on
+   screen. Everything here is shown and hidden via the `hidden` attribute, so
+   make that attribute win outright. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* ---------- join screen ---------- */
+
+.gate {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #1b2733 0%, #0d1014 60%),
+    var(--bg);
+  z-index: 40;
+}
+
+.gate-card {
+  width: min(30rem, 100%);
+  padding: 2rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.gate-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.9rem;
+  letter-spacing: 0.02em;
+}
+
+.tagline { margin: 0 0 1.5rem; color: var(--dim); line-height: 1.5; }
+
+.gate-card label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gate-card input {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  font: 1.05rem var(--font);
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+}
+
+.gate-card input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(46, 139, 255, 0.2);
+}
+
+.hint { margin: 0.5rem 0 1.2rem; font-size: 0.8rem; color: var(--dim); }
+
+.gate-card button {
+  width: 100%;
+  padding: 0.75rem;
+  font: 600 1rem var(--sans);
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.gate-card button:hover { filter: brightness(1.1); }
+.gate-card button:disabled { opacity: 0.5; cursor: progress; }
+
+.gate-error {
+  margin: 1rem 0 0;
+  padding: 0.6rem 0.75rem;
+  color: #ffd9d9;
+  background: rgba(180, 40, 40, 0.25);
+  border: 1px solid rgba(255, 90, 90, 0.35);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.gate-foot {
+  margin: 1.5rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--edge);
+  font-size: 0.8rem;
+  color: var(--dim);
+  line-height: 1.7;
+}
+
+.gate-foot b { color: var(--ink); font-family: var(--font); }
+
+/* ---------- the world ---------- */
+
+#game { position: fixed; inset: 0; }
+#view { display: block; width: 100%; height: 100%; }
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--font);
+}
+
+.area-title {
+  position: absolute;
+  top: 1rem;
+  left: 1.25rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  transition: opacity 0.4s, transform 0.4s, font-size 0.4s;
+}
+
+/* On entering an area the name flares, then settles to a quiet label — the
+   same emphasis curve the HD client animates. */
+.area-title.flare {
+  font-size: 2rem;
+  color: #fff;
+  text-shadow: 0 0 26px rgba(120, 190, 255, 0.6), 0 2px 10px #000;
+}
+
+.claim {
+  position: absolute;
+  top: 2.9rem;
+  left: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+  text-shadow: 0 2px 8px #000;
+}
+
+.legend {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  display: flex;
+  gap: 0.9rem;
+  font-size: 0.78rem;
+  color: var(--dim);
+  text-shadow: 0 2px 8px #000;
+}
+
+.legend b { color: var(--ink); }
+
+.toast {
+  position: absolute;
+  top: 4.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem 1rem;
+  background: rgba(16, 20, 26, 0.9);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-size: 0.9rem;
+}
+
+.prompt {
+  position: absolute;
+  bottom: 5.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.55rem 1.1rem;
+  background: rgba(16, 20, 26, 0.92);
+  border: 1px solid rgba(46, 139, 255, 0.5);
+  border-radius: 999px;
+  font-size: 0.92rem;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- chat ---------- */
+
+.chat {
+  position: absolute;
+  left: 1.25rem;
+  bottom: 1.1rem;
+  width: min(34rem, 46vw);
+  pointer-events: none;
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 11rem;
+  overflow: hidden;
+  font-size: 0.85rem;
+  text-shadow: 0 2px 6px #000;
+  transition: opacity 0.6s;
+}
+
+/* The log fades when idle so the scene stays clear, and comes back the moment
+   anyone speaks or you start typing. */
+.chat-log.idle { opacity: 0.25; }
+.chat-log .line { line-height: 1.45; }
+.chat-log .line.system { color: var(--dim); }
+.chat-log .line.whisper { color: #b48ef5; }
+.chat-log .line.emote { font-style: italic; color: #9fd0a8; }
+
+.chat-input {
+  pointer-events: auto;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  font: 0.9rem var(--font);
+  color: var(--ink);
+  background: rgba(10, 13, 17, 0.95);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.chat-input:focus { outline: none; }
+
+/* ---------- minimap, build palette, slides ---------- */
+
+.minimap {
+  position: absolute;
+  top: 3.5rem;
+  right: 1.25rem;
+  padding: 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.minimap-title { margin-bottom: 0.4rem; font-size: 0.8rem; color: var(--dim); }
+.minimap-canvas { display: block; image-rendering: pixelated; border-radius: 4px; }
+
+.build {
+  position: absolute;
+  left: 1.25rem;
+  top: 5rem;
+  width: 15rem;
+  padding: 0.7rem 0.8rem;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  pointer-events: auto;
+}
+
+.build-title { margin-bottom: 0.5rem; font-size: 0.8rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.build-list { margin: 0; padding: 0; list-style: none; font-size: 0.85rem; }
+.build-list li { padding: 0.2rem 0.35rem; border-radius: 4px; color: var(--dim); }
+.build-list li.sel { background: rgba(46, 139, 255, 0.22); color: var(--ink); }
+.build-footer { margin-top: 0.5rem; font-size: 0.78rem; color: var(--dim); }
+.build-footer.warn { color: var(--warn); }
+
+.slide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(48rem, 82vw);
+  max-height: 70vh;
+  overflow: auto;
+  padding: 1.5rem 1.8rem;
+  background: rgba(12, 15, 20, 0.96);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  pointer-events: auto;
+}
+
+.slide-body { font-family: var(--sans); line-height: 1.6; }
+.slide-body h1, .slide-body h2, .slide-body h3 { margin: 0.4em 0; }
+.slide-body pre {
+  padding: 0.8rem;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  font-family: var(--font);
+}
+.slide-body code { font-family: var(--font); }
+.slide-footer { margin-top: 1rem; font-size: 0.8rem; color: var(--dim); }
+
+/* A red rim for an instant after taking a blow — the browser twin of HD's
+   DrawHurtFlash. */
+.hurt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 8rem rgba(220, 40, 40, 0.85);
+  transition: opacity 0.35s;
+}
+
+.hurt.on { opacity: 1; transition: opacity 0.05s; }
+
+/* ---------- panels ---------- */
+
+.panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: rgba(4, 6, 9, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 20;
+  pointer-events: auto;
+  font-family: var(--font);
+}
+
+.panel-card {
+  display: flex;
+  flex-direction: column;
+  width: min(46rem, 100%);
+  max-height: 80vh;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.menu-card { width: min(22rem, 100%); }
+
+.panel-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--edge);
+}
+
+.panel-card h2 { margin: 0; font-size: 1rem; letter-spacing: 0.04em; }
+
+.panel-card header button {
+  padding: 0.2rem 0.5rem;
+  color: var(--dim);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.panel-card header button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.08); }
+
+.panel-rows {
+  flex: 1;
+  margin: 0;
+  padding: 0.5rem 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 0.88rem;
+}
+
+.panel-rows li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 1rem;
+  padding: 0.35rem 1.1rem;
+  cursor: default;
+}
+
+.panel-rows li.sel { background: rgba(46, 139, 255, 0.2); }
+.panel-rows li.dim { opacity: 0.45; }
+.panel-rows li.head {
+  margin-top: 0.5rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+}
+.panel-rows .value { color: var(--dim); text-align: right; white-space: nowrap; }
+.panel-rows li.warn .value { color: var(--warn); }
+.panel-rows .desc {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  color: var(--dim);
+  line-height: 1.4;
+}
+.panel-rows li.actionable { cursor: pointer; }
+.panel-rows li.actionable:hover { background: rgba(255, 255, 255, 0.06); }
+
+.panel-card footer {
+  padding: 0.7rem 1.1rem;
+  border-top: 1px solid var(--edge);
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+
+.panel-card footer:empty { display: none; }
+
+/* ---------- connection status ---------- */
+
+.status {
+  position: absolute;
+  bottom: 1rem;
+  right: 1.25rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(16, 20, 26, 0.9);
+  border: 1px solid var(--edge);
+  font: 0.78rem var(--font);
+  color: var(--dim);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.status.show { opacity: 1; }
+.status.bad { color: #ffb4b4; border-color: rgba(255, 90, 90, 0.4); }
+
+@media (max-width: 640px) {
+  .chat { width: 70vw; }
+  .legend { display: none; }
+}

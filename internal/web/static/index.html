@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Durst World</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌲</text></svg>">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+
+<!-- The join screen. SSH players get identity from their username; here it is
+     typed once and remembered in localStorage, so you come back as yourself. -->
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <h1>Durst World</h1>
+    <p class="tagline">A small multiplayer world. Walk around, forage, bump into
+      colleagues — the same one people are in over SSH right now.</p>
+    <form id="join-form" autocomplete="off">
+      <label for="join-name">Your name</label>
+      <input id="join-name" name="name" maxlength="16" required
+             pattern="[A-Za-z0-9_\-]{1,16}" placeholder="anna"
+             autocapitalize="off" autocorrect="off" spellcheck="false">
+      <p class="hint">Letters, digits, - and _ · up to 16 characters</p>
+      <button type="submit" id="join-go">Walk in</button>
+    </form>
+    <p id="gate-error" class="gate-error" role="alert" hidden></p>
+    <p class="gate-foot">Controls: <b>WASD</b> move · <b>Shift</b> run ·
+      <b>E</b> interact · <b>Enter</b> chat · <b>Tab</b> menu · <b>?</b> help</p>
+  </div>
+</div>
+
+<!-- The world. Everything below is overlaid on the WebGL canvas. -->
+<div id="game" hidden>
+  <canvas id="view"></canvas>
+
+  <div id="hud">
+    <div id="area-title" class="area-title"></div>
+    <div id="claim" class="claim"></div>
+    <div id="legend" class="legend">
+      <span><b>WASD</b> move</span>
+      <span><b>Enter</b> chat</span>
+      <span><b>Tab</b> menu</span>
+      <span><b>?</b> help</span>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <div id="prompt" class="prompt" hidden></div>
+
+    <div id="chat" class="chat">
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <input id="chat-input" class="chat-input" maxlength="240" hidden
+             autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+
+    <div id="minimap" class="minimap" hidden>
+      <div class="minimap-title"></div>
+      <canvas class="minimap-canvas" width="240" height="240"></canvas>
+    </div>
+
+    <div id="build" class="build" hidden>
+      <div class="build-title">Build</div>
+      <ul class="build-list"></ul>
+      <div class="build-footer"></div>
+    </div>
+
+    <div id="slide" class="slide" hidden>
+      <div class="slide-body"></div>
+      <div class="slide-footer"></div>
+    </div>
+
+    <div id="hurt" class="hurt"></div>
+  </div>
+
+  <!-- Panels: the compendium, character editor, who's online, help, crafting,
+       machines, stalls and the trade table. HD has to rasterize these into the
+       pixel frame; here they are just markup. -->
+  <div id="panel" class="panel" hidden role="dialog" aria-modal="true">
+    <div class="panel-card">
+      <header>
+        <h2 id="panel-title"></h2>
+        <button id="panel-close" aria-label="Close">✕</button>
+      </header>
+      <ul id="panel-rows" class="panel-rows"></ul>
+      <footer id="panel-footer"></footer>
+    </div>
+  </div>
+
+  <div id="menu" class="panel" hidden role="dialog" aria-modal="true">
+    <div class="panel-card menu-card">
+      <header><h2>Menu</h2><button id="menu-close" aria-label="Close">✕</button></header>
+      <ul id="menu-rows" class="panel-rows"></ul>
+    </div>
+  </div>
+
+  <div id="status" class="status"></div>
+</div>
+
+<noscript>
+  <p style="color:#eee;font:16px system-ui;padding:2rem">
+    Durst World's browser client needs JavaScript and WebGL.
+    You can also play it over SSH — see the README.
+  </p>
+</noscript>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
