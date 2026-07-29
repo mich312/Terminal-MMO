@@ -201,5 +201,5 @@ function start(name) {
 
   // Expose a little state for debugging in the console; harmless, and it makes
   // "why is that tile wrong" answerable without a rebuild.
-  window.durstworld = { scene, field, actors, ui, get lastScene() { return lastScene; } };
+  window.durstworld = { scene, field, actors, ui, input, get lastScene() { return lastScene; } };
 }
