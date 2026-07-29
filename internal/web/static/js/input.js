@@ -194,6 +194,12 @@ export class Input {
     if (this.mode !== 'action' || this.ui.chatActive || this.ui.panelOpen || this.ui.menuOpen) return;
     switch (e.button) {
       case 0: // the sword hand: tap = fast, hold = strong (see pump)
+        // Without pointer lock the camera can't follow the mouse, so the
+        // first click buys the lock back rather than swinging blind.
+        if (!document.pointerLockElement) {
+          this.hooks?.scene.relock();
+          return;
+        }
         this.pressAt = performance.now();
         this.strongSent = false;
         break;

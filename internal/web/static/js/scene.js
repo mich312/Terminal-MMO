@@ -203,8 +203,8 @@ export class WorldScene {
     });
     document.addEventListener('pointerlockchange', () => {
       if (this.mode === 'action' && document.pointerLockElement !== canvas) {
-        // Esc released the pointer: the action camera can't steer blind, so
-        // whoever owns the mode gets to fold back to top-down.
+        // Esc released the pointer. The mode stays; the next click on the
+        // world re-engages mouse-look (see input.js).
         this.onPointerLockLost?.();
       }
     });
@@ -220,11 +220,20 @@ export class WorldScene {
       // Start looking the way the world does: over the character's shoulder.
       this.camYaw = Math.PI; // facing north — the classic establishing angle
       this.camPitch = 0.16;
-      this.canvas.requestPointerLock?.();
+      this.relock();
     } else {
       this.lockPoint = null;
       if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     }
+  }
+
+  /** relock (re)acquires the pointer for mouse-look. The browser may refuse
+   *  outside a user gesture — callers treat that as "wait for the next click",
+   *  so the rejection is expected and swallowed. */
+  relock() {
+    if (this.mode !== 'action') return;
+    const p = this.canvas.requestPointerLock?.();
+    p?.catch?.(() => {});
   }
 
   /** forward is the action camera's ground-plane look direction. */

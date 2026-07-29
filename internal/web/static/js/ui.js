@@ -68,7 +68,7 @@ export class UI {
     this.actionHint = document.createElement('div');
     this.actionHint.id = 'action-hint';
     this.actionHint.textContent =
-      'click swing · hold heavy · right-click guard · Space dodge · Q lock-on · V back';
+      'click swing · hold heavy · right-click guard · Space dodge · Q lock-on · V top-down';
     this.actionHint.hidden = true;
     hud.appendChild(this.actionHint);
 

@@ -86,7 +86,9 @@ function start(name) {
     actors,
     toggleView: () => setView(scene.mode === 'action' ? 'top' : 'action'),
   });
-  scene.onPointerLockLost = () => setView('top');
+  // Esc releases the pointer but keeps the view: the next click on the world
+  // re-engages mouse-look (input.js), so the default camera never dumps you
+  // into the overview uninvited.
 
   conn = new Connection(name, {
     onMessage: (msg) => {
@@ -122,6 +124,11 @@ function start(name) {
     gameEl.hidden = false;
     scene.resize();
     reportSize(true);
+    // You arrive behind your own shoulders: the action camera is the default
+    // view, V drops to the top-down overview. Pointer lock wants a user
+    // gesture — the join click usually still counts; if the browser says no,
+    // the first click on the world engages mouse-look instead of swinging.
+    setView('action');
   }
 
   function onScene(msg) {
