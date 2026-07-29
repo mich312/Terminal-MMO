@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO_DIR="$HOME/Terminal-MMO"
-URL="http://127.0.0.1:8080/healthz"   # container's loopback web publish
+URL="http://127.0.0.1:8081/healthz"   # container's loopback web publish
 cd "$REPO_DIR"
 
 compose() { docker compose -f docker-compose.yml -f docker-compose.edge.yml "$@"; }
