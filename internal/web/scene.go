@@ -222,10 +222,10 @@ func (s *sceneState) Build(in sceneInput) *Scene {
 		if lt.Sunless {
 			hex, strength = ui.SunlessAmbient()
 		}
-		sc.Ambient = &Ambient{Hex: hex, Strength: strength}
+		sc.Ambient = ambientOf(hex, strength)
 	} else {
 		hex, strength := ui.Ambient(in.Now)
-		sc.Ambient = &Ambient{Hex: hex, Strength: strength}
+		sc.Ambient = ambientOf(hex, strength)
 	}
 
 	// Contextual chrome the area exposes. These are the same interfaces the HD
@@ -263,6 +263,24 @@ func (s *sceneState) Build(in sceneInput) *Scene {
 		sc.PalAdd = append([]string(nil), s.newPal...)
 	}
 	return sc
+}
+
+// ambientOf packages the sky for the client, normalizing the day cycle's
+// strength into a plain 0…1 "how dark is it".
+//
+// ui.SunlessAmbient is the day cycle's deep-night entry — the darkest the world
+// ever gets — so it is exactly the right yardstick, and using it means the
+// browser tracks any future change to the cycle without being told.
+func ambientOf(hex string, strength float64) *Ambient {
+	_, deepest := ui.SunlessAmbient()
+	night := 0.0
+	if deepest > 0 {
+		night = strength / deepest
+	}
+	if night > 1 {
+		night = 1
+	}
+	return &Ambient{Hex: hex, Strength: strength, Night: night}
 }
 
 // encode reduces a tile to its wire form, interning its colors.

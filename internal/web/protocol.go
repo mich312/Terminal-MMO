@@ -160,6 +160,14 @@ type Light struct {
 type Ambient struct {
 	Hex      string  `json:"hex"`
 	Strength float64 `json:"strength"`
+	// Night is Strength normalized to 0 (full daylight) … 1 (deep night).
+	//
+	// Strength on its own is not enough to light a 3D scene: it is "how hard to
+	// wash tiles toward this tint", and its top end is whatever the day cycle's
+	// darkest entry happens to be — a number only the server's own table knows.
+	// A client that guessed at the range lit deep night like a bright afternoon.
+	// So the server, which owns the table, does the normalizing.
+	Night float64 `json:"night"`
 }
 
 // Label is floating world-space text: a portal's destination name, a claim

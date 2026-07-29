@@ -116,6 +116,7 @@ function start(name) {
     field.apply(msg);
     actors.sync(msg, field.palette);
     scene.applyLighting(msg.ambient, msg.light, Math.min(msg.w || 0, msg.h || 0));
+    actors.setNight(msg.ambient?.night);
 
     ui.setArea(msg.areaName || '', msg.flare);
     ui.setClaim(msg.claim);

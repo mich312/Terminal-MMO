@@ -33,9 +33,12 @@ function part(geom, opts = {}) {
     fixed: opts.fixed ?? null,   // an absolute color, ignoring the prop's
     glow: opts.glow ?? 0,        // emissive strength
     sway: opts.sway ?? 0,        // how much wind moves this part
-    // Flat quads (grass, leaves, reeds) have no back face, so lit from behind
-    // they render as black cut-outs. They are the one thing here that must be
-    // drawn from both sides.
+    rough: opts.rough,           // PBR roughness; undefined takes the default
+    metal: opts.metal,           // PBR metalness
+    // Draw this part from both sides. Nothing needs it today — foliage solves
+    // the same problem with mirrored quads instead, because DoubleSide flips
+    // normals on back faces and that's exactly what foliage can't afford (see
+    // blades). Kept for a part that genuinely wants it.
     double: opts.double ?? false,
   };
 }
@@ -102,22 +105,34 @@ function roof(w, d, h, y) {
   return g;
 }
 
-/** Crossed vertical quads — the cheapest thing that reads as grass or leaves. */
+/** Crossed vertical quads — the cheapest thing that reads as grass or leaves.
+ *
+ *  Two details here are load-bearing, and both were bugs first.
+ *
+ *  The normals are forced to point straight up. A vertical quad under an
+ *  overhead sun catches almost no light and renders as a black cut-out;
+ *  lighting blades as though they were the ground they stand on is the standard
+ *  foliage trick, and it keeps grass the same brightness as its tile.
+ *
+ *  Each quad is then emitted twice, back to back, and the material stays
+ *  single-sided. The obvious way to make a quad visible from behind is
+ *  DoubleSide — but three flips the normal on back faces, which turns that
+ *  carefully-chosen up-normal into a down-normal and puts the grass right back
+ *  in the dark. Mirrored pairs mean whichever face you're looking at is a front
+ *  face, with the normal we asked for. */
 function blades(w, h, n, y = 0) {
   const geoms = [];
   for (let i = 0; i < n; i++) {
-    const g = new THREE.PlaneGeometry(w, h);
-    g.rotateY((i / n) * Math.PI);
-    g.translate(0, y + h / 2, 0);
-    geoms.push(g);
+    for (const flip of [0, Math.PI]) {
+      const g = new THREE.PlaneGeometry(w, h);
+      g.rotateY((i / n) * Math.PI + flip);
+      g.translate(0, y + h / 2, 0);
+      geoms.push(g);
+    }
   }
   // Without BufferGeometryUtils (core three only) we merge by hand: the quads
   // are all PlaneGeometry, so their attributes line up exactly.
   const merged = mergeSame(geoms);
-  // Point every normal straight up. A vertical quad under an overhead sun
-  // catches almost no light and renders as a black cut-out; lighting the blades
-  // as though they were the ground they stand on is the standard foliage trick,
-  // and it keeps grass the same brightness as the tile beneath it.
   const normals = merged.attributes.normal;
   for (let i = 0; i < normals.count; i++) normals.setXYZ(i, 0, 1, 0);
   normals.needsUpdate = true;
@@ -200,7 +215,7 @@ const builders = {
     switch (s.style) {
       case 'flower':
         return [
-          part(blades(0.22, s.h * 0.85, 3), { tint: 0.7, sway: s.sway, double: true }),
+          part(blades(0.22, s.h * 0.85, 3), { tint: 1.15, sway: s.sway }),
           part(sphere(0.07, 0, s.h * 0.7, 0, 6, 4), { tint: 1.5, sway: s.sway }),
         ];
       case 'bush':
@@ -209,17 +224,17 @@ const builders = {
           part(blob(s.h * 0.4, 0.16, s.h * 0.2, 0.12, 0), { tint: 1.15, sway: s.sway }),
         ];
       case 'reed':
-        return [part(blades(0.16, s.h, 3), { sway: s.sway, double: true })];
+        return [part(blades(0.16, s.h, 3), { sway: s.sway })];
       case 'crop':
         return [
-          part(blades(0.5, s.h, 3), { tint: 1.05, sway: s.sway, double: true }),
+          part(blades(0.5, s.h, 3), { tint: 1.3, sway: s.sway }),
           part(box(0.7, 0.05, 0.7), { tint: 0.7 }),
         ];
       default: // tuft
         // Three crossed blades, narrower than they are tall. Wide, short quads
         // read as a flat "+" painted on the ground from a top-down camera —
         // grass has to stand up to look like grass.
-        return [part(blades(s.w * 0.55, s.h, 3), { sway: s.sway, double: true })];
+        return [part(blades(s.w * 0.55, s.h, 3), { tint: 1.35, sway: s.sway })];
     }
   },
 
@@ -281,8 +296,9 @@ const builders = {
       case 'machine':
       case 'turbine':
         return [
-          part(box(w, h * 0.8, d, 0, 0), { tint: 0.9 }),
-          part(box(w * 0.55, h * 0.3, d * 0.55, 0, h * 0.8), { tint: 1.1 }),
+          // Machinery is the one thing in the world that should look metallic.
+          part(box(w, h * 0.8, d, 0, 0), { tint: 0.9, rough: 0.42, metal: 0.55 }),
+          part(box(w * 0.55, h * 0.3, d * 0.55, 0, h * 0.8), { tint: 1.1, rough: 0.42, metal: 0.55 }),
           part(box(w * 0.4, h * 0.22, d * 0.1, 0, h * 0.25, d * 0.5),
             { glow: s.glow, tint: 1.6 }),
         ];
@@ -413,7 +429,7 @@ const builders = {
         ];
       case 'fountain':
         return [
-          part(cyl(0.5, 0.52, s.h * 0.4, 12), { fixed: STONE }),
+          part(cyl(0.5, 0.52, s.h * 0.4, 12), { fixed: STONE, rough: 0.75 }),
           part(cyl(0.42, 0.42, s.h * 0.15, 12, 0, s.h * 0.4), { glow: s.glow, tint: 1.6 }),
         ];
       case 'shroom':

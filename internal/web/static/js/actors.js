@@ -65,16 +65,31 @@ function nameSprite(text, hex) {
 function buildBody(parts, color) {
   const group = new THREE.Group();
   const c = new THREE.Color();
+  const lit = [];
   for (const p of parts) {
     const material = p.glow > 0
       ? new THREE.MeshBasicMaterial({ color: 0xffffff })
-      : new THREE.MeshLambertMaterial({ color: 0xffffff });
+      : new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        // Bodies are a touch smoother than the world around them, so a player
+        // catches a highlight and reads as the thing that's alive on screen.
+        roughness: p.rough ?? 0.62,
+        metalness: p.metal ?? 0.04,
+      });
     if (p.double) material.side = THREE.DoubleSide;
     if (p.fixed != null) c.setHex(p.fixed);
     else c.copy(color).multiplyScalar(p.tint);
     material.color.copy(c);
-    group.add(new THREE.Mesh(p.geom, material));
+    const mesh = new THREE.Mesh(p.geom, material);
+    // An avatar's own shadow is the strongest cue that it's standing on the
+    // ground rather than floating above it — worth having on the one object
+    // the player is actually watching.
+    mesh.castShadow = p.glow === 0;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    if (material.isMeshStandardMaterial) lit.push(material);
   }
+  group.userData.lit = lit;
   return group;
 }
 
@@ -195,6 +210,11 @@ export class ActorField {
         actor = this.spawn(a, color, isPlayer);
         if (!actor) continue;
         map.set(id, actor);
+        // Spawned mid-night: light it now rather than at the next change.
+        for (const m of actor.group.userData.lit || []) {
+          m.emissive.copy(m.color);
+          m.emissiveIntensity = 0.42 * (this._night || 0) * (isPlayer ? 1 : 0.5);
+        }
         actor.place(a.x + 0.5, a.y + 0.5);
       } else {
         actor.moveTo(a.x + 0.5, a.y + 0.5);
@@ -271,6 +291,30 @@ export class ActorField {
     bar.renderOrder = 11;
     bar.visible = false;
     return bar;
+  }
+
+  /** setNight keeps bodies readable after dark.
+   *
+   *  internal/ui/atmosphere.go is explicit about this: the day/night wash is
+   *  applied to tiles but "player glyphs are left untouched so avatars stay
+   *  readable at night". The terminal gets that by simply not tinting them; in
+   *  a lit 3D scene the equivalent is a floor of self-illumination, so a body
+   *  never disappears into an unlit field. Creatures get it too, at half — you
+   *  should be able to make out a deer at midnight, but not mistake it for
+   *  midday.
+   */
+  setNight(n) {
+    const night = Math.max(0, Math.min(1, n || 0));
+    if (this._night === night) return;
+    this._night = night;
+    const apply = (actor, scale) => {
+      for (const m of actor.group.userData.lit || []) {
+        m.emissive.copy(m.color);
+        m.emissiveIntensity = 0.42 * night * scale;
+      }
+    };
+    for (const a of this.players.values()) apply(a, 1);
+    for (const a of this.creatures.values()) apply(a, 0.5);
   }
 
   /** update advances every actor. Labels and bars are sprites, so they keep

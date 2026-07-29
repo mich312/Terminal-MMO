@@ -117,19 +117,60 @@ lets HTML lay it out.
 | `input.js` | keyboard |
 
 Everything is drawn with `InstancedMesh`, pooled per material — a screenful of
-forest is ~40 draw calls, not a thousand. Wind is a few lines injected into the
-vertex shader (`addWind`), so 300 swaying trees cost no per-frame CPU.
+forest is ~55 draw calls (including the shadow pass), not a thousand. Wind is a
+few lines injected into the vertex shader (`addWind`), so 300 swaying trees cost
+no per-frame CPU.
 
 Three things carry over directly from the terminal renderers:
 
 - **Day/night.** `ui.Ambient` already computes a sky tint and strength for the
-  hour; here it drives the sun's color and intensity, the hemisphere light and
-  the fog color, instead of a per-pixel wash.
+  hour; here it drives the sun's color and intensity, the sky gradient, the
+  environment light and the fog, instead of a per-pixel wash.
 - **Radial light.** `game.HDLighter` (the Wilds' discovery circle, a cave's
   lantern) becomes distance fog, so darkness is something you walk a hole in.
 - **Fog of war.** The Wilds already colors unexplored ground `#0B0E13`. The
   browser draws exactly that, so the discovery boundary looks the same in both
   clients.
+
+### Lighting
+
+- **ACES filmic tone mapping.** Highlights roll off instead of clipping, which
+  is most of the difference between "3D shapes" and "a rendered scene".
+- **Shadows** (soft PCF, 2048²). The shadow camera is a tight ortho box that
+  follows the player, which buys far more resolution than a bigger map would.
+  Ground receives but never casts; foliage casts nothing (double-sided quads
+  with faked normals self-shadow into mush).
+- **PBR materials keyed off the surface the server already sends.** `TileTex`
+  says grass, brick, metal or water per tile — which is exactly the information
+  roughness and metalness need. Four material classes cover fourteen textures,
+  at the cost of no new data.
+- **Warm key, cool fill.** A warm sun against a blue sky bounce gives a surface
+  a lit side and a shaded side that differ in *hue*, not just brightness.
+- **Gradient sky, doubling as the environment map.** The dome is PMREM-filtered
+  into `scene.environment` (re-baked only when the horizon color moves, since
+  the bake costs milliseconds and the sky changes over minutes), so PBR
+  materials reflect the actual sky.
+- **`Ambient.Night`.** The wire carries `strength` normalized to 0…1 by the
+  server. `strength` alone is unusable for lighting — its top end is whatever
+  the day cycle's darkest entry happens to be, a number only the server's table
+  knows — and a client guessing at the range lit deep night like a bright
+  afternoon.
+- **Avatars stay lit after dark.** `internal/ui/atmosphere.go` says players are
+  "left untouched so avatars stay readable at night"; the 3D equivalent is a
+  floor of self-illumination on bodies (half as much for creatures).
+
+### Variation
+
+Identical, grid-aligned copies are the loudest signal that a world was
+generated. Props whose `Shape.Jitter` is non-zero get a random facing, a few
+percent of scale, and a slight shift in tone — hashed from the tile's own
+coordinates, so a tree is the same tree for every player and across reconnects.
+Ground tiles get ±3% brightness for the same reason.
+
+Only things that *grew* are jittered. A cathedral squared to the street is not
+a mistake to be corrected, so buildings, fences, bridges and portals are exempt
+— which is why the flag lives in the Go shape table rather than being inferred
+in the client.
 
 Movement interpolation is the one thing the browser adds. The world is a grid
 and always was — the server says "anna is now on tile (12, 7)". A terminal has

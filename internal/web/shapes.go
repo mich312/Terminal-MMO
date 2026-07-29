@@ -28,6 +28,17 @@ type Shape struct {
 	H     float64 `json:"h"`              // height, in tiles
 	Glow  float64 `json:"glow,omitempty"` // emissive strength at night (0–1)
 	Sway  float64 `json:"sway,omitempty"` // wind animation amount (0–1)
+	// Jitter is how much this prop may vary between instances: the client spins
+	// it to a random facing and scales it by up to ±Jitter, seeded from the
+	// tile's own coordinates so it stays identical for every player and across
+	// reconnects.
+	//
+	// It exists because identical, grid-aligned copies are what make a
+	// generated world look generated. A forest of byte-identical trees all
+	// facing the same way reads as tiling instantly; the same trees turned and
+	// resized a little read as a forest. Only things that *grew* get this —
+	// a cathedral squared to the street is not a mistake to be corrected.
+	Jitter float64 `json:"jitter,omitempty"`
 }
 
 // The builders the client implements. Everything below composes from these
@@ -51,112 +62,112 @@ const (
 // mirror the const block in internal/game/tilemap.go so the two read as a pair.
 var propShapes = map[game.TileProp]Shape{
 	// Overworld flora. Trees sway; ground cover sways more.
-	game.PropFlower: {BuildClump, "flower", 0.5, 0.5, 0.40, 0, 0.6},
-	game.PropTuft:   {BuildClump, "tuft", 0.5, 0.5, 0.45, 0, 0.7},
-	game.PropTree:   {BuildTree, "round", 1.0, 1.0, 2.2, 0, 0.25},
-	game.PropBush:   {BuildClump, "bush", 0.8, 0.8, 0.5, 0, 0.35},
-	game.PropStump:  {BuildTree, "stump", 0.6, 0.6, 0.35, 0, 0},
-	game.PropAcacia: {BuildTree, "acacia", 1.4, 1.4, 2.4, 0, 0.2},
-	game.PropPalm:   {BuildTree, "palm", 1.2, 1.2, 2.8, 0, 0.4},
-	game.PropFir:    {BuildTree, "conifer", 1.0, 1.0, 2.8, 0, 0.15},
-	game.PropReed:   {BuildClump, "reed", 0.7, 0.7, 0.9, 0, 0.8},
-	game.PropCrop:   {BuildClump, "crop", 0.8, 0.8, 0.7, 0, 0.5},
+	game.PropFlower: {BuildClump, "flower", 0.5, 0.5, 0.40, 0, 0.6, 0.22},
+	game.PropTuft:   {BuildClump, "tuft", 0.5, 0.5, 0.45, 0, 0.7, 0.22},
+	game.PropTree:   {BuildTree, "round", 1.0, 1.0, 2.2, 0, 0.25, 0.14},
+	game.PropBush:   {BuildClump, "bush", 0.8, 0.8, 0.5, 0, 0.35, 0.22},
+	game.PropStump:  {BuildTree, "stump", 0.6, 0.6, 0.35, 0, 0, 0.14},
+	game.PropAcacia: {BuildTree, "acacia", 1.4, 1.4, 2.4, 0, 0.2, 0.14},
+	game.PropPalm:   {BuildTree, "palm", 1.2, 1.2, 2.8, 0, 0.4, 0.14},
+	game.PropFir:    {BuildTree, "conifer", 1.0, 1.0, 2.8, 0, 0.15, 0.14},
+	game.PropReed:   {BuildClump, "reed", 0.7, 0.7, 0.9, 0, 0.8, 0.22},
+	game.PropCrop:   {BuildClump, "crop", 0.8, 0.8, 0.7, 0, 0.5, 0.22},
 
 	// Stone.
-	game.PropBoulder:    {BuildRock, "boulder", 0.9, 0.9, 0.8, 0, 0},
-	game.PropRock:       {BuildRock, "rock", 0.6, 0.6, 0.35, 0, 0},
-	game.PropCrag:       {BuildRock, "spire", 0.9, 0.9, 1.6, 0, 0},
-	game.PropStone:      {BuildRock, "rubble", 0.8, 0.8, 0.4, 0, 0},
-	game.PropStalagmite: {BuildRock, "spire", 0.5, 0.5, 0.9, 0, 0},
-	game.PropColumn:     {BuildRock, "column", 0.8, 0.8, 3.0, 0, 0},
-	game.PropFlowstone:  {BuildRock, "flowstone", 0.9, 0.9, 1.1, 0, 0},
-	game.PropTimbering:  {BuildFence, "timber", 1.0, 1.0, 1.6, 0, 0},
+	game.PropBoulder:    {BuildRock, "boulder", 0.9, 0.9, 0.8, 0, 0, 0.18},
+	game.PropRock:       {BuildRock, "rock", 0.6, 0.6, 0.35, 0, 0, 0.18},
+	game.PropCrag:       {BuildRock, "spire", 0.9, 0.9, 1.6, 0, 0, 0.18},
+	game.PropStone:      {BuildRock, "rubble", 0.8, 0.8, 0.4, 0, 0, 0.18},
+	game.PropStalagmite: {BuildRock, "spire", 0.5, 0.5, 0.9, 0, 0, 0.18},
+	game.PropColumn:     {BuildRock, "column", 0.8, 0.8, 3.0, 0, 0, 0.18},
+	game.PropFlowstone:  {BuildRock, "flowstone", 0.9, 0.9, 1.1, 0, 0, 0.18},
+	game.PropTimbering:  {BuildFence, "timber", 1.0, 1.0, 1.6, 0, 0, 0},
 
 	// Settlement structures. Footprints match the multi-tile sprites, drawn
 	// bottom-left-anchored the way the tileset anchors them.
-	game.PropWell:      {BuildBox, "well", 0.9, 0.9, 0.8, 0, 0},
-	game.PropFenceH:    {BuildFence, "h", 1.0, 0.2, 0.6, 0, 0},
-	game.PropFenceV:    {BuildFence, "v", 0.2, 1.0, 0.6, 0, 0},
-	game.PropFencePost: {BuildFence, "post", 0.25, 0.25, 0.8, 0, 0},
-	game.PropStoneWall: {BuildFence, "wall", 1.0, 1.0, 1.4, 0, 0},
-	game.PropTower:     {BuildFence, "tower", 1.0, 1.0, 2.6, 0, 0},
-	game.PropBrazier:   {BuildGlow, "fire", 0.4, 0.4, 1.0, 0.9, 0},
-	game.PropStall:     {BuildBox, "stall", 1.0, 1.0, 1.0, 0, 0},
+	game.PropWell:      {BuildBox, "well", 0.9, 0.9, 0.8, 0, 0, 0},
+	game.PropFenceH:    {BuildFence, "h", 1.0, 0.2, 0.6, 0, 0, 0},
+	game.PropFenceV:    {BuildFence, "v", 0.2, 1.0, 0.6, 0, 0, 0},
+	game.PropFencePost: {BuildFence, "post", 0.25, 0.25, 0.8, 0, 0, 0},
+	game.PropStoneWall: {BuildFence, "wall", 1.0, 1.0, 1.4, 0, 0, 0},
+	game.PropTower:     {BuildFence, "tower", 1.0, 1.0, 2.6, 0, 0, 0},
+	game.PropBrazier:   {BuildGlow, "fire", 0.4, 0.4, 1.0, 0.9, 0, 0.12},
+	game.PropStall:     {BuildBox, "stall", 1.0, 1.0, 1.0, 0, 0, 0},
 
-	game.PropHouse:          {BuildBuilding, "house", 1.0, 1.0, 1.6, 0, 0},
-	game.PropBldCottage:     {BuildBuilding, "cottage", 1.0, 1.0, 1.5, 0.15, 0},
-	game.PropBldHouse:       {BuildBuilding, "house", 2.0, 2.0, 2.0, 0.15, 0},
-	game.PropBldLonghouse:   {BuildBuilding, "longhouse", 3.0, 2.0, 1.9, 0.15, 0},
-	game.PropBldBarn:        {BuildBuilding, "barn", 2.0, 2.0, 2.2, 0, 0},
-	game.PropBldChurch:      {BuildBuilding, "church", 2.0, 3.0, 3.4, 0.1, 0},
-	game.PropBldKeep:        {BuildBuilding, "keep", 3.0, 3.0, 3.6, 0.1, 0},
-	game.PropBldCathedral:   {BuildBuilding, "cathedral", 3.0, 4.0, 4.6, 0.1, 0},
-	game.PropBldTownhouse:   {BuildBuilding, "townhouse", 2.0, 3.0, 3.0, 0.2, 0},
-	game.PropBldMarketHall:  {BuildBuilding, "markethall", 3.0, 3.0, 2.4, 0.15, 0},
-	game.PropBldSmithy:      {BuildBuilding, "smithy", 2.0, 2.0, 1.9, 0.55, 0},
-	game.PropBldTavern:      {BuildBuilding, "tavern", 2.0, 2.0, 2.1, 0.5, 0},
-	game.PropBldRowhouse:    {BuildBuilding, "rowhouse", 2.0, 3.0, 2.6, 0.2, 0},
-	game.PropBldNarrowhouse: {BuildBuilding, "narrowhouse", 1.0, 2.0, 2.4, 0.2, 0},
-	game.PropBldDeephouse:   {BuildBuilding, "deephouse", 2.0, 4.0, 3.0, 0.2, 0},
-	game.PropMill:           {BuildBuilding, "mill", 2.0, 2.0, 3.0, 0, 0},
-	game.PropNoticeBoard:    {BuildBox, "sign", 0.9, 0.25, 0.9, 0, 0},
+	game.PropHouse:          {BuildBuilding, "house", 1.0, 1.0, 1.6, 0, 0, 0},
+	game.PropBldCottage:     {BuildBuilding, "cottage", 1.0, 1.0, 1.5, 0.15, 0, 0},
+	game.PropBldHouse:       {BuildBuilding, "house", 2.0, 2.0, 2.0, 0.15, 0, 0},
+	game.PropBldLonghouse:   {BuildBuilding, "longhouse", 3.0, 2.0, 1.9, 0.15, 0, 0},
+	game.PropBldBarn:        {BuildBuilding, "barn", 2.0, 2.0, 2.2, 0, 0, 0},
+	game.PropBldChurch:      {BuildBuilding, "church", 2.0, 3.0, 3.4, 0.1, 0, 0},
+	game.PropBldKeep:        {BuildBuilding, "keep", 3.0, 3.0, 3.6, 0.1, 0, 0},
+	game.PropBldCathedral:   {BuildBuilding, "cathedral", 3.0, 4.0, 4.6, 0.1, 0, 0},
+	game.PropBldTownhouse:   {BuildBuilding, "townhouse", 2.0, 3.0, 3.0, 0.2, 0, 0},
+	game.PropBldMarketHall:  {BuildBuilding, "markethall", 3.0, 3.0, 2.4, 0.15, 0, 0},
+	game.PropBldSmithy:      {BuildBuilding, "smithy", 2.0, 2.0, 1.9, 0.55, 0, 0},
+	game.PropBldTavern:      {BuildBuilding, "tavern", 2.0, 2.0, 2.1, 0.5, 0, 0},
+	game.PropBldRowhouse:    {BuildBuilding, "rowhouse", 2.0, 3.0, 2.6, 0.2, 0, 0},
+	game.PropBldNarrowhouse: {BuildBuilding, "narrowhouse", 1.0, 2.0, 2.4, 0.2, 0, 0},
+	game.PropBldDeephouse:   {BuildBuilding, "deephouse", 2.0, 4.0, 3.0, 0.2, 0, 0},
+	game.PropMill:           {BuildBuilding, "mill", 2.0, 2.0, 3.0, 0, 0, 0},
+	game.PropNoticeBoard:    {BuildBox, "sign", 0.9, 0.25, 0.9, 0, 0, 0},
 	game.PropBldBody:        {}, // a covered footprint tile: the anchor draws it
 
 	// Bridges and ground coverings — walkable, so they lie flat.
-	game.PropBridgeH: {BuildFlat, "bridge-h", 1.0, 1.0, 0.08, 0, 0},
-	game.PropBridgeV: {BuildFlat, "bridge-v", 1.0, 1.0, 0.08, 0, 0},
-	game.PropBedroll: {BuildFlat, "bedroll", 0.8, 0.6, 0.1, 0, 0},
-	game.PropChasm:   {BuildFlat, "chasm", 1.0, 1.0, 0.05, 0, 0},
+	game.PropBridgeH: {BuildFlat, "bridge-h", 1.0, 1.0, 0.08, 0, 0, 0},
+	game.PropBridgeV: {BuildFlat, "bridge-v", 1.0, 1.0, 0.08, 0, 0, 0},
+	game.PropBedroll: {BuildFlat, "bedroll", 0.8, 0.6, 0.1, 0, 0, 0},
+	game.PropChasm:   {BuildFlat, "chasm", 1.0, 1.0, 0.05, 0, 0, 0},
 
 	// Indoor furniture and machinery.
-	game.PropMachine:   {BuildBox, "machine", 0.9, 0.9, 1.1, 0.2, 0},
-	game.PropScreen:    {BuildBox, "screen", 1.0, 0.2, 0.9, 0.65, 0},
-	game.PropPlinth:    {BuildBox, "plinth", 0.7, 0.7, 0.7, 0, 0},
-	game.PropCrate:     {BuildBox, "crate", 0.8, 0.8, 0.7, 0, 0},
-	game.PropPipe:      {BuildBox, "pipe", 1.0, 0.4, 0.5, 0.3, 0},
-	game.PropTurbine:   {BuildBox, "turbine", 0.9, 0.9, 1.3, 0.5, 0},
-	game.PropWorkbench: {BuildBox, "workbench", 0.9, 0.9, 0.8, 0, 0},
-	game.PropSawmill:   {BuildBox, "sawmill", 1.0, 1.0, 1.1, 0.25, 0},
-	game.PropFurnace:   {BuildBox, "furnace", 1.0, 1.0, 1.3, 0.75, 0},
-	game.PropChest:     {BuildBox, "chest", 0.7, 0.5, 0.5, 0, 0},
-	game.PropLog:       {BuildBox, "logs", 0.9, 0.7, 0.5, 0, 0},
+	game.PropMachine:   {BuildBox, "machine", 0.9, 0.9, 1.1, 0.2, 0, 0},
+	game.PropScreen:    {BuildBox, "screen", 1.0, 0.2, 0.9, 0.65, 0, 0},
+	game.PropPlinth:    {BuildBox, "plinth", 0.7, 0.7, 0.7, 0, 0, 0},
+	game.PropCrate:     {BuildBox, "crate", 0.8, 0.8, 0.7, 0, 0, 0},
+	game.PropPipe:      {BuildBox, "pipe", 1.0, 0.4, 0.5, 0.3, 0, 0},
+	game.PropTurbine:   {BuildBox, "turbine", 0.9, 0.9, 1.3, 0.5, 0, 0},
+	game.PropWorkbench: {BuildBox, "workbench", 0.9, 0.9, 0.8, 0, 0, 0},
+	game.PropSawmill:   {BuildBox, "sawmill", 1.0, 1.0, 1.1, 0.25, 0, 0},
+	game.PropFurnace:   {BuildBox, "furnace", 1.0, 1.0, 1.3, 0.75, 0, 0},
+	game.PropChest:     {BuildBox, "chest", 0.7, 0.5, 0.5, 0, 0, 0},
+	game.PropLog:       {BuildBox, "logs", 0.9, 0.7, 0.5, 0, 0, 0},
 
 	// Light sources and luminous finds.
-	game.PropLamp:       {BuildGlow, "lamp", 0.3, 0.3, 1.4, 0.85, 0},
-	game.PropCore:       {BuildGlow, "orb", 1.0, 1.0, 1.4, 1.0, 0},
-	game.PropFountain:   {BuildGlow, "fountain", 1.0, 1.0, 0.8, 0.45, 0},
-	game.PropCampfire:   {BuildGlow, "fire", 0.6, 0.6, 0.5, 0.9, 0},
-	game.PropGemGlow:    {BuildGlow, "gem", 0.4, 0.4, 0.4, 0.7, 0},
-	game.PropCaveShroom: {BuildGlow, "shroom", 0.6, 0.6, 0.5, 0.8, 0},
-	game.PropGlowPool:   {BuildFlat, "pool", 1.0, 1.0, 0.06, 0.6, 0},
-	game.PropLightShaft: {BuildGlow, "shaft", 0.9, 0.9, 3.0, 0.5, 0},
-	game.PropRelic:      {BuildGlow, "relic", 0.5, 0.5, 0.5, 0.6, 0},
-	game.PropGeode:      {BuildGlow, "geode", 0.6, 0.6, 0.5, 0.8, 0},
+	game.PropLamp:       {BuildGlow, "lamp", 0.3, 0.3, 1.4, 0.85, 0, 0},
+	game.PropCore:       {BuildGlow, "orb", 1.0, 1.0, 1.4, 1.0, 0, 0},
+	game.PropFountain:   {BuildGlow, "fountain", 1.0, 1.0, 0.8, 0.45, 0, 0},
+	game.PropCampfire:   {BuildGlow, "fire", 0.6, 0.6, 0.5, 0.9, 0, 0.12},
+	game.PropGemGlow:    {BuildGlow, "gem", 0.4, 0.4, 0.4, 0.7, 0, 0.12},
+	game.PropCaveShroom: {BuildGlow, "shroom", 0.6, 0.6, 0.5, 0.8, 0, 0.12},
+	game.PropGlowPool:   {BuildFlat, "pool", 1.0, 1.0, 0.06, 0.6, 0, 0},
+	game.PropLightShaft: {BuildGlow, "shaft", 0.9, 0.9, 3.0, 0.5, 0, 0},
+	game.PropRelic:      {BuildGlow, "relic", 0.5, 0.5, 0.5, 0.6, 0, 0.12},
+	game.PropGeode:      {BuildGlow, "geode", 0.6, 0.6, 0.5, 0.8, 0, 0.12},
 
 	// Small pickups resting on the ground.
-	game.PropGem:  {BuildItem, "gem", 0.35, 0.35, 0.35, 0.15, 0},
-	game.PropHat:  {BuildItem, "hat", 0.5, 0.5, 0.3, 0.3, 0},
-	game.PropFish: {BuildItem, "fish", 0.5, 0.5, 0.2, 0, 0},
+	game.PropGem:  {BuildItem, "gem", 0.35, 0.35, 0.35, 0.15, 0, 0.15},
+	game.PropHat:  {BuildItem, "hat", 0.5, 0.5, 0.3, 0.3, 0, 0.15},
+	game.PropFish: {BuildItem, "fish", 0.5, 0.5, 0.2, 0, 0, 0.15},
 
 	// Area entrances.
-	game.PropPortal:    {BuildPortal, "gate", 1.0, 1.0, 2.0, 0.9, 0},
-	game.PropSealed:    {BuildPortal, "sealed", 1.0, 1.0, 1.8, 0.1, 0},
-	game.PropCaveMouth: {BuildPortal, "cave", 1.0, 1.0, 1.5, 0, 0},
+	game.PropPortal:    {BuildPortal, "gate", 1.0, 1.0, 2.0, 0.9, 0, 0},
+	game.PropSealed:    {BuildPortal, "sealed", 1.0, 1.0, 1.8, 0.1, 0, 0},
+	game.PropCaveMouth: {BuildPortal, "cave", 1.0, 1.0, 1.5, 0, 0, 0},
 
 	// Wildlife baked into a tile (live animals arrive as actors instead).
-	game.PropRabbit:   {BuildCreature, "rabbit", 0.5, 0.5, 0.45, 0, 0},
-	game.PropDeer:     {BuildCreature, "deer", 0.8, 0.8, 1.2, 0, 0},
-	game.PropFox:      {BuildCreature, "fox", 0.7, 0.7, 0.5, 0, 0},
-	game.PropBird:     {BuildCreature, "bird", 0.4, 0.4, 0.35, 0, 0},
-	game.PropFishWild: {BuildCreature, "fish", 0.5, 0.5, 0.25, 0, 0},
+	game.PropRabbit:   {BuildCreature, "rabbit", 0.5, 0.5, 0.45, 0, 0, 0.1},
+	game.PropDeer:     {BuildCreature, "deer", 0.8, 0.8, 1.2, 0, 0, 0.1},
+	game.PropFox:      {BuildCreature, "fox", 0.7, 0.7, 0.5, 0, 0, 0.1},
+	game.PropBird:     {BuildCreature, "bird", 0.4, 0.4, 0.35, 0, 0, 0.1},
+	game.PropFishWild: {BuildCreature, "fish", 0.5, 0.5, 0.25, 0, 0, 0.1},
 
 	// The arcade's chess cabinet.
-	game.PropChessPawn:   {BuildChess, "pawn", 0.6, 0.6, 0.5, 0, 0},
-	game.PropChessKnight: {BuildChess, "knight", 0.6, 0.6, 0.75, 0, 0},
-	game.PropChessBishop: {BuildChess, "bishop", 0.6, 0.6, 0.8, 0, 0},
-	game.PropChessRook:   {BuildChess, "rook", 0.6, 0.6, 0.7, 0, 0},
-	game.PropChessQueen:  {BuildChess, "queen", 0.6, 0.6, 0.9, 0, 0},
-	game.PropChessKing:   {BuildChess, "king", 0.6, 0.6, 1.0, 0, 0},
+	game.PropChessPawn:   {BuildChess, "pawn", 0.6, 0.6, 0.5, 0, 0, 0},
+	game.PropChessKnight: {BuildChess, "knight", 0.6, 0.6, 0.75, 0, 0, 0},
+	game.PropChessBishop: {BuildChess, "bishop", 0.6, 0.6, 0.8, 0, 0, 0},
+	game.PropChessRook:   {BuildChess, "rook", 0.6, 0.6, 0.7, 0, 0, 0},
+	game.PropChessQueen:  {BuildChess, "queen", 0.6, 0.6, 0.9, 0, 0, 0},
+	game.PropChessKing:   {BuildChess, "king", 0.6, 0.6, 1.0, 0, 0, 0},
 }
 
 // shapeNames is the prop id → shape-key table sent to the client. The client

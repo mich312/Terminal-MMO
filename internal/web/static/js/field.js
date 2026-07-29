@@ -22,8 +22,39 @@ const F_X = 0, F_Y = 1, F_KIND = 2, F_TEX = 3, F_GROUND = 4,
   F_PROP = 5, F_PCOL = 6, F_FLAGS = 7;
 const STRIDE = 8;
 
+const UP = new THREE.Vector3(0, 1, 0);
 const WALL_HEIGHT = 1.25;
 const WATER_DROP = -0.14; // water sits below the shoreline, so beaches read
+
+/* Surface classes. The server sends a texture per tile (grass, brick, metal…);
+   these are the physical properties that texture implies. It is the cheapest
+   possible material system and it costs no new data at all. */
+const SURFACES = {
+  soft: { roughness: 0.97, metalness: 0.0 },   // grass, sand, snow, dirt, fields
+  stone: { roughness: 0.78, metalness: 0.0 },  // rock, brick, interior floors
+  metal: { roughness: 0.38, metalness: 0.55 }, // machine halls
+  water: { roughness: 0.08, metalness: 0.35, envMapIntensity: 2.2 },
+};
+
+/** surfaceClass maps a texture name to how that material behaves in light. */
+function surfaceClass(tex) {
+  switch (tex) {
+    case 'water': return 'water';
+    case 'metal': return 'metal';
+    case 'rock': case 'brick': case 'floor': return 'stone';
+    default: return 'soft';
+  }
+}
+
+/** hash2 is a stable 2D value hash. Instance variation is seeded from a tile's
+ *  own coordinates rather than from a random number, so the same tree is the
+ *  same tree for every player, on every reconnect, forever — the overworld is
+ *  deterministic and its rendering has to be too. */
+function hash2(x, y, salt = 0) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(salt, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 
 /** InstancePool is one InstancedMesh plus a free list, so instances can be
  *  handed out and returned as tiles come and go. A returned slot is collapsed
@@ -48,8 +79,11 @@ class InstancePool {
     mesh.count = 0;
     mesh.frustumCulled = false; // instances span the whole window; culling the
     // mesh as a unit would pop the entire field
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
+    // Growing a pool builds a new mesh, so the shadow flags have to live on the
+    // pool rather than on the mesh — otherwise a forest silently stops casting
+    // shadows the moment it outgrows its first buffer.
+    mesh.castShadow = this.doesCast === true;
+    mesh.receiveShadow = this.doesReceive === true;
     if (this.mesh) {
       // Growing: copy the old instance data into the bigger buffer.
       mesh.count = this.mesh.count;
@@ -66,6 +100,16 @@ class InstancePool {
     this.scene.add(mesh);
     this.mesh = mesh;
     this.cap = cap;
+  }
+
+  /** setShadows records whether this pool casts and receives, and applies it —
+   *  including across every future growth. */
+  setShadows(cast, receive) {
+    this.doesCast = cast;
+    this.doesReceive = receive;
+    this.mesh.castShadow = cast;
+    this.mesh.receiveShadow = receive;
+    return this;
   }
 
   alloc(matrix, color) {
@@ -143,17 +187,38 @@ export class TileField {
     this._c = new THREE.Color();
     this.windMaterials = [];
 
-    const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    this.groundPool = new InstancePool(scene, plane,
-      new THREE.MeshLambertMaterial({ color: 0xffffff }), 2048);
-    // Water gets its own pool so it can be shinier and sit lower than the land
-    // around it — a shoreline you can actually see from a 3/4 view.
-    this.waterPool = new InstancePool(scene, plane.clone(),
-      new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 90, specular: 0x335577 }),
-      512);
+    // Ground is pooled by *surface class*, not by biome: the server already
+    // says whether a tile is grass, rock, metal or water, and that is exactly
+    // the information a PBR material needs. Snow and sand share a roughness;
+    // a machine-hall floor does not. Four pools cover fourteen textures.
+    this.groundPlane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    this.groundPools = new Map();
+
     const cube = new THREE.BoxGeometry(1, WALL_HEIGHT, 1).translate(0, WALL_HEIGHT / 2, 0);
     this.wallPool = new InstancePool(scene, cube,
-      new THREE.MeshLambertMaterial({ color: 0xffffff }), 1024);
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.02 }),
+      1024).setShadows(true, true);
+  }
+
+  /** groundPoolFor lazily makes one pool per surface class. */
+  groundPoolFor(cls) {
+    let pool = this.groundPools.get(cls);
+    if (pool) return pool;
+    const spec = SURFACES[cls] || SURFACES.soft;
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: spec.roughness,
+      metalness: spec.metalness,
+      // Water is the one surface that should catch the sky.
+      envMapIntensity: spec.envMapIntensity ?? 1,
+    });
+    pool = new InstancePool(this.scene, this.groundPlane.clone(), material,
+      cls === 'soft' ? 2048 : 512);
+    // The ground receives shadows but never casts one: it's a flat plane, so a
+    // cast shadow would only ever be self-shadowing acne.
+    pool.setShadows(false, true);
+    this.groundPools.set(cls, pool);
+    return pool;
   }
 
   /** setVocabulary takes the shape table from the server's hello message. */
@@ -187,8 +252,7 @@ export class TileField {
 
   clearAll() {
     this.tiles.clear();
-    this.groundPool.clear();
-    this.waterPool.clear();
+    for (const pool of this.groundPools.values()) pool.clear();
     this.wallPool.clear();
     for (const pools of this.propPools.values()) for (const p of pools) p.clear();
   }
@@ -212,16 +276,21 @@ export class TileField {
     if (kind === KIND_VOID) return; // outside the map: leave a hole
 
     const tex = this.texNames[arr[i + F_TEX]] || 'flat';
-    const isWater = tex === 'water';
+    const cls = surfaceClass(tex);
+    const isWater = cls === 'water';
     const rec = { props: [] };
 
     // Ground.
     const gc = this.color(arr[i + F_GROUND]);
-    const pool = isWater ? this.waterPool : this.groundPool;
+    const pool = this.groundPoolFor(cls);
     this._p.set(x + 0.5, isWater ? WATER_DROP : 0, y + 0.5);
     this._s.set(1, 1, 1);
     this._m.compose(this._p, this._q.identity(), this._s);
-    rec.ground = { pool, id: pool.alloc(this._m, gc) };
+    // A whisper of per-tile brightness variation. A field of one exact green is
+    // the other half of why generated ground reads as tiled; ±3% is invisible
+    // as an effect and very visible as an absence.
+    this._c.copy(gc).multiplyScalar(0.97 + hash2(x, y, 7) * 0.06);
+    rec.ground = { pool, id: pool.alloc(this._m, this._c) };
 
     // Walls are extruded from the same color as their tile, slightly darkened
     // so the top face and the sides don't merge into one flat block.
@@ -251,17 +320,29 @@ export class TileField {
     if (pools) return pools;
     const parts = partsFor(shapeKey, shape);
     pools = parts.map((p) => {
-      // A glowing part is drawn unlit, so it stays bright when the sun goes
-      // down — that is what "emissive" means for a lamp at this fidelity.
+      // Glowing parts stay unlit. A standard material's `emissive` is a single
+      // material-wide color, but the *instance* carries the hue here — every
+      // campfire, gem and portal in one pool shares a material and differs only
+      // by instance color, so an emissive material would light them all the
+      // same wrong color. Unlit keeps each one its own hue, and because basic
+      // materials are tone-mapped too it still sits inside the graded image
+      // rather than punching a flat hole in it.
       const material = p.glow > 0
         ? new THREE.MeshBasicMaterial({ color: 0xffffff })
-        : new THREE.MeshLambertMaterial({ color: 0xffffff });
+        : new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          roughness: p.rough ?? 0.88,
+          metalness: p.metal ?? 0,
+        });
       if (p.double) material.side = THREE.DoubleSide;
       if (p.sway > 0) {
         addWind(material, p.sway);
         this.windMaterials.push(material);
       }
-      const pool = new InstancePool(this.scene, p.geom, material, 128);
+      // Foliage is drawn double-sided with faked-up normals, so it makes a poor
+      // shadow caster (it self-shadows into mush); everything solid casts.
+      const pool = new InstancePool(this.scene, p.geom, material, 128)
+        .setShadows(!p.double && p.glow === 0, !p.double);
       pool.part = p;
       return pool;
     });
@@ -276,14 +357,29 @@ export class TileField {
     // ground in both clients.
     const offX = (shape.w > 1 ? (shape.w - 1) / 2 : 0);
     const offZ = (shape.d > 1 ? -(shape.d - 1) / 2 : 0);
+
+    // Per-instance variation, for the things the server says grew rather than
+    // were built. Identical, grid-aligned copies are the loudest tell that a
+    // world was generated; a turn and a few percent of size breaks it, and
+    // because it's hashed from the tile's coordinates it's stable forever.
+    const jitter = shape.jitter || 0;
+    let scale = 1, spin = 0, shade = 1;
+    if (jitter > 0) {
+      spin = hash2(x, y, 1) * Math.PI * 2;
+      scale = 1 + (hash2(x, y, 2) - 0.5) * 2 * jitter;
+      // Vary the tone as well as the shape — a stand of trees is never one green.
+      shade = 1 + (hash2(x, y, 3) - 0.5) * 0.22;
+    }
+    this._q.setFromAxisAngle(UP, spin);
+
     for (const pool of pools) {
       const p = pool.part;
       this._p.set(x + 0.5 + offX, 0, y + 0.5 + offZ);
-      this._m.compose(this._p, this._q.identity(), this._s.set(1, 1, 1));
+      this._m.compose(this._p, this._q, this._s.set(scale, scale, scale));
       if (p.fixed != null) {
-        this._c.setHex(p.fixed);
+        this._c.setHex(p.fixed).multiplyScalar(shade);
       } else {
-        this._c.copy(color).multiplyScalar(p.tint);
+        this._c.copy(color).multiplyScalar(p.tint * shade);
       }
       rec.props.push({ pool, id: pool.alloc(this._m, this._c) });
     }
