@@ -137,8 +137,13 @@ Three things carry over directly from the terminal renderers:
 - **Day/night.** `ui.Ambient` already computes a sky tint and strength for the
   hour; here it drives the sun's color and intensity, the sky gradient, the
   environment light and the fog, instead of a per-pixel wash.
-- **Radial light.** `game.HDLighter` (the Wilds' discovery circle, a cave's
-  lantern) becomes distance fog, so darkness is something you walk a hole in.
+- **Radial light.** `game.HDLighter` (a cave's lantern, the maze's torch)
+  becomes distance fog, so darkness is something you walk a hole in. That
+  applies to lights with no floor — areas whose subject *is* not being able to
+  see. A light that fades out by day (the Wilds' sight circle, via
+  `DayFadedLight`) is a lighting radius, not a view distance: outdoors the fog
+  sits at the edge of the ground the server sent, and the light's floor only
+  draws it in after dark.
 - **Fog of war.** The Wilds already colors unexplored ground `#0B0E13`. The
   browser draws exactly that, so the discovery boundary looks the same in both
   clients.

@@ -38,17 +38,25 @@ func init() {
 }
 
 // Discovery: the overworld starts hidden and is revealed as the player walks.
-// sightR is the brightly-lit circle around the player; discoverR (a touch
-// wider) is the radius committed to memory, so explored ground stays visible —
-// dimmed — once you move on.
+// sightR is the brightly-lit circle around the player; discoverR (much wider)
+// is the radius committed to memory, so explored ground stays visible — dimmed
+// — once you move on.
 //
 // Memory is stored as a sparse grid of chunkN×chunkN cells, each chunk packed
 // into a uint64 bitmask — so a fully-explored chunk costs 8 bytes while a
 // frontier chunk still keeps exact per-tile bits. Chunks persist to the store,
 // so the map (and the player's position) survive disconnects and re-entry.
+//
+// discoverR is deliberately far wider than sightR. They answer different
+// questions: sightR is how far the torch throws (a mood, and only after dark —
+// DayFadedLight opens it out by noon), while discoverR is how much of the world
+// you have *been shown*, and undiscovered ground is a flat grey slab in every
+// client. A nine-tile memory meant the 3D world ended just past the player's
+// feet in a wall of fog no lighting change could open up; the horizon there is
+// this number.
 const (
 	sightR    = 7
-	discoverR = 9
+	discoverR = 30
 	chunkN    = 8 // cells per chunk side; 8×8 = 64 = one uint64 mask
 )
 

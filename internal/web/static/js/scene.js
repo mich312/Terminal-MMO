@@ -261,8 +261,13 @@ export class WorldScene {
     if (this.mode === 'action') {
       // The chase-cam looks outward, not down: how much ground is visible is
       // set by the fog, not the zoom. Ask for a window that fills out to the
-      // fog line in every direction (the camera can spin freely).
-      return { w: 44, h: 36 };
+      // fog line in every direction (the camera can spin freely) — and the fog
+      // line is now a horizon rather than an arm's length, so this is most of
+      // what the server will hand out. The height is what the fog is measured
+      // against (it takes the smaller of the two), so it is sized against the
+      // Wilds' discovery radius: asking for more ground than has been revealed
+      // just buys undiscovered grey.
+      return { w: 76, h: 62 };
     }
     const h = 2 * this.zoom * Math.tan((this.camera.fov * Math.PI / 180) / 2);
     const w = h * this.camera.aspect;
@@ -272,8 +277,8 @@ export class WorldScene {
     // to see, and let fog handle the rest. Under-asking is visible; over-asking
     // costs a few hundred instanced tiles.
     return {
-      w: Math.ceil(w * 1.6) + 10,
-      h: Math.ceil(h / Math.sin(PITCH) * 1.3) + 10,
+      w: Math.ceil(w * 1.8) + 14,
+      h: Math.ceil(h / Math.sin(PITCH) * 1.5) + 14,
     };
   }
 
@@ -328,25 +333,33 @@ export class WorldScene {
     // the camera, which in action mode sits close over the player's shoulder —
     // a fixed anchor stands in for the top-down zoom there.
     const anchor = this.mode === 'action' ? ACT_FOG_ANCHOR : this.zoom;
-    const edge = windowTiles > 0
-      ? anchor + (windowTiles / 2) * 0.85
-      : Infinity;
+    const maxReach = windowTiles > 0 ? (windowTiles / 2) * 0.82 : 90;
 
-    // The light's floor is how much of the world stays visible *outside* the
-    // radius — the terminal fades its sight circle out toward midday
-    // (DayFadedLight), and honoring it here is what opens the daytime vista:
-    // at noon the fog retreats to the window edge and the new hills are
-    // actually on screen; after dark the same numbers close back into a torch.
-    const floor = light?.floor ?? 0;
-    if (light && light.r > 0 && floor < 0.95) {
-      const reach = light.r * (1 + 2.2 * floor);
-      this.fog.far = Math.min(anchor + reach * 1.05, edge);
-      this.fog.near = Math.min(anchor + reach * 0.35, this.fog.far - 4);
-    } else {
-      this.fog.far = Math.min(anchor + 60, edge);
-      // Keep the player's own surroundings out of the haze entirely.
-      this.fog.near = Math.max(Math.min(anchor + 6, this.fog.far - 4), this.fog.far - 26);
-    }
+    // How far you can see is a question about the *area*, not about the torch.
+    //
+    // The radial light the server sends is a lighting radius — the terminal's
+    // sight circle, seven tiles wide, tuned for a glyph grid where seven tiles
+    // is most of the screen. Reading it as a view distance is what walled the
+    // browser's world in a few paces of haze: outdoors, under a sky, with a sun
+    // and a real horizon, that is nobody's idea of visibility. So outdoors the
+    // fog now runs out to the ground the server actually sent, and the light's
+    // floor — 1 at noon, a twelfth of that at the darkest hour (DayFadedLight)
+    // — only draws it in after dark, and never past two thirds. Moonlight
+    // should still show you the shape of the valley.
+    //
+    // A light with no floor at all is the exception, and it is deliberate: the
+    // cave's lantern and the maze's torch are areas whose whole subject is not
+    // being able to see. There the light *is* the view distance.
+    const radial = !!(light && light.r > 0);
+    const floor = clamp(light?.floor ?? 0, 0, 1);
+    const lantern = radial && floor <= 0;
+    const reach = lantern
+      ? Math.min(light.r * 1.9, maxReach)
+      : maxReach * (radial ? 0.62 + 0.38 * floor : 1);
+    this.fog.far = anchor + reach;
+    // Haze over the last stretch only. The world should fade out at its
+    // horizon, not be veiled at the player's feet.
+    this.fog.near = anchor + reach * (lantern ? 0.45 : 0.6);
 
     // Underground: no sky at all. The dome must actually be hidden (its
     // material ignores fog, so it shines through any amount of black), the
@@ -393,10 +406,13 @@ export class WorldScene {
   }
 
   update(dt) {
-    // Lag the camera behind the player: a little inertia reads as weight, and
-    // it hides the fact that movement is discrete tile steps underneath. The
-    // chase-cam tracks tighter — at melee range, lag reads as seasickness.
-    this.smoothed.lerp(this.target, Math.min(1, dt * (this.mode === 'action' ? 11 : 7)));
+    // Lag the camera behind the player: a little inertia reads as weight. It
+    // used to be doing a second job — hiding the fact that movement was
+    // discrete tile steps underneath — but the body glides continuously now
+    // (actors.js), so the chase-cam can track it much more tightly. Loose
+    // tracking against a smooth body is just the hero sliding forward out of
+    // his own framing whenever you walk.
+    this.smoothed.lerp(this.target, Math.min(1, dt * (this.mode === 'action' ? 20 : 7)));
     this.yaw += (this.targetYaw - this.yaw) * Math.min(1, dt * 8);
 
     if (this.mode === 'action') {
