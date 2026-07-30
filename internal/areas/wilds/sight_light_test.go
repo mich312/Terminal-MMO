@@ -77,9 +77,10 @@ func TestSightLightStaysCenteredOnPlayer(t *testing.T) {
 
 		// The lit circle's center, in window-tile coordinates (where the player is).
 		cx, cy := light.X-ox, light.Y-oy
-		// A point just inside the revealed disc (discoverR=9) but beyond the lit
-		// radius (sightR=7), so it should be clearly darkened.
-		ex, ey := cx, cy+8
+		// A point inside the revealed disc but beyond the lit radius, so it
+		// should be clearly darkened. Derived from sightR rather than spelled
+		// out, so retuning the torch retunes the probe with it.
+		ex, ey := cx, cy+sightR+1
 
 		centerRatio := meanLum(lit, cx, cy, scale) / max1(meanLum(flat, cx, cy, scale))
 		edgeRatio := meanLum(lit, ex, ey, scale) / max1(meanLum(flat, ex, ey, scale))

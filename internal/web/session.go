@@ -28,10 +28,16 @@ const (
 	moveHz = 16 // movement steps per second the server will accept
 	tickHz = 12 // world animation counter, for portal pulse and tile anims
 	// viewport bounds. A browser window can be enormous; the tile window is
-	// capped so one client can't ask the server to build a 200×200 scene.
+	// capped so one client can't ask the server to build a 200×200 scene. The
+	// cap is also the browser's horizon — its fog closes just inside the window
+	// it was sent, because past that edge there is nothing to draw — so this is
+	// how far a player can see, and the old 64×48 was the reason the 3D world
+	// ended a dozen paces out. Tiles are delta-encoded and undiscovered ground
+	// costs nothing to generate, so the wider window is paid for once on entry
+	// and by a longer leading row per step.
 	minTiles = 8
-	maxTileW = 64
-	maxTileH = 48
+	maxTileW = 96
+	maxTileH = 72
 	// A frame is dropped rather than queued when the socket is behind, so a slow
 	// connection degrades to a lower frame rate instead of accumulating lag.
 	outBuffer = 8
