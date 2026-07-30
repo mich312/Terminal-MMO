@@ -53,6 +53,26 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 	a.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	a.cw, a.ch = startCellsW, startCellsH
 	a.solved = 0
+	// Both of the maze's rules are about cells walked into, so both hang off the
+	// tile crossing. The step counter used to charge you for any key at all,
+	// including ones the walls refused, which made a clean run's score depend on
+	// how often you bumped into things; and the exit used to be checked after
+	// every handled message rather than on arrival.
+	a.OnTile = func(x, y int) {
+		a.steps++
+		if x != a.goal[0] || y != a.goal[1] {
+			return
+		}
+		a.solved++
+		if a.cw < maxCellsW {
+			a.cw++
+		}
+		if a.ch < maxCellsH {
+			a.ch++
+		}
+		a.generate() // carves a bigger maze and puts you back at its entrance
+		a.setToast(fmt.Sprintf("escaped! maze #%d — here's a bigger one", a.solved+1))
+	}
 	a.generate()
 	return nil
 }
@@ -134,24 +154,8 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		a.setToast("new maze")
 		return a, nil
 	}
-	if _, isKey := msg.(tea.KeyMsg); isKey {
-		a.steps++
-	}
-	if portal, handled := a.HandleCommon(msg); handled {
-		if portal != "" {
-			return game.Transition{To: portal}, nil
-		}
-		if a.X == a.goal[0] && a.Y == a.goal[1] {
-			a.solved++
-			if a.cw < maxCellsW {
-				a.cw++
-			}
-			if a.ch < maxCellsH {
-				a.ch++
-			}
-			a.generate()
-			a.setToast(fmt.Sprintf("escaped! maze #%d — here's a bigger one", a.solved+1))
-		}
+	if portal, handled := a.HandleCommon(msg); handled && portal != "" {
+		return game.Transition{To: portal}, nil
 	}
 	return a, nil
 }

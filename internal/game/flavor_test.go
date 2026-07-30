@@ -2,6 +2,9 @@ package game
 
 import (
 	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -30,19 +33,13 @@ func TestFlavorAreaPortalTransition(t *testing.T) {
 	})
 	a.Init(nil)
 
-	// Spawned beside the portal: the first step must not transition (armed latch).
-	if next, _ := a.Update(key('d')); isTransition(next) {
+	// Spawned beside the portal: walking away must not transition (armed latch).
+	if next := holdKey(a, &a.Walker, key('d'), 700*time.Millisecond); isTransition(next) {
 		t.Fatal("spawning beside the portal should not transition")
 	}
 
 	// Walk back into the portal; now it should fire.
-	var got Area
-	for i := 0; i < 4; i++ {
-		got, _ = a.Update(key('a'))
-		if isTransition(got) {
-			break
-		}
-	}
+	got := holdKey(a, &a.Walker, key('a'), 2*time.Second)
 	tr, ok := got.(Transition)
 	if !ok || tr.To != "lobby" {
 		t.Fatalf("walking into the portal should transition to lobby, got %#v", got)
@@ -54,3 +51,31 @@ func TestFlavorAreaPortalTransition(t *testing.T) {
 }
 
 func isTransition(a Area) bool { _, ok := a.(Transition); return ok }
+
+// holdKey drives an area the way a client holding a movement key does: the key
+// repeats, the clock advances between repeats, and the body covers real ground.
+// It returns as soon as Update yields a Transition, else the area it ends on.
+//
+// A key no longer moves anybody by itself — it only steers — so a test that
+// wants to walk somewhere has to supply the time as well. The clock is injected
+// rather than real so this costs no wall-clock seconds.
+func holdKey(a Area, w *Walker, k tea.KeyMsg, d time.Duration) Area {
+	const slice = 30 * time.Millisecond
+	base := time.Now()
+	w.lastTick = base
+	for elapsed := time.Duration(0); elapsed < d; elapsed += slice {
+		at := base.Add(elapsed + slice)
+		w.Clock = func() time.Time { return at }
+		next, _ := a.Update(k) // the key repeats while it is held
+		if isTransition(next) {
+			return next
+		}
+		a = next
+		if next, _ = a.Update(TickMsg{}); isTransition(next) {
+			return next
+		}
+		a = next
+	}
+	w.Clock = nil
+	return a
+}

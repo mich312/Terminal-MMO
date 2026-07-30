@@ -291,6 +291,18 @@ type WorldEventMsg world.Event
 // EventsClosedMsg means the session's event channel closed (player removed).
 type EventsClosedMsg struct{}
 
+// TickMsg asks an area to advance its own clock — continuous movement,
+// principally, which has to be driven by something other than a keypress.
+//
+// The SSH client gets this for free from the world's EventTick, which it
+// already forwards to the area. The clients that render by polling (the HD
+// terminal and the browser) are deliberately cut out of that stream — see
+// world.MarkPoller — so they send this off their own frame timer instead.
+//
+// It carries no duration: a Walker measures elapsed time itself, so the rate a
+// host happens to render at doesn't change how fast anyone walks.
+type TickMsg struct{}
+
 // WaitForEvent is the subscription-command pattern: block on the session's
 // event channel and hand the next event to Update, which re-issues it.
 func WaitForEvent(ch <-chan world.Event) tea.Cmd {

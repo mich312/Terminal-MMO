@@ -2,6 +2,7 @@ package game
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -60,15 +61,13 @@ func TestPortalArming(t *testing.T) {
 	wk := &Walker{Ctx: ctx, Map: ParseMap(rows, legend, nil), AreaID: "room"}
 	wk.Enter(1, 1, 0) // body covers (1,1),(2,1),(1,2),(2,2) — beside the portal
 
-	// First move while still next to the portal must NOT trigger (latch armed).
-	if p, _ := wk.HandleCommon(key('d')); p != "" {
+	// Walking away while still beside the portal must NOT trigger it (the latch
+	// arms only once we're clear).
+	if p, _ := wk.WalkFor(1, 0, false, 700*time.Millisecond); p != "" {
 		t.Fatalf("spawning beside a portal should not trigger it, got %q", p)
 	}
 	// Walk back toward the portal; now it should fire.
-	got := ""
-	for i := 0; i < 4 && got == ""; i++ {
-		got, _ = wk.HandleCommon(key('a'))
-	}
+	got, _ := wk.WalkFor(-1, 0, false, 2*time.Second)
 	if got != "dest" {
 		t.Fatalf("walking into the portal should transition to dest, got %q", got)
 	}

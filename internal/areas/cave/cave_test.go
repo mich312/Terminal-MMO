@@ -3,8 +3,7 @@ package cave
 import (
 	"math/rand"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
+	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
@@ -145,10 +144,11 @@ func TestLinkedMouthsShareCave(t *testing.T) {
 		t.Skip("expected cave system not present under this seed")
 	}
 	st := store.Open(t.TempDir() + "/t.db")
-	walk := func(a *area, path string) {
-		for _, c := range path {
-			a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{c}})
-		}
+	// Walking is continuous now, so exploring is a direction held for a distance
+	// rather than a string of keystrokes. WalkFor supplies the clock, so this
+	// crosses real ground without the test sleeping for it.
+	walk := func(a *area, dx, dy float64, tiles float64) {
+		a.WalkFor(dx, dy, false, time.Duration(tiles/game.WalkSpeed*float64(time.Second)))
 	}
 
 	a1 := newArea(st) // enter by the origin mouth and explore
@@ -156,7 +156,8 @@ func TestLinkedMouthsShareCave(t *testing.T) {
 	if len(a1.overworldDoors) < 2 {
 		t.Fatalf("expected a multi-mouth cave, got %d", len(a1.overworldDoors))
 	}
-	walk(a1, "ddddddddddssssssss")
+	walk(a1, 1, 0, 10)
+	walk(a1, 0, 1, 8)
 	explored := countSeen(a1)
 
 	a2 := newArea(st) // enter by a *different* mouth of the same system
