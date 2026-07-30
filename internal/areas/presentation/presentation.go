@@ -340,6 +340,10 @@ func (a *area) rebuildSafe() {
 	for d := 0; d < a.Map.W; d++ {
 		for _, x := range [2]int{a.X - d, a.X + d} {
 			if a.fits(x, cy) {
+				// Place the body, not just the cell: re-seating is a teleport,
+				// and leaving the continuous position behind would have the
+				// next tick walk us straight back to where the wall now is.
+				a.Body.Place(x, cy)
 				a.X, a.Y = x, cy
 				a.Ctx.World.Move(a.Ctx.Name, x, cy)
 				return

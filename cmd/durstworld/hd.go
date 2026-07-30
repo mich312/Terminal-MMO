@@ -974,6 +974,14 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				applyMove(pendingMove)
 				havePending = false
 			}
+			// Walking is continuous now: a movement key points the body and the
+			// body keeps going while the key is held, so the area needs a clock
+			// and not just keystrokes. This client is a poller and the world
+			// deliberately doesn't send it one (world.MarkPoller), so the render
+			// ticker doubles as the movement clock. Repainting is left to the
+			// hdFPS world-reflection counter below — the avatar is drawn snapped
+			// to its tile, so there is nothing to see between crossings.
+			sendArea(game.TickMsg{})
 			// Drive a real-time area (Snake, …) off the wall clock — the HD client
 			// never forwards a clock to areas otherwise. A tick may transition.
 			if tk, ok := area.(game.Ticker); ok && time.Since(lastGameTick) >= tk.TickInterval() {

@@ -2,8 +2,7 @@ package maze
 
 import (
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
+	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/world"
@@ -65,15 +64,19 @@ func TestReachingExitRegenerates(t *testing.T) {
 	startW, startH := a.cw, a.ch
 	gx, gy := a.goal[0], a.goal[1]
 
-	// Stand on a passage cell next to the exit and step onto it.
-	dirs := map[[2]int]string{{1, 0}: "d", {-1, 0}: "a", {0, 1}: "s", {0, -1}: "w"}
+	// Stand on a passage cell next to the exit and walk onto it. Movement is
+	// continuous now, so this is a duration rather than a keystroke: a little
+	// over the third of a second one tile takes at game.WalkSpeed, but well
+	// short of the two thirds that would carry us past the exit cell.
+	dirs := [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	moved := false
-	for d, k := range dirs {
+	for _, d := range dirs {
 		nx, ny := gx-d[0], gy-d[1]
 		if a.Map.Walkable(nx, ny) {
+			a.Body.Place(nx, ny)
 			a.X, a.Y = nx, ny
 			a.Ctx.World.Move(a.Ctx.Name, nx, ny)
-			a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+			a.WalkFor(float64(d[0]), float64(d[1]), false, 450*time.Millisecond)
 			moved = true
 			break
 		}

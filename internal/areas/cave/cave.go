@@ -109,6 +109,7 @@ func (a *area) Init(p *world.Player) tea.Cmd {
 		doorIdx = 0
 	}
 	sp := a.interiorDoors[doorIdx]
+	a.OnTile = a.onTile // burn oil, cross chasms and lift the dark per cell walked
 	a.Enter(sp[0], sp[1], 0)
 	a.reveal()
 	a.persist()
@@ -149,27 +150,36 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		}
 	}
 	portal, handled := a.HandleCommon(msg)
-	if _, isKey := msg.(tea.KeyMsg); isKey && handled {
-		a.burnLantern() // a step spends oil, or the glow tops it up
-		switch {
-		case !a.onChasm():
-			a.crossing = false
-		case a.Ctx.Wearing("diadem"): // the relic steadies your step over the void
-			if !a.crossing {
-				a.crossing = true
-				a.setToast("✦ the relic diadem carries you over the chasm")
-			}
-		default:
-			a.fall() // a misstep into the dark drops you back at the mouth
-		}
-		a.reveal() // a step lifts the dark as far as the light now throws
-		a.persist()
-	}
 	if handled && portal != "" {
 		a.surfaceAt() // leave by whichever mouth we reached
 		return game.Transition{To: portal}, nil
 	}
 	return a, nil
+}
+
+// onTile is the cave's per-step work, hung off walking into a new cell rather
+// than off a keypress (game.Walker.OnTile).
+//
+// The lantern's oil has always been denominated in steps — fuelMax is "steps of
+// light" — and a step has always meant a tile, so this keeps the mechanic
+// exactly as it was while the movement underneath it became continuous. It is
+// also more honest than the per-key hook it replaces, which burned oil for a
+// step a wall had refused, and could drop you down a chasm you never entered.
+func (a *area) onTile(int, int) {
+	a.burnLantern() // a step spends oil, or the glow tops it up
+	switch {
+	case !a.onChasm():
+		a.crossing = false
+	case a.Ctx.Wearing("diadem"): // the relic steadies your step over the void
+		if !a.crossing {
+			a.crossing = true
+			a.setToast("✦ the relic diadem carries you over the chasm")
+		}
+	default:
+		a.fall() // a misstep into the dark drops you back at the mouth
+	}
+	a.reveal() // a step lifts the dark as far as the light now throws
+	a.persist()
 }
 
 // surfaceAt records, on the way out, the overworld mouth matching the inner one

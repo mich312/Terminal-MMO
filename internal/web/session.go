@@ -178,6 +178,12 @@ func runSession(ctx context.Context, conn *websocket.Conn, w *world.World, st st
 			s.handleWorldEvent(ev)
 
 		case <-ticker.C:
+			// Walking is continuous: a movement intent points the body and the
+			// body keeps going until it is released or expires, so the area has
+			// to be advanced on a clock rather than on input. This session is a
+			// poller and the world deliberately doesn't send it the world tick
+			// (world.MarkPoller), so the scene ticker is that clock.
+			s.sendArea(game.TickMsg{})
 			s.tick()
 			s.render(false)
 		}
