@@ -1,0 +1,49 @@
+name: ci
+
+# Build and test every pull request, and main itself.
+#
+# Until now the only workflow was deploy.yml, which runs *after* a merge: the
+# first thing that ever compiled a branch was the production server, and the
+# only signal was whether the health check came back. That is a fine last line
+# of defence and a poor first one — a change that doesn't build reaches main
+# before anyone finds out.
+#
+# The suite is self-contained: pure-Go SQLite (see the Dockerfile), no network,
+# no fixtures, nothing to install. So this is just build + test.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+
+# A new push supersedes the run in flight for that branch — no point finishing a
+# build of code someone has already replaced. main is exempt: every commit there
+# is worth a verdict of its own.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # go-version-file, not a pinned string: go.mod already states the version
+      # the module needs, and two places to update is one too many.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      # CGO_ENABLED=0 matches how the binary actually ships (Dockerfile), so the
+      # tests exercise the same pure-Go SQLite driver production uses.
+      - name: Test
+        env:
+          CGO_ENABLED: 0
+        run: go test ./...
