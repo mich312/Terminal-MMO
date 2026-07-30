@@ -19,7 +19,7 @@ func newFighter(t *testing.T, w *world.World, name string, x, y int) *area {
 	self, _ := w.Self(resolved)
 	a := game.NewArea("wilds", ctx).(*area)
 	a.Init(&self)
-	a.wx, a.wy = x, y // override the persisted spawn with the test position
+	a.place(x, y) // override the persisted spawn with the test position
 	return a
 }
 
