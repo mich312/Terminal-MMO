@@ -91,7 +91,7 @@ func walk(a *area, keys string) {
 			if !a.fits(nx, ny) {
 				break
 			}
-			a.wx, a.wy = nx, ny
+			a.place(nx, ny) // place, not assign: the body has to follow the cell
 			a.reveal()
 		}
 		a.persist()

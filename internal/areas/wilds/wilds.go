@@ -60,10 +60,23 @@ const (
 	chunkN    = 8 // cells per chunk side; 8×8 = 64 = one uint64 mask
 )
 
+// maxTick bounds the dt one advance will believe, so a host that stalled — a
+// slow frame, a laptop resuming — doesn't fling the body across the overworld
+// when it comes back. Matches the Walker areas' guard.
+const maxTick = 250 * time.Millisecond
+
 type area struct {
-	ctx        *game.Ctx
-	gen        *worldgen.Generator
-	wx, wy     int // absolute world position (top-left of the body's footprint)
+	ctx    *game.Ctx
+	gen    *worldgen.Generator
+	wx, wy int // absolute world cell the body is standing in
+	// body is where in that cell it actually is, and the steering behind it.
+	// Walking is continuous (game.Mover): a movement key points the body and
+	// the body walks on the clock. wx, wy is derived from it and is what all
+	// the grid-shaped machinery below — claims, placements, cleared ground,
+	// fog-of-war chunks, both terminal renderers — keeps reading.
+	body       game.Mover
+	lastTick   time.Time        // for measuring dt ourselves, whatever rate a host ticks at
+	clock      func() time.Time // tests inject one so a walk costs no real seconds
 	frame      int
 	showMap    bool
 	showBoard  bool              // the notice board panel is open
@@ -135,7 +148,7 @@ func (a *area) Init(*world.Player) tea.Cmd {
 		}
 	}
 	a.computeArtifactCells()
-	a.wx, a.wy = a.resume()
+	a.place(a.resume())
 	a.reveal()
 	a.persist()
 	if c, _, ok := game.WorkspaceAt(a.ctx, a.wx, a.wy); ok {
@@ -820,7 +833,7 @@ func (a *area) dodge(dir world.Dir) {
 		if _, isPortal := a.portalUnder(nx, ny); isPortal {
 			break
 		}
-		a.wx, a.wy = nx, ny
+		a.place(nx, ny)
 		moved++
 		a.reveal()
 		a.pickUp()
@@ -1135,7 +1148,7 @@ func (a *area) staggerSelf(tx, ty int) {
 	}
 	dx, dy := a.pushDir(tx, ty)
 	if nx, ny := a.wx-dx, a.wy-dy; a.fits(nx, ny) {
-		a.wx, a.wy = nx, ny
+		a.place(nx, ny)
 		a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
 		a.ctx.World.SetFacing(a.ctx.Name, facing)
 		a.persist()
@@ -1390,11 +1403,22 @@ func (a *area) gatePrompt(g gate) string {
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	switch msg := msg.(type) {
+	case game.TickMsg:
+		// The polling clients (browser, HD terminal) drive movement from their
+		// own frame timers; the SSH client gets the same from EventTick below.
+		if next, _ := a.advance(); next != nil {
+			return next, nil
+		}
+		return a, nil
+
 	case game.WorldEventMsg:
 		ev := world.Event(msg)
 		switch ev.Type {
 		case world.EventTick:
 			a.frame = int(ev.Frame)
+			if next, _ := a.advance(); next != nil {
+				return next, nil
+			}
 		case world.EventChat:
 			// Answer a personal gate's riddle by saying it aloud at the gate.
 			if ev.Player == a.ctx.Name {
@@ -1422,7 +1446,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			// Knocked back: your own client owns your position, so apply it here,
 			// re-checking the cell is open (terrain is shared, so this rarely fails).
 			if ev.Target == a.ctx.Name && !a.building && a.fits(ev.X, ev.Y) {
-				a.wx, a.wy = ev.X, ev.Y
+				a.place(ev.X, ev.Y)
 				a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
 				a.reveal()
 				a.persist()
@@ -1543,33 +1567,72 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		if a.ctx.World.Downed(a.ctx.Name) {
 			return a, nil // knocked out: no walking until you revive at the hub
 		}
-		sx, sy := a.wx, a.wy
-		for i := 0; i < steps; i++ {
-			nx, ny := a.wx+dx, a.wy+dy
-			if !game.CanStep(a.walkableAt, a.wx, a.wy, dx, dy) {
-				break
-			}
-			a.wx, a.wy = nx, ny
-			a.reveal()
-			a.pickUp() // hats and items are gathered just by walking over them
-			if portal, ok := a.portalUnder(nx, ny); ok {
-				a.ctx.World.Move(a.ctx.Name, nx, ny)
-				// Persist the cell we stepped in from, not the portal itself, so
-				// returning to the Wilds drops us beside the entrance (a cave mouth
-				// out in the hills) rather than back at the distant HQ spawn.
-				a.wx, a.wy = nx-dx, ny-dy
-				a.persist()
-				return game.Transition{To: portal}, nil
-			}
-		}
-		if a.wx != sx || a.wy != sy {
-			a.ctx.World.Move(a.ctx.Name, a.wx, a.wy)
-			a.persist()
-			a.updateClaimPresence()
-			a.tendCleared()
-		}
+		// The key points the body; walking happens on the clock (advance).
+		a.body.SetIntent(float64(dx), float64(dy), steps > 1, a.now())
 	}
 	return a, nil
+}
+
+// advance walks the body by however long it has been since the last tick and
+// runs the Wilds' per-step work for each cell it enters.
+//
+// Everything that used to hang off "a movement key was accepted" hangs off a
+// tile crossing instead: the discovery circle, gathering what you walk over,
+// saving where you are, minding a claim you're standing in and keeping cleared
+// ground from regrowing under you. A step always meant a tile, so none of those
+// mechanics change — they just no longer fire for a step a tree refused.
+func (a *area) advance() (game.Area, bool) {
+	now := a.now()
+	dt := now.Sub(a.lastTick)
+	a.lastTick = now
+	if dt <= 0 || dt > maxTick {
+		return nil, false // first tick in the area, or a stall: skip it
+	}
+	if a.ctx.World.Downed(a.ctx.Name) {
+		a.body.Stop() // knocked out: no walking until you revive at the hub
+		return nil, false
+	}
+	prevX, prevY := a.wx, a.wy
+	moved, crossed := a.body.Advance(dt, now, a.walkableAt)
+	if !moved {
+		return nil, false
+	}
+	a.wx, a.wy = a.body.Tile()
+	a.ctx.World.MoveTo(a.ctx.Name, a.body.FX, a.body.FY, a.body.Angle)
+	if !crossed {
+		return nil, true
+	}
+
+	a.reveal()
+	a.pickUp() // hats and items are gathered just by walking over them
+	if portal, ok := a.portalUnder(a.wx, a.wy); ok {
+		// Persist the cell we walked in from, not the portal itself, so
+		// returning to the Wilds drops us beside the entrance (a cave mouth out
+		// in the hills) rather than back at the distant HQ spawn.
+		a.place(prevX, prevY)
+		a.persist()
+		return game.Transition{To: portal}, true
+	}
+	a.persist()
+	a.updateClaimPresence()
+	a.tendCleared()
+	return nil, true
+}
+
+// place puts the body on a cell and forgets any steering — spawning, arriving
+// through a portal, a knockback. Assigning wx, wy alone would leave the body
+// behind, and the next tick would walk it straight back.
+func (a *area) place(x, y int) {
+	a.wx, a.wy = x, y
+	a.body.Place(x, y)
+}
+
+// now is the movement clock; tests inject one so a walk costs no real seconds.
+func (a *area) now() time.Time {
+	if a.clock != nil {
+		return a.clock()
+	}
+	return time.Now()
 }
 
 // healthHint surfaces a little HP bar while you're hurt, so the bottom line

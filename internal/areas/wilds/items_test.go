@@ -2,8 +2,7 @@ package wilds
 
 import (
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
+	"time"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
@@ -157,10 +156,11 @@ func TestItemAutoPickupOnMove(t *testing.T) {
 	}
 	it, _ := itemAt(a.gen.At(ix, iy), ix, iy)
 
-	// Stand on the approach tile and step toward the item — no pickUp() call.
-	a.wx, a.wy = ix-dx, iy-dy
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(stepKey(dx, dy))}
-	a.Update(key)
+	// Stand on the approach tile and walk onto the item — no pickUp() call.
+	// Walking takes time rather than a keystroke now, so hold the direction
+	// just long enough to cross one cell and not the next.
+	a.place(ix-dx, iy-dy)
+	hold(a, float64(dx), float64(dy), false, 400*time.Millisecond)
 
 	if a.wx != ix || a.wy != iy {
 		t.Fatalf("player at (%d,%d) did not walk onto item at (%d,%d)", a.wx, a.wy, ix, iy)
@@ -170,20 +170,6 @@ func TestItemAutoPickupOnMove(t *testing.T) {
 	}
 	if _, _, _, still := a.itemUnderBody(); still {
 		t.Fatal("item should be gone after walking over it")
-	}
-}
-
-// stepKey maps a cardinal direction to the WASD key the wilds move handler reads.
-func stepKey(dx, dy int) string {
-	switch {
-	case dx > 0:
-		return "d"
-	case dx < 0:
-		return "a"
-	case dy > 0:
-		return "s"
-	default:
-		return "w"
 	}
 }
 
