@@ -22,7 +22,9 @@ package web
 // weapon vocabulary in the hello, and the face/dodge/guard client commands.
 // v3: terrain elevation — a ninth per-tile field carrying the surface height,
 // so the browser raises real rolling ground.
-const ProtocolVersion = 3
+// v4: continuous movement — a steering vector from the client instead of a
+// movement key, and the body's real position and heading on every actor.
+const ProtocolVersion = 4
 
 // Message types, server → client.
 const (
@@ -36,6 +38,7 @@ const (
 // Message types, client → server.
 const (
 	CmdKey    = "key"    // a game key press ("w", "shift+up", "e", "tab", …)
+	CmdMove   = "move"   // a steering vector: which way the body is being pushed
 	CmdChat   = "chat"   // a submitted chat line (may be a /command)
 	CmdPanel  = "panel"  // open/close/navigate a UI panel
 	CmdResize = "resize" // the viewport changed; adjust the tile window
@@ -94,19 +97,19 @@ type Scene struct {
 	// the retained radius), so a long walk doesn't grow the scene without bound.
 	Drop []int `json:"drop,omitempty"`
 
-	Players   []Actor   `json:"players"`
-	Creatures []Actor   `json:"creatures"`
+	Players   []Actor `json:"players"`
+	Creatures []Actor `json:"creatures"`
 	// FX are the combat motions since the last frame — swings (whiffs
 	// included), dodge rolls, parries — so the client can animate the fight on
 	// the actors everyone is watching. Transient: play once, forget.
-	FX []FX `json:"fx,omitempty"`
-	Light     *Light    `json:"light,omitempty"`
-	Ambient   *Ambient  `json:"ambient,omitempty"`
-	Labels    []Label   `json:"labels,omitempty"`
-	Minimap   *Minimap  `json:"minimap,omitempty"`
-	Build     *Build    `json:"build,omitempty"`
-	Slide     *Slide    `json:"slide,omitempty"`
-	Overlay   []float64 `json:"overlay,omitempty"` // raycaster columns (Doom)
+	FX      []FX      `json:"fx,omitempty"`
+	Light   *Light    `json:"light,omitempty"`
+	Ambient *Ambient  `json:"ambient,omitempty"`
+	Labels  []Label   `json:"labels,omitempty"`
+	Minimap *Minimap  `json:"minimap,omitempty"`
+	Build   *Build    `json:"build,omitempty"`
+	Slide   *Slide    `json:"slide,omitempty"`
+	Overlay []float64 `json:"overlay,omitempty"` // raycaster columns (Doom)
 
 	Prompt string `json:"prompt,omitempty"`
 	Toast  string `json:"toast,omitempty"`
@@ -141,21 +144,28 @@ const (
 // Actor is a player or a creature on the grid. Coordinates are absolute; the
 // client interpolates between frames so movement glides instead of snapping.
 type Actor struct {
-	Name   string `json:"n,omitempty"`
-	Kind   string `json:"k,omitempty"` // creature species; "" for players
-	X      int    `json:"x"`
-	Y      int    `json:"y"`
-	Color  int    `json:"c"`           // palette index
-	Facing int    `json:"f"`           // world.Dir
-	Style  int    `json:"s,omitempty"` // avatar body style
-	Access int    `json:"a,omitempty"` // worn accessory index
-	Weapon string `json:"w,omitempty"`
-	HP     int    `json:"hp,omitempty"`
-	MaxHP  int    `json:"mhp,omitempty"`
-	Downed bool   `json:"down,omitempty"`
-	Guard  bool   `json:"g,omitempty"` // blade raised (docs/SWORDPLAY_PLAN.md)
-	Self   bool   `json:"me,omitempty"`
-	Owner  string `json:"o,omitempty"` // a tamed creature's player
+	Name string `json:"n,omitempty"`
+	Kind string `json:"k,omitempty"` // creature species; "" for players
+	X    int    `json:"x"`
+	Y    int    `json:"y"`
+	// FX, FY and Angle are the continuous body: where in the cell it actually
+	// stands and which way it actually faces. X, Y and Facing are the same thing
+	// rounded to the grid, kept for the tile-shaped parts of the client (and
+	// because that is all the terminal clients can draw anyway).
+	FX     float64 `json:"fx,omitempty"`
+	FY     float64 `json:"fy,omitempty"`
+	Angle  float64 `json:"ang,omitempty"`
+	Color  int     `json:"c"`           // palette index
+	Facing int     `json:"f"`           // world.Dir
+	Style  int     `json:"s,omitempty"` // avatar body style
+	Access int     `json:"a,omitempty"` // worn accessory index
+	Weapon string  `json:"w,omitempty"`
+	HP     int     `json:"hp,omitempty"`
+	MaxHP  int     `json:"mhp,omitempty"`
+	Downed bool    `json:"down,omitempty"`
+	Guard  bool    `json:"g,omitempty"` // blade raised (docs/SWORDPLAY_PLAN.md)
+	Self   bool    `json:"me,omitempty"`
+	Owner  string  `json:"o,omitempty"` // a tamed creature's player
 }
 
 // FX is one combat motion to animate: who moved, and how ("fast", "strong",
@@ -280,4 +290,16 @@ type ClientMsg struct {
 	Sel   int    `json:"sel,omitempty"`
 	W     int    `json:"w,omitempty"`
 	H     int    `json:"h,omitempty"`
+
+	// Steering, for CmdMove: a direction in world axes (x east, y south), not
+	// a position — the server owns where you are and only takes which way you
+	// are pushing. It need not be normalized; a zero vector means stop.
+	//
+	// This is the first coordinate the client has ever sent. Until now it could
+	// only send key strings, which is why the browser quantized a perfectly good
+	// analog camera vector down to one of eight compass directions before
+	// putting it on the wire.
+	DX  float64 `json:"dx,omitempty"`
+	DY  float64 `json:"dy,omitempty"`
+	Run bool    `json:"run,omitempty"`
 }

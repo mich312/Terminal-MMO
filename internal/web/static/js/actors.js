@@ -6,9 +6,10 @@
  * server's discrete tile steps.
  *
  * That interpolation is the whole reason the browser feels different from the
- * terminal. The world is a grid and always was: the server says "anna is now on
- * tile (12, 7)". A terminal has to snap. Here we glide, so the same 10-steps-
- * per-second movement reads as walking rather than teleporting.
+ * terminal. The world's *cells* are a grid and always will be, but a body's
+ * position in it is continuous now, and the server sends that position rather
+ * than a tile — so this smooths between network samples instead of inventing a
+ * walk out of tile hops. A terminal still has to snap; here we don't.
  *
  * Players are articulated rigs (rig.js) — limbs, a weapon in hand, and the
  * swordplay motions (docs/SWORDPLAY_PLAN.md): swings arrive as one-shot FX on
@@ -20,26 +21,20 @@ import * as THREE from 'three';
 import { partsFor } from './props.js';
 import { Rig } from './rig.js';
 
-/* The glide. The server walks players a tile at a time, ten times a second, and
-   this module's job is to make that read as walking rather than as a chain of
-   arrivals. Each step used to get its own ease-out, which meant the body braked
-   to a halt *on every cell* and then jerked off again — the movement was locked
-   to the grid even though the rendering didn't have to be.
+/* The glide.
+   The server sends a body's real position now, several times a second, and it
+   moves continuously between those samples rather than in tile hops (protocol
+   v4). So this is plain smoothing toward the last sample: a first-order chase
+   whose only job is to absorb the gap between network frames.
 
-   Instead the body is paced: how long the last step took to arrive is the best
-   estimate of how long the next one will, so the glide runs at roughly the
-   speed that consumes the tile in that time — a shade under it, so it is still
-   moving when the next step lands. The cost is that the drawn body sits about
-   three quarters of a tile behind the tile the server has it on, which nobody
-   can see; the benefit is that the grid disappears. */
-const STEP_MS = 100;      // the server's walking cadence — the pace before one is measured
-const PACE_MIN = 45;      // …clamped: a burst of steps mustn't spin the legs up
-const PACE_MAX = 140;     // …nor a long pause make the next step crawl
-const PACE_EMA = 0.45;    // how much of a fresh measurement to believe (see moveTo)
-const PACE_TRIM = 0.9;    // …and run a touch under it: arriving early means standing still
-const CATCHUP = 12;       // extra tiles/sec per tile of lag, so lag never compounds
-const SNAP_TILES = 6;     // farther than this is a teleport, not a step: cut, don't slide
-const COAST_MS = 120;     // the walk cycle keeps running this long past the last motion
+   It used to be much more than that — the server sent whole-tile steps at ten a
+   second, and this module inferred a pace from the interval between them to
+   turn those hops back into walking. None of that is needed once the thing
+   arriving is already a walk. */
+const FOLLOW = 16;      // how hard the drawn body chases the last sample, per second
+const SNAP_TILES = 6;   // farther than this is a teleport, not a walk: cut, don't slide
+const RUN_SPEED = 4.25; // tiles/sec above which the walk cycle reads as a run
+const COAST_MS = 120;   // the walk cycle keeps running this long past the last motion
 const BOB_HEIGHT = 0.07;
 
 /** Facing directions, mirroring world.Dir (S, SE, E, NE, N, NW, W, SW).
@@ -60,6 +55,12 @@ const DIR_ANGLE = [
   -Math.PI / 2,       // W  → (-1,  0)
   -Math.PI / 4,       // SW → (-1,  1)
 ];
+
+/** bodyX/bodyZ read an actor's position off the wire. Players carry a real
+ *  body position (fx, fy); creatures still step whole tiles and only send the
+ *  cell, so those are centred in it the way they always were. */
+function bodyX(a) { return a.fx ?? a.x + 0.5; }
+function bodyZ(a) { return a.fy ?? a.y + 0.5; }
 
 /** nameSprite renders a name into a canvas texture the camera always faces. */
 function nameSprite(text, hex) {
@@ -135,9 +136,8 @@ class Actor {
     this.terrain = terrain || null; // the tile field, for standing on hills
     this.x = 0; this.z = 0;         // current interpolated position
     this.toX = 0; this.toZ = 0;     // where the server says we are
-    this.speed = 1000 / STEP_MS;    // glide speed, tiles/sec — re-paced per step
-    this.stepLen = 1;               // tiles covered by the last step (>1 = running)
-    this.lastStepAt = 0;            // when that step arrived, for the pacing
+    this.speed = 0;                 // observed tiles/sec, for the walk cycle
+    this.lastSampleAt = 0;          // when the last position arrived, to measure it
     this.movingUntil = 0;           // the walk cycle's coast window
     this.angle = 0;
     this.targetAngle = 0;
@@ -146,55 +146,40 @@ class Actor {
     scene.add(group);
   }
 
-  /** moveTo takes one server position and re-paces the glide to it. Distances
-   *  are measured target-to-target, not from wherever the body happens to have
-   *  glided to, so the pace is the server's honest step and not our own lag. */
+  /** moveTo takes one server position. Positions arrive continuously, so this
+   *  measures how fast the body is actually travelling — which is the only way
+   *  left to know whether it is walking or running, and is a better answer than
+   *  the old one anyway, since it reads the truth rather than a step size. */
   moveTo(x, z) {
     if (this.toX === x && this.toZ === z) return;
     const span = Math.hypot(x - this.toX, z - this.toZ);
-    // Running is two tiles a step; the walk cycle wants to know.
-    this.stepLen = Math.max(Math.abs(x - this.toX), Math.abs(z - this.toZ));
     if (span > SNAP_TILES) { this.place(x, z); return; } // a portal, not a stride
     const now = performance.now();
-    const prev = this.lastStepAt;
-    const gap = prev ? Math.min(PACE_MAX, Math.max(PACE_MIN, now - prev)) : STEP_MS;
-    this.lastStepAt = now;
+    if (this.lastSampleAt) {
+      const dt = (now - this.lastSampleAt) / 1000;
+      if (dt > 0.001) this.speed += (span / dt - this.speed) * 0.4;
+    }
+    this.lastSampleAt = now;
     this.toX = x; this.toZ = z;
-    // Steps arrive on the network's schedule, not on a metronome: the server
-    // sends a frame the instant it accepts the key, so the interval carries
-    // every wobble in the round trip. A raw measurement therefore swings by a
-    // good fraction either way, and believing all of it would surge and pause
-    // the legs — the stutter this pacing exists to remove. So the pace is an
-    // average, run a shade *under* the observed one: coming up short is repaid
-    // by the catch-up term in update() without anything visible, while running
-    // over means arriving early and standing there, which is the whole bug.
-    const paced = span / (gap / 1000) * PACE_TRIM;
-    this.speed = prev ? this.speed + (paced - this.speed) * PACE_EMA : paced;
   }
 
   place(x, z) {
     this.x = this.toX = x;
     this.z = this.toZ = z;
-    this.lastStepAt = 0;
-    this.speed = 1000 / STEP_MS;
+    this.lastSampleAt = 0;
+    this.speed = 0;
   }
 
   update(dt, time) {
     const dx = this.toX - this.x, dz = this.toZ - this.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist > 1e-4) {
-      // Lag beyond a tile — a dropped frame, a burst of steps, a run that
-      // outpaced the last measurement — is spent down rather than carried.
-      const v = this.speed + Math.max(0, dist - 1) * CATCHUP;
-      const move = Math.min(dist, v * dt);
-      this.x += dx / dist * move;
-      this.z += dz / dist * move;
+    if (Math.abs(dx) > 1e-5 || Math.abs(dz) > 1e-5) {
+      const k = Math.min(1, dt * FOLLOW);
+      this.x += dx * k;
+      this.z += dz * k;
       this.movingUntil = time + COAST_MS / 1000;
     }
-    // A held key walks a tile every ~100ms and the glide covers it in a whisker
-    // less, so there is a sliver of stillness between steps. Coasting through it
-    // keeps the legs turning: the alternative is a walk cycle that stutters at
-    // exactly the cadence we just went to the trouble of hiding.
+    // Coast briefly past the last motion: a frame the server skipped because
+    // nothing changed shouldn't read as a stumble in the walk cycle.
     const moving = time < this.movingUntil;
     // Rigs plant their own feet; simple bodies keep the classic hop.
     const bob = moving && !this.rig ? Math.abs(Math.sin(time * 12)) * BOB_HEIGHT : 0;
@@ -213,7 +198,7 @@ class Actor {
     if (this.rig) {
       this.rig.pose({
         moving,
-        running: this.stepLen > 1,
+        running: this.speed > RUN_SPEED,
         guarding: this.guarding,
         downed: this.downed,
       }, time, dt);
@@ -269,11 +254,13 @@ export class ActorField {
           m.emissive.copy(m.color);
           m.emissiveIntensity = 0.42 * (this._night || 0) * (isPlayer ? 1 : 0.5);
         }
-        actor.place(a.x + 0.5, a.y + 0.5);
+        actor.place(bodyX(a), bodyZ(a));
       } else {
-        actor.moveTo(a.x + 0.5, a.y + 0.5);
+        actor.moveTo(bodyX(a), bodyZ(a));
       }
-      actor.targetAngle = DIR_ANGLE[a.f] ?? 0;
+      // A player carries a continuous heading; a creature still only has one of
+      // eight, so fall back to the table for them.
+      actor.targetAngle = a.ang ?? DIR_ANGLE[a.f] ?? 0;
       if (isPlayer) {
         this.stylePlayer(actor, a);
         if (a.me) this.self = actor;

@@ -7,12 +7,17 @@
  * HD client has to guess when a held key was released. Here we know, so a held
  * key walks at an even cadence and stops the instant you let go.
  *
- * V toggles the action camera (docs/SWORDPLAY_PLAN.md), and with it a second
- * input grammar: WASD turns camera-relative (quantized back onto the same 8-way
- * grid keys the terminal sends, so the server never learns a new vocabulary),
- * the mouse swings (tap = fast, hold = strong) and guards (right button), Space
- * dodge-rolls, Q locks on. Every verb still goes through the server's referee —
- * this file only decides which of the allowed keys to send, and animates
+ * Movement is a steering vector rather than a key. The held keys make a
+ * direction — camera-relative in action mode, so walking at 20° off the camera
+ * really is 20° — and that vector goes on the wire. It used to be rounded to
+ * one of eight compass keys the line after it was computed, because a key
+ * string was the only thing the client could send; the server now takes the
+ * vector (protocol v4) and the body walks along it under its own power.
+ *
+ * V toggles the action camera (docs/SWORDPLAY_PLAN.md), and with it the rest of
+ * that grammar: the mouse swings (tap = fast, hold = strong) and guards (right
+ * button), Space dodge-rolls, Q locks on. Every verb still goes through the
+ * server's referee — this file only decides what to send, and animates
  * hopefully while the ruling comes back.
  */
 
@@ -38,10 +43,18 @@ const REL_KEYS = {
   KeyD: [1, 0], ArrowRight: [1, 0],
 };
 
-/* world.Dir order (S SE E NE N NW W SW) → the grid key that walks that way. */
-const GRID_KEY = ['s', 'n', 'd', 'u', 'w', 'y', 'a', 'b'];
+/* Each movement key as a world-axis direction (x east, y south), so the grid
+   keys and the roguelike diagonals can be summed into a steering vector like
+   any other input. */
+const KEY_VEC = {
+  w: [0, -1], up: [0, -1],
+  s: [0, 1], down: [0, 1],
+  a: [-1, 0], left: [-1, 0],
+  d: [1, 0], right: [1, 0],
+  y: [-1, -1], u: [1, -1], b: [-1, 1], n: [1, 1],
+};
 
-const MOVE_INTERVAL = 100;  // ms between steps while a key is held (10/s)
+const MOVE_INTERVAL = 100;  // ms between re-asserting a held steer (see game.IntentTTL)
 const STRONG_HOLD_MS = 300; // holding the swing past this winds up the heavy blow
 const FACE_INTERVAL = 90;   // ms between facing updates sent to the server
 
@@ -58,6 +71,9 @@ export class Input {
     this.held = new Set();
     this.lastMove = 0;
     this.lastDir = null;
+    // The last steering vector the server was told, so a held key is only
+    // re-sent on the keepalive rather than every frame.
+    this.sentDX = 0; this.sentDY = 0; this.sentRun = false;
 
     this.mode = 'top';
     this.hooks = null; // {scene, actors, toggleView} — wired by main
@@ -187,7 +203,11 @@ export class Input {
 
   onKeyUp(e) {
     this.shift = e.shiftKey;
-    this.held.delete(e.code);
+    if (this.held.delete(e.code)) {
+      // Tell the server we stopped now rather than letting the intent time out
+      // — a browser has real key-up events and should spend them.
+      this.step(performance.now(), true);
+    }
   }
 
   onMouseDown(e) {
@@ -255,28 +275,12 @@ export class Input {
     a.setLock(a.nearestTarget(self.x, self.z, f.x, f.z));
   }
 
-  /** moveDir is the held movement intent as a world.Dir index, or null. In
-   *  action mode it is camera-relative; the diagonals keep their grid meaning. */
+  /** moveDir is the held steering quantized to a world.Dir index, or null.
+   *  Walking no longer needs this — it sends the vector itself — but the dodge
+   *  roll is still one of eight, so it keeps a use. */
   moveDir() {
-    if (this.mode === 'action') {
-      let mx = 0, mz = 0;
-      for (const code of this.held) {
-        const rel = REL_KEYS[code];
-        if (rel) { mx += rel[0]; mz += rel[1]; }
-      }
-      if (mx || mz) {
-        const f = this.hooks.scene.forward();
-        const dx = f.x * mz + -f.z * mx;
-        const dz = f.z * mz + f.x * mx;
-        return dirIndex(dx, dz);
-      }
-      return null;
-    }
-    const code = [...this.held][this.held.size - 1];
-    const key = MOVE_KEYS[code];
-    if (!key) return null;
-    const grid = { s: 0, n: 1, d: 2, u: 3, w: 4, y: 5, a: 6, b: 7 }[key];
-    return grid ?? null;
+    const v = this.steerVector();
+    return v ? dirIndex(v.dx, v.dy) : null;
   }
 
   /** aimDir is where the camera looks (or the lock target stands), quantized. */
@@ -292,35 +296,51 @@ export class Input {
     return dirIndex(f.x, f.z);
   }
 
-  /** step sends at most one movement per interval, newest direction winning. */
-  step(now, immediate = false) {
-    if (!this.held.size) return;
-    if (!immediate && now - this.lastMove < MOVE_INTERVAL) return;
-
-    let key;
+  /** steerVector is where the held keys are pushing, in world axes (x east,
+   *  y south), or null when nothing is held.
+   *
+   *  In action mode this is genuinely analog: the keys make a vector in the
+   *  camera's frame and it is rotated into the world's, so walking at 20° off
+   *  the camera means walking at 20°. It used to be rounded to one of eight
+   *  compass directions right here — the server could only be told a movement
+   *  key, so seven eighths of the information was thrown away a line after it
+   *  was computed. */
+  steerVector() {
+    let mx = 0, mz = 0;
     if (this.mode === 'action') {
-      const idx = this.moveDir();
-      if (idx == null) {
-        // Only diagonals held: fall through to their absolute meaning.
-        const code = [...this.held][this.held.size - 1];
-        key = MOVE_KEYS[code];
-        if (!key || REL_KEYS[code]) return;
-      } else {
-        key = GRID_KEY[idx];
+      for (const code of this.held) {
+        const rel = REL_KEYS[code];
+        if (rel) { mx += rel[0]; mz += rel[1]; }
       }
-    } else {
-      // The most recently pressed key wins, so changing direction mid-walk
-      // turns straight away instead of finishing the old direction first.
-      const code = [...this.held][this.held.size - 1];
-      key = MOVE_KEYS[code];
-      if (!key) return;
+      if (mx || mz) {
+        const f = this.hooks.scene.forward();
+        return { dx: f.x * mz + -f.z * mx, dy: f.z * mz + f.x * mx };
+      }
+      // Only the roguelike diagonals held: they keep their absolute meaning.
     }
-    if (this.shift) {
-      // Running: Shift+arrow, or the uppercase letter, matching game.MoveKey.
-      key = key.length === 1 ? key.toUpperCase() : 'shift+' + key;
+    // Top-down, and the diagonals in action mode: the grid keys are directions
+    // in their own right. Summing them gives the diagonals for free.
+    for (const code of this.held) {
+      const g = KEY_VEC[MOVE_KEYS[code]];
+      if (g) { mx += g[0]; mz += g[1]; }
     }
-    this.send({ t: 'key', key });
+    return (mx || mz) ? { dx: mx, dy: mz } : null;
+  }
+
+  /** step sends the steering vector when it changes, and repeats it while the
+   *  keys are held so the server's intent doesn't go stale (game.IntentTTL).
+   *  A key-up sends a zero vector at once, so letting go stops you now rather
+   *  than a quarter-second later. */
+  step(now, immediate = false) {
+    const v = this.steerVector();
+    const dx = v ? v.dx : 0, dy = v ? v.dy : 0;
+    const run = v ? !!this.shift : false;
+    const changed = dx !== this.sentDX || dy !== this.sentDY || run !== this.sentRun;
+    if (!changed && !v) return;                                    // idle: nothing to say
+    if (!changed && !immediate && now - this.lastMove < MOVE_INTERVAL) return;
+    this.sentDX = dx; this.sentDY = dy; this.sentRun = run;
     this.lastMove = now;
+    this.send({ t: 'move', dx, dy, run });
   }
 
   /** pump is called each frame: continue a held key, keep the server's facing
