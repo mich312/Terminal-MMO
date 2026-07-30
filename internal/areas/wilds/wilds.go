@@ -1403,6 +1403,14 @@ func (a *area) gatePrompt(g gate) string {
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	switch msg := msg.(type) {
+	case game.SteerMsg:
+		// The browser's analog steering. Building mode drives a ghost cursor
+		// with the movement keys instead, so it takes no vector.
+		if !a.building && !a.ctx.World.Downed(a.ctx.Name) {
+			a.body.SetIntent(msg.DX, msg.DY, msg.Run, a.now())
+		}
+		return a, nil
+
 	case game.TickMsg:
 		// The polling clients (browser, HD terminal) drive movement from their
 		// own frame timers; the SSH client gets the same from EventTick below.

@@ -303,6 +303,21 @@ type EventsClosedMsg struct{}
 // host happens to render at doesn't change how fast anyone walks.
 type TickMsg struct{}
 
+// SteerMsg points the body in an arbitrary direction — the continuous sibling of
+// a movement key, for a client that has a real analog intent to express.
+//
+// A key can only ever say one of eight things. The browser has had a genuine
+// steering vector all along (its camera-relative WASD, before dirIndex rounds
+// it), and used to throw everything but the octant away because a key string
+// was all it could put on the wire. This is that vector.
+//
+// DX, DY are in world axes — x east, y south — and need not be normalized. A
+// zero vector stops.
+type SteerMsg struct {
+	DX, DY float64
+	Run    bool
+}
+
 // WaitForEvent is the subscription-command pattern: block on the session's
 // event channel and hand the next event to Update, which re-issues it.
 func WaitForEvent(ch <-chan world.Event) tea.Cmd {

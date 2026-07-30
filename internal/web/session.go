@@ -354,6 +354,12 @@ func (s *session) handleClient(m ClientMsg) {
 	switch m.T {
 	case CmdKey:
 		s.handleKey(m.Key)
+	case CmdMove:
+		// Steering, not a step: the area holds the vector and the tick walks the
+		// body along it. Unlike CmdKey this needs no rate limit — it sets state
+		// rather than causing motion, so a client that spams it only overwrites
+		// its own intent, and how far anyone gets is decided by the clock.
+		s.sendArea(game.SteerMsg{DX: m.DX, DY: m.DY, Run: m.Run})
 	case CmdChat:
 		if text := strings.TrimSpace(m.Text); text != "" {
 			s.handleChat(text)

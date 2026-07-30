@@ -138,6 +138,10 @@ func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 		p, _ := w.advance()
 		return p, true
 
+	case SteerMsg:
+		w.Body.SetIntent(msg.DX, msg.DY, msg.Run, w.now())
+		return "", true
+
 	case tea.KeyMsg:
 		dx, dy, steps, ok := MoveKey(msg.String())
 		if !ok {

@@ -15,7 +15,7 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 
 const NAME_KEY = 'durstworld.name';
-const PROTOCOL = 3;
+const PROTOCOL = 4;
 
 const gate = document.getElementById('gate');
 const gameEl = document.getElementById('game');
