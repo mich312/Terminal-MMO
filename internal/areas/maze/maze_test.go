@@ -76,7 +76,14 @@ func TestReachingExitRegenerates(t *testing.T) {
 			a.Body.Place(nx, ny)
 			a.X, a.Y = nx, ny
 			a.Ctx.World.Move(a.Ctx.Name, nx, ny)
-			a.WalkFor(float64(d[0]), float64(d[1]), false, 450*time.Millisecond)
+			// Walk in short bursts and stop the moment the exit is reached.
+			// Holding the key through it would be legitimate — you are still
+			// pressing a direction, so you walk on from the new entrance — but
+			// then this test would be asserting where that walk got to rather
+			// than where regenerating put you.
+			for i := 0; i < 20 && a.solved == 0; i++ {
+				a.WalkFor(float64(d[0]), float64(d[1]), false, 50*time.Millisecond)
+			}
 			moved = true
 			break
 		}
