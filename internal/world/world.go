@@ -5,6 +5,7 @@ package world
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -27,6 +28,41 @@ const (
 	DirW
 	DirSW
 )
+
+// placeAt puts a player on a cell, planting the body in the middle of it so the
+// continuous position never disagrees with the integer one. Every tile-granular
+// placement goes through here: spawning into an area, arriving through a portal,
+// respawning at the hub, or a minigame pushing its token one square.
+func (p *Player) placeAt(x, y int) {
+	p.X, p.Y = x, y
+	p.FX, p.FY = float64(x)+0.5, float64(y)+0.5
+}
+
+// FacingAngle quantizes a continuous heading to the 8-way Dir.
+//
+// The angle is measured the way Dir counts: atan2(dx, dy) with x east and y
+// south, so 0 is south (the zero value, facing the camera) and it grows toward
+// east. That makes it agree with Facing8 by construction — FacingAngle of
+// atan2(dx, dy) is Facing8(dx, dy) for any delta — and with the browser's own
+// quantization (internal/web/static/js/input.js dirIndex), so all three ways of
+// naming a direction stay in step.
+func FacingAngle(a float64) Dir {
+	i := int(math.Round(a/(math.Pi/4))) % 8
+	if i < 0 {
+		i += 8
+	}
+	return Dir(i)
+}
+
+// DirAngle is FacingAngle's inverse: the heading at the centre of a Dir's
+// sector, folded to (-π, π] so it compares cleanly with an atan2 result.
+func DirAngle(d Dir) float64 {
+	a := float64(d) * (math.Pi / 4)
+	if a > math.Pi {
+		a -= 2 * math.Pi
+	}
+	return a
+}
 
 // Facing8 maps a movement delta to an 8-way facing. A zero delta keeps the
 // current facing (the caller skips the update).
@@ -54,13 +90,27 @@ func Facing8(dx, dy int) Dir {
 // Player is a snapshot of one connected player. World methods hand out
 // copies; nobody mutates shared state outside the world's mutex.
 type Player struct {
-	Name      string
-	Area      string // area id; "" while still booting
-	X, Y      int
+	Name string
+	Area string // area id; "" while still booting
+	X, Y int
+	// FX, FY is where in that tile the body actually stands: its centre, in
+	// tile units, so X, Y is floor(FX), floor(FY). The world is still a grid —
+	// walls, placements, claims, fog-of-war chunks and both terminal renderers
+	// are all keyed by the integer cell — but a body's position within it is
+	// continuous, so you can walk at any angle and stop between tiles.
+	//
+	// Everything that wants "which cell is this player in" keeps reading X, Y
+	// and is unaffected. Only the browser, which draws a body rather than a
+	// glyph, reads FX, FY.
+	FX, FY float64
+	// Angle is the continuous heading in radians, atan2(dx, dy) with x east and
+	// y south. Facing is its 8-way form, kept in step by FacingAngle: the
+	// terminal, the avatar sprites and all of the combat code use Facing.
+	Angle     float64
 	Color     lipgloss.Color
 	Facing    Dir
-	Style     int // avatar sprite style index
-	Accessory int // avatar accessory index (0 = none)
+	Style     int    // avatar sprite style index
+	Accessory int    // avatar accessory index (0 = none)
 	Weapon    string // wielded weapon item id ("" = unarmed); drawn in-hand in HD
 	LastMoved time.Time
 
@@ -439,7 +489,7 @@ func (w *World) processRespawns() {
 		p.LastHurtBy = ""
 		p.InvulnUntil = now.Add(RespawnImmunity)
 		p.Area = area
-		p.X, p.Y = x, y
+		p.placeAt(x, y)
 		p.LastMoved = now
 		w.broadcastToArea(area, Event{Type: EventPlayerRespawn, Player: p.Name, Target: p.Name, Area: area, X: x, Y: y})
 	}
@@ -533,7 +583,7 @@ func (w *World) EnterArea(name, area string, x, y int, destDisplay string) {
 		w.cancelTradeLocked(name, TradeCancel) // walking off to another area aborts a trade
 	}
 	p.Area = area
-	p.X, p.Y = x, y
+	p.placeAt(x, y)
 	p.LastMoved = time.Now()
 	if old != "" && old != area {
 		w.broadcastToArea(old, Event{Type: EventLeft, Player: name, Area: old, Detail: destDisplay})
@@ -541,7 +591,11 @@ func (w *World) EnterArea(name, area string, x, y int, destDisplay string) {
 	w.broadcastToArea(area, Event{Type: EventJoined, Player: name, Area: area, X: x, Y: y})
 }
 
-// Move updates a player's position within their current area.
+// Move updates a player's position within their current area, a whole tile at a
+// time. This is the grid path, and it stays exactly as it was: the minigames
+// that push a token around a board, portal arrivals, respawns and knockbacks all
+// speak in cells and always will. The body is planted in the middle of the cell
+// so the continuous position never disagrees with the integer one.
 func (w *World) Move(name string, x, y int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -551,10 +605,40 @@ func (w *World) Move(name string, x, y int) {
 	}
 	if dx, dy := x-p.X, y-p.Y; dx != 0 || dy != 0 {
 		p.Facing = Facing8(dx, dy)
+		p.Angle = math.Atan2(float64(dx), float64(dy))
 	}
-	p.X, p.Y = x, y
+	p.placeAt(x, y)
 	p.LastMoved = time.Now()
-	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area, X: x, Y: y})
+	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area,
+		X: x, Y: y, FX: p.FX, FY: p.FY, Angle: p.Angle})
+}
+
+// MoveTo updates a player's continuous position: the float sibling of Move.
+//
+// The body lands wherever it lands, and X, Y follow as the cell its centre is
+// standing in — so every grid-shaped thing downstream (placements, claims,
+// cleared ground, fog-of-war chunks, the chat radius, both terminal renderers)
+// keeps working off X, Y and needs to know nothing about this.
+//
+// angle is the heading in radians as FacingAngle counts them. It is taken from
+// the player's steering intent rather than from the frame-to-frame delta on
+// purpose: a body sliding along a wall has a delta that swings wildly, and
+// turning to follow it would make the avatar shimmy against every fence it
+// brushed.
+func (w *World) MoveTo(name string, fx, fy, angle float64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.players[name]
+	if !ok {
+		return
+	}
+	p.FX, p.FY = fx, fy
+	p.X, p.Y = int(math.Floor(fx)), int(math.Floor(fy))
+	p.Angle = angle
+	p.Facing = FacingAngle(angle)
+	p.LastMoved = time.Now()
+	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area,
+		X: p.X, Y: p.Y, FX: fx, FY: fy, Angle: angle})
 }
 
 // Chat delivers a message to every subscriber in the sender's area within

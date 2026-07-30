@@ -148,7 +148,7 @@ func (w *World) Respawn(name, area string, x, y int) {
 	p.LastHurtBy = ""
 	p.InvulnUntil = now.Add(RespawnImmunity)
 	p.Area = area
-	p.X, p.Y = x, y
+	p.placeAt(x, y)
 	p.LastMoved = now
 	w.broadcastToArea(area, Event{Type: EventPlayerRespawn, Player: name, Target: name, Area: area, X: x, Y: y})
 }
@@ -205,7 +205,35 @@ func (w *World) SetFacing(name string, d Dir) {
 		return
 	}
 	p.Facing = d
-	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area, X: p.X, Y: p.Y})
+	p.Angle = DirAngle(d)
+	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area,
+		X: p.X, Y: p.Y, FX: p.FX, FY: p.FY, Angle: p.Angle})
+}
+
+// SetHeading is SetFacing's continuous sibling: it turns a player to an exact
+// angle rather than to one of eight. Facing follows, quantized, so the terminal
+// and the combat code — which resolve a strike against the 8-way facing — see
+// no difference. Only a client that draws a real body can tell.
+//
+// Broadcast is suppressed unless the quantized facing actually changed, because
+// mouse-look produces a continuous stream of these and the eight-way facing is
+// all any event-driven client can act on. A browser interpolates the fine angle
+// from its own input; it does not need it echoed back at mouse rate.
+func (w *World) SetHeading(name string, angle float64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.players[name]
+	if !ok {
+		return
+	}
+	d := FacingAngle(angle)
+	same := p.Facing == d
+	p.Angle, p.Facing = angle, d
+	if same {
+		return
+	}
+	w.broadcastToArea(p.Area, Event{Type: EventMoved, Player: name, Area: p.Area,
+		X: p.X, Y: p.Y, FX: p.FX, FY: p.FY, Angle: angle})
 }
 
 // SetGuard raises or lowers a player's blade. Raising stamps GuardStart with

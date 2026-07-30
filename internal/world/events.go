@@ -87,6 +87,11 @@ type Event struct {
 	Player string // who did it
 	Area   string // area id it happened in
 	X, Y   int
+	// FX, FY and Angle carry the continuous position and heading on EventMoved,
+	// for clients that draw a body rather than a glyph. X, Y is still the cell,
+	// and every event other than a move leaves these zero.
+	FX, FY float64
+	Angle  float64
 	Detail string // chat text, destination name, room key
 	Target string // recipient name, for EventWhisper
 	Slide  int
