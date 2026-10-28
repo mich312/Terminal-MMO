@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
+	"github.com/durst-group/durstworld/internal/ui"
 )
 
 // Chat and the slash commands.
@@ -152,6 +153,6 @@ func (s *session) startTrade(who string) {
 }
 
 // keyRunes builds the rune key message areas expect for a single character.
-func keyRunes(k string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+func keyRunes(k string) tea.KeyPressMsg {
+	return ui.TextKey(k)
 }

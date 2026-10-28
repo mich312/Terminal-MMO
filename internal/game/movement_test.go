@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -41,7 +41,7 @@ func TestMoveKey(t *testing.T) {
 	}
 }
 
-func key(r rune) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}} }
+func key(r rune) tea.KeyPressMsg { return ui.TextKey(string(r)) }
 
 // A 2×2 body must not bounce straight back through the portal it spawned next
 // to, but must trigger it after stepping away and returning.

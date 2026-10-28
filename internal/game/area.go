@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"

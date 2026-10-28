@@ -10,14 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
+	"charm.land/ssh"
+	"charm.land/wish/v2"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -581,7 +582,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				compScroll++
 			case "pgup", "b":
 				compScroll -= compScrollPage
-			case "pgdown", " ", "f":
+			case "pgdown", "space", "f":
 				compScroll += compScrollPage
 			default:
 				uiPanel = hdPanelNone
@@ -721,7 +722,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 	// hold doesn't stutter, yet be short enough that release feels immediate.
 	const heldTimeout = 250 * time.Millisecond
 	var (
-		pendingMove tea.KeyMsg
+		pendingMove tea.KeyPressMsg
 		havePending bool
 		lastStep    time.Time
 	)
@@ -741,7 +742,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			area = next
 		}
 	}
-	applyMove := func(km tea.KeyMsg) {
+	applyMove := func(km tea.KeyPressMsg) {
 		sendArea(km)
 		lastStep = time.Now()
 		draw()
@@ -837,7 +838,7 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 				havePending = true
 			}
 		} else if key == "e" { // pick up an item, or open a station beside you
-			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			sendArea(ui.TextKey("e"))
 			if ctx.UseStation != nil { // the area asked to open a panel
 				xy := *ctx.UseStation
 				ctx.UseStation = nil
@@ -858,16 +859,16 @@ func runHD(s ssh.Session, w *world.World, st store.Store, style *game.Style) {
 			// build mode: 'b' toggles, 'r'/brackets cycle the placeable, 'x' demolishes
 			// under the ghost. In a minigame these double as game keys (restart/leave),
 			// which may transition — so funnel through sendArea.
-			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			sendArea(ui.TextKey(key))
 			draw()
 		} else if key == "f" { // hunt an adjacent animal
-			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+			sendArea(ui.TextKey("f"))
 			draw()
 		} else if key == "t" { // tame an adjacent animal with bait
-			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+			sendArea(ui.TextKey("t"))
 			draw()
 		} else if key == "m" { // toggle the area overview map
-			sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+			sendArea(ui.TextKey("m"))
 			draw()
 		} else if key == "f2" { // toggle the walkability debug overlay
 			game.DebugWalkable = !game.DebugWalkable
@@ -1060,29 +1061,29 @@ func enterHD(ctx *game.Ctx, from, id string) (string, game.Area, game.HDViewer) 
 // moveKeyMsg converts a parsed key name into a bubbletea KeyMsg, but only for
 // the movement keys the areas act on (WASD/arrows, YUBN diagonals, Shift to
 // run) — so HD forwards just movement and never trips chat or panel keys.
-func moveKeyMsg(key string) (tea.KeyMsg, bool) {
+func moveKeyMsg(key string) (tea.KeyPressMsg, bool) {
 	if _, _, _, ok := game.MoveKey(key); !ok {
-		return tea.KeyMsg{}, false
+		return tea.KeyPressMsg{}, false
 	}
 	switch key {
 	case "up":
-		return tea.KeyMsg{Type: tea.KeyUp}, true
+		return tea.KeyPressMsg{Code: tea.KeyUp}, true
 	case "down":
-		return tea.KeyMsg{Type: tea.KeyDown}, true
+		return tea.KeyPressMsg{Code: tea.KeyDown}, true
 	case "left":
-		return tea.KeyMsg{Type: tea.KeyLeft}, true
+		return tea.KeyPressMsg{Code: tea.KeyLeft}, true
 	case "right":
-		return tea.KeyMsg{Type: tea.KeyRight}, true
+		return tea.KeyPressMsg{Code: tea.KeyRight}, true
 	case "shift+up":
-		return tea.KeyMsg{Type: tea.KeyShiftUp}, true
+		return tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift}, true
 	case "shift+down":
-		return tea.KeyMsg{Type: tea.KeyShiftDown}, true
+		return tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}, true
 	case "shift+left":
-		return tea.KeyMsg{Type: tea.KeyShiftLeft}, true
+		return tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift}, true
 	case "shift+right":
-		return tea.KeyMsg{Type: tea.KeyShiftRight}, true
+		return tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}, true
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}, true
+	return ui.TextKey(key), true
 }
 
 // csiKey turns a parsed arrow escape into a MoveKey name, prefixing "shift+"

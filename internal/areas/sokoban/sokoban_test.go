@@ -3,7 +3,9 @@ package sokoban
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/durst-group/durstworld/internal/ui"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/world"
@@ -21,7 +23,7 @@ func newArea(t *testing.T) *area {
 	return a
 }
 
-func key(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func key(s string) tea.KeyPressMsg { return ui.TextKey(s) }
 
 // Level 0 places the player at (1,2), a crate at (2,2) and the pad at (4,2):
 // two steps right shove the crate home and clear the level, advancing to #2.

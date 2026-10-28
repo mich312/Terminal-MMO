@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/durst-group/durstworld/internal/ui"
 )
 
@@ -107,7 +105,7 @@ type Player struct {
 	// y south. Facing is its 8-way form, kept in step by FacingAngle: the
 	// terminal, the avatar sprites and all of the combat code use Facing.
 	Angle     float64
-	Color     lipgloss.Color
+	Color     ui.Color
 	Facing    Dir
 	Style     int    // avatar sprite style index
 	Accessory int    // avatar accessory index (0 = none)
@@ -698,7 +696,7 @@ func (w *World) Whisper(from, to, text string) bool {
 
 // SetColor changes a player's avatar color. The new color shows on everyone's
 // next render. Returns false if the player is gone.
-func (w *World) SetColor(name string, c lipgloss.Color) bool {
+func (w *World) SetColor(name string, c ui.Color) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	p, ok := w.players[name]

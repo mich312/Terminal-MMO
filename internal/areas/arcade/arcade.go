@@ -12,8 +12,8 @@ package arcade
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -134,7 +134,7 @@ func (a *area) View(width, height int) string {
 	line := func(name, blurb string) string {
 		return th.Accent.Render("◊ "+name) + th.Dim.Render("  "+blurb)
 	}
-	panel := th.Panel.Width(28).Render(strings.Join([]string{
+	panel := th.PanelWidth(28).Render(strings.Join([]string{
 		th.PanelTitle.Render("🎮 Durst Arcade"), "",
 		th.ChatText.Render("Step into a cabinet to"),
 		th.ChatText.Render("play. ◈ door → the Wilds."), "",

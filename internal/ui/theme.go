@@ -2,17 +2,18 @@
 // styles and a few small rendering helpers. The hex palette itself lives in the
 // leaf package palette (shared with markdown); ui builds styles from it.
 //
-// Color is truecolor-first: the palette is authored as 24-bit hex and each
-// SSH session renders through its own *lipgloss.Renderer (see NewTheme),
-// which auto-detects the client's terminal and downsamples to 256- or
-// 16-color as needed. Code that has no session (tests, init-time globals)
-// uses Default, bound to the process renderer.
+// Color is truecolor-first: the palette is authored as 24-bit hex and styles
+// always render full-fidelity ANSI. Downsampling to the client's terminal
+// (256- or 16-color) happens at the output layer: Bubble Tea v2 detects each
+// SSH session's color profile from its PTY and environment and converts the
+// frame as it writes it, so one Theme serves every session.
 package ui
 
 import (
 	"hash/fnv"
+	"image/color"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/durst-group/durstworld/internal/palette"
@@ -43,8 +44,27 @@ var (
 	ColorBarBg  = lipgloss.Color(HexBarBg)
 )
 
+// Color is a palette color as authored: a "#rrggbb" hex string, or "" for none
+// (see Transparent). Lip Gloss v2 turned lipgloss.Color from a string type into
+// a constructor returning an opaque image/color.Color; avatar colors need to
+// stay comparable and persistable as text, so this keeps the string identity
+// and still satisfies color.Color, so it can be handed to a style directly.
+type Color string
+
+// RGBA implements color.Color by parsing the hex string through Lip Gloss.
+func (c Color) RGBA() (r, g, b, a uint32) { return lipgloss.Color(string(c)).RGBA() }
+
+// lip converts a color for a Lip Gloss style: a Color goes through
+// lipgloss.Color so "" stays "no color" rather than becoming opaque black.
+func lip(c color.Color) color.Color {
+	if pc, ok := c.(Color); ok {
+		return lipgloss.Color(string(pc))
+	}
+	return c
+}
+
 // avatarColors are 8 readable truecolor hues for player glyphs.
-var avatarColors = []lipgloss.Color{
+var avatarColors = []Color{
 	"#D97757", // claude clay
 	"#FF6B6B", // coral
 	"#7BD88F", // green
@@ -70,7 +90,7 @@ var avatarColors = []lipgloss.Color{
 }
 
 // AvatarColor returns a deterministic color for a player name.
-func AvatarColor(name string) lipgloss.Color {
+func AvatarColor(name string) Color {
 	h := fnv.New32a()
 	h.Write([]byte(name))
 	return avatarColors[h.Sum32()%uint32(len(avatarColors))]
@@ -80,14 +100,14 @@ func AvatarColor(name string) lipgloss.Color {
 func NumAvatarColors() int { return len(avatarColors) }
 
 // AvatarColorByIndex returns the i-th avatar color, wrapping out-of-range i.
-func AvatarColorByIndex(i int) lipgloss.Color {
+func AvatarColorByIndex(i int) Color {
 	n := len(avatarColors)
 	return avatarColors[((i%n)+n)%n]
 }
 
 // AvatarColorIndex returns the index of a color in the avatar palette, or 0 if
 // it isn't one of them (e.g. a custom color).
-func AvatarColorIndex(c lipgloss.Color) int {
+func AvatarColorIndex(c Color) int {
 	for i, ac := range avatarColors {
 		if ac == c {
 			return i
@@ -96,11 +116,10 @@ func AvatarColorIndex(c lipgloss.Color) int {
 	return 0
 }
 
-// Theme is the full set of styles bound to one renderer (one SSH session, or
-// the process default). Build it with NewTheme.
+// Theme is the full set of styles. Lip Gloss v2 styles are plain values with no
+// renderer attached, so a single Theme (Default) serves every session; the
+// type stays so callers keep threading it through game.Ctx.
 type Theme struct {
-	r *lipgloss.Renderer
-
 	Title      lipgloss.Style
 	Status     lipgloss.Style
 	StatusHint lipgloss.Style
@@ -127,12 +146,10 @@ type Theme struct {
 	Warn   lipgloss.Style
 }
 
-// NewTheme builds the style set for a renderer. Pass bubbletea.MakeRenderer(s)
-// for a per-session, auto-detecting theme.
-func NewTheme(r *lipgloss.Renderer) *Theme {
-	s := r.NewStyle
+// NewTheme builds the style set.
+func NewTheme() *Theme {
+	s := lipgloss.NewStyle
 	return &Theme{
-		r: r,
 		Title: s().Foreground(lipgloss.Color(HexBright)).
 			Background(lipgloss.Color(HexAccent)).Bold(true).Padding(0, 2),
 		Status: s().Foreground(lipgloss.Color(HexBarText)).
@@ -165,46 +182,53 @@ func NewTheme(r *lipgloss.Renderer) *Theme {
 	}
 }
 
-// Fg is a renderer-bound foreground style for an arbitrary color — used by
-// the map renderer, which computes per-tile colors (lighting, day/night,
-// animation) rather than picking from the fixed style set.
-func (t *Theme) Fg(c lipgloss.Color) lipgloss.Style { return t.r.NewStyle().Foreground(c) }
+// Fg is a foreground style for an arbitrary color — used by the map renderer,
+// which computes per-tile colors (lighting, day/night, animation) rather than
+// picking from the fixed style set.
+func (t *Theme) Fg(c color.Color) lipgloss.Style { return lipgloss.NewStyle().Foreground(lip(c)) }
 
 // FgBold is Fg with bold, for objects and portals.
-func (t *Theme) FgBold(c lipgloss.Color) lipgloss.Style {
-	return t.r.NewStyle().Foreground(c).Bold(true)
+func (t *Theme) FgBold(c color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lip(c)).Bold(true)
 }
 
 // FgBg styles a cell with both a foreground and background color — used to
 // pack two half-block pixels (top=fg, bottom=bg) into one cell.
-func (t *Theme) FgBg(fg, bg lipgloss.Color) lipgloss.Style {
-	return t.r.NewStyle().Foreground(fg).Background(bg)
+func (t *Theme) FgBg(fg, bg color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lip(fg)).Background(lip(bg))
 }
 
-// Wrap is a renderer-bound, single-line block style (no color) that pads to
-// the full screen width. MaxHeight(1) clips overflow so an over-long bar can
-// never wrap and disturb the fixed layout.
+// PanelWidth is Panel sized the way Lip Gloss v1 sized it: w covers content and
+// padding, and the border is drawn outside it. Lip Gloss v2 counts the border
+// inside Width, so without this every bordered panel would shrink by two cells.
+func (t *Theme) PanelWidth(w int) lipgloss.Style {
+	return t.Panel.Width(w + t.Panel.GetHorizontalBorderSize())
+}
+
+// Wrap is a single-line block style (no color) that pads to the full screen
+// width. MaxHeight(1) clips overflow so an over-long bar can never wrap and
+// disturb the fixed layout.
 func (t *Theme) Wrap(width int) lipgloss.Style {
-	return t.r.NewStyle().Width(width).MaxHeight(1)
+	return lipgloss.NewStyle().Width(width).MaxHeight(1)
 }
 
 // Bar is Wrap plus the status-bar background.
 func (t *Theme) Bar(width int) lipgloss.Style {
-	return t.r.NewStyle().Width(width).MaxHeight(1).Background(lipgloss.Color(HexBarBg))
+	return lipgloss.NewStyle().Width(width).MaxHeight(1).Background(lipgloss.Color(HexBarBg))
 }
 
 // Screen is a presentation "big screen": a rounded accent border with padding
 // and no fill, so a rendered markdown slide reads cleanly over the scene.
 func (t *Theme) Screen() lipgloss.Style {
-	return t.r.NewStyle().
+	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(HexAccent)).
 		Padding(1, 2)
 }
 
-// Default is the process-wide theme for tests and init-time globals. Sessions
-// build their own with NewTheme(bubbletea.MakeRenderer(s)).
-var Default = NewTheme(lipgloss.DefaultRenderer())
+// Default is the process-wide theme, shared by every session (styles carry no
+// per-terminal state in Lip Gloss v2; see the package comment).
+var Default = NewTheme()
 
 // Back-compat global styles — thin aliases to Default so existing callers
 // (areas, input widget) keep compiling. New code should prefer a session
@@ -236,13 +260,13 @@ var (
 	WarnStyle   = Default.Warn
 )
 
-// Blend mixes two hex colors in CIE-Lab space and returns a lipgloss color.
+// Blend mixes two hex colors in CIE-Lab space and returns a palette Color.
 // t=0 yields a, t=1 yields b.
-func Blend(a, b string, t float64) lipgloss.Color {
+func Blend(a, b string, t float64) Color {
 	ca, err1 := colorful.Hex(a)
 	cb, err2 := colorful.Hex(b)
 	if err1 != nil || err2 != nil {
-		return lipgloss.Color(a)
+		return Color(a)
 	}
 	if t < 0 {
 		t = 0
@@ -250,5 +274,5 @@ func Blend(a, b string, t float64) lipgloss.Color {
 	if t > 1 {
 		t = 1
 	}
-	return lipgloss.Color(ca.BlendLab(cb, t).Clamped().Hex())
+	return Color(ca.BlendLab(cb, t).Clamped().Hex())
 }

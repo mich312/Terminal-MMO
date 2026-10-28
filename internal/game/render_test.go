@@ -1,23 +1,18 @@
 package game
 
 import (
-	"io"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
-
 	"github.com/durst-group/durstworld/internal/ui"
 )
 
-// trueColorTheme renders 24-bit color into the void, so tests can assert on
-// the SGR escapes lighting/animation produce.
+// trueColorTheme returns a theme for asserting on the 24-bit SGR escapes
+// lighting/animation produce. Lip Gloss v2 styles always render truecolor
+// (downsampling happens at output), so this is just a fresh theme.
 func trueColorTheme() *ui.Theme {
-	r := lipgloss.NewRenderer(io.Discard)
-	r.SetColorProfile(termenv.TrueColor)
-	return ui.NewTheme(r)
+	return ui.NewTheme()
 }
 
 // An animated tile cycles its glyph with the frame counter.

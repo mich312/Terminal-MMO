@@ -3,7 +3,8 @@ package ui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Editor is a minimal multi-line text editor for composing a markdown deck in
@@ -36,43 +37,47 @@ func (e *Editor) Focused() bool { return e.focused }
 // Value returns the buffer as a single newline-joined string.
 func (e *Editor) Value() string { return strings.Join(e.lines, "\n") }
 
-// HandleKey applies one key to the buffer.
-func (e *Editor) HandleKey(msg tea.KeyMsg) {
-	if msg.Paste {
-		e.insert(string(msg.Runes))
-		return
-	}
-	switch msg.Type {
-	case tea.KeyRunes:
-		e.insert(string(msg.Runes))
-	case tea.KeySpace:
+// HandleKey applies one key to the buffer. Keys are matched by name so a
+// modified variant (shift+up, ctrl+left …) stays a no-op, as it was when
+// Bubble Tea v1 gave those their own key types.
+func (e *Editor) HandleKey(msg tea.KeyPressMsg) {
+	switch msg.String() {
+	case "space":
 		e.insert(" ")
-	case tea.KeyTab:
+	case "tab":
 		e.insert("  ")
-	case tea.KeyEnter:
+	case "enter":
 		e.insert("\n")
-	case tea.KeyBackspace:
+	case "backspace":
 		e.backspace()
-	case tea.KeyLeft:
+	case "left":
 		e.left()
-	case tea.KeyRight:
+	case "right":
 		e.right()
-	case tea.KeyUp:
+	case "up":
 		if e.cy > 0 {
 			e.cy--
 			e.clampX()
 		}
-	case tea.KeyDown:
+	case "down":
 		if e.cy < len(e.lines)-1 {
 			e.cy++
 			e.clampX()
 		}
-	case tea.KeyHome:
+	case "home":
 		e.cx = 0
-	case tea.KeyEnd:
+	case "end":
 		e.cx = len([]rune(e.lines[e.cy]))
+	default:
+		if msg.Text != "" {
+			e.insert(msg.Text)
+		}
 	}
 }
+
+// Paste inserts a bracketed paste verbatim. Bubble Tea v2 delivers pastes as
+// their own tea.PasteMsg rather than as a key with a Paste flag.
+func (e *Editor) Paste(text string) { e.insert(text) }
 
 // insert writes text (which may contain newlines) at the cursor.
 func (e *Editor) insert(text string) {
@@ -154,7 +159,7 @@ func (e *Editor) View(t *Theme, title string, width, height int) string {
 		b.WriteByte('\n')
 	}
 	b.WriteString(t.Dim.Render("Ctrl+S present · Esc cancel · --- splits slides"))
-	return t.Panel.Width(width).Render(b.String())
+	return t.PanelWidth(width).Render(b.String())
 }
 
 func (e *Editor) renderLine(t *Theme, row, width int) string {
@@ -182,7 +187,7 @@ func (e *Editor) renderLine(t *Theme, row, width int) string {
 	if crel < len(win) {
 		after = string(win[crel+1:])
 	}
-	cursor := t.r.NewStyle().Reverse(true).Render(string(cur))
+	cursor := lipgloss.NewStyle().Reverse(true).Render(string(cur))
 	return t.ChatText.Render(before) + cursor + t.ChatText.Render(after)
 }
 

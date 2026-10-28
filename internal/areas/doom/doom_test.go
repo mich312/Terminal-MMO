@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/durst-group/durstworld/internal/ui"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/world"
@@ -70,7 +70,7 @@ func TestHDFrameNoPanic(t *testing.T) {
 
 func TestLeave(t *testing.T) {
 	a := newArea(t)
-	next, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	next, _ := a.Update(ui.TextKey("x"))
 	if tr, ok := next.(game.Transition); !ok || tr.To != "arcade" {
 		t.Fatalf("x → %#v, want Transition to arcade", next)
 	}

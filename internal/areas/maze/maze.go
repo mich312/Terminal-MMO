@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -149,7 +149,7 @@ func (a *area) buildMap(wall [][]bool, W, H int) *game.TileMap {
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "r" {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "r" {
 		a.generate()
 		a.setToast("new maze")
 		return a, nil
@@ -205,7 +205,7 @@ func (a *area) View(width, height int) string {
 	if a.toast != "" && time.Now().Before(a.toastUntil) {
 		rows = append(rows, "", th.Accent.Render(a.toast))
 	}
-	panel := th.Panel.Width(30).Render(strings.Join(rows, "\n"))
+	panel := th.PanelWidth(30).Render(strings.Join(rows, "\n"))
 
 	const gap = 3
 	mapW := width - lipgloss.Width(panel) - gap

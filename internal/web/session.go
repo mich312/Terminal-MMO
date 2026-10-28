@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/coder/websocket"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
+	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
 )
 
@@ -404,7 +405,7 @@ func (s *session) handleKey(key string) {
 	}
 	switch key {
 	case "e":
-		s.sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+		s.sendArea(ui.TextKey("e"))
 		// The area may have asked to open a station panel where the player
 		// stands — the same one-shot handshake the HD client uses.
 		if s.gctx.UseStation != nil {
@@ -428,7 +429,7 @@ func (s *session) handleKey(key string) {
 		// Build mode, minigame restart/leave, striking (f fast, F strong),
 		// taming, the overview map and slide navigation all go straight to the
 		// area, which owns what they mean where you're standing.
-		s.sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		s.sendArea(ui.TextKey(key))
 	case "guard:1", "guard:0":
 		// Guard is world state, not an area action: raise/lower goes straight to
 		// the referee, which stamps the parry clock server-side.
@@ -446,7 +447,7 @@ func (s *session) handleKey(key string) {
 			return
 		}
 		if _, ok := combatDir(key, "dodge:"); ok {
-			s.sendArea(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			s.sendArea(ui.TextKey(key))
 			s.render(false)
 		}
 		return
@@ -546,29 +547,29 @@ func actionPrompt(a game.Area) (string, bool) {
 // moveKeyMsg converts a key name from the browser into the bubbletea KeyMsg the
 // areas act on, for movement keys only — so a browser can no more inject an
 // arbitrary key into an area than an SSH client can.
-func moveKeyMsg(key string) (tea.KeyMsg, bool) {
+func moveKeyMsg(key string) (tea.KeyPressMsg, bool) {
 	if _, _, _, ok := game.MoveKey(key); !ok {
-		return tea.KeyMsg{}, false
+		return tea.KeyPressMsg{}, false
 	}
 	switch key {
 	case "up":
-		return tea.KeyMsg{Type: tea.KeyUp}, true
+		return tea.KeyPressMsg{Code: tea.KeyUp}, true
 	case "down":
-		return tea.KeyMsg{Type: tea.KeyDown}, true
+		return tea.KeyPressMsg{Code: tea.KeyDown}, true
 	case "left":
-		return tea.KeyMsg{Type: tea.KeyLeft}, true
+		return tea.KeyPressMsg{Code: tea.KeyLeft}, true
 	case "right":
-		return tea.KeyMsg{Type: tea.KeyRight}, true
+		return tea.KeyPressMsg{Code: tea.KeyRight}, true
 	case "shift+up":
-		return tea.KeyMsg{Type: tea.KeyShiftUp}, true
+		return tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift}, true
 	case "shift+down":
-		return tea.KeyMsg{Type: tea.KeyShiftDown}, true
+		return tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}, true
 	case "shift+left":
-		return tea.KeyMsg{Type: tea.KeyShiftLeft}, true
+		return tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift}, true
 	case "shift+right":
-		return tea.KeyMsg{Type: tea.KeyShiftRight}, true
+		return tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}, true
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}, true
+	return ui.TextKey(key), true
 }
 
 // chatKind labels an event for the client's log styling.

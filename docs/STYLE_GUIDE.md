@@ -14,11 +14,11 @@
    `internal/palette`. `internal/ui` builds lipgloss styles from it. Never
    hard-code a hex literal in an area or a renderer — pull it from the palette
    or the theme.
-3. **One renderer per session.** Each SSH session gets its own
-   `*lipgloss.Renderer` (via `bubbletea.MakeRenderer`) wrapped in a `ui.Theme`,
-   threaded through `game.Ctx`. The renderer auto-detects the terminal and
-   downsamples 24-bit hex to 256/16 color. Don't reach for process globals in
-   session code — use the session's `Theme`.
+3. **Style through the session's Theme.** Every session carries a `ui.Theme`
+   in `game.Ctx`. Styles render 24-bit hex; Bubble Tea v2 detects the client
+   terminal and downsamples each frame to 256/16 color on output, so never
+   downsample by hand. Don't reach for process globals in session code — use
+   the session's `Theme`.
 4. **Retro on a 6-pixel grid.** All pixel art is authored at 6 art-pixels per
    tile. Keep it that way; it's what makes the look cohere.
 5. **Persist between visits, never mid-session for cosmetics.** Live look is

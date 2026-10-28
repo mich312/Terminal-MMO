@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
@@ -36,7 +36,7 @@ func findPlot(a *area) (int, int, worldgen.Plot, bool) {
 	return 0, 0, worldgen.Plot{}, false
 }
 
-func key(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func key(s string) tea.KeyPressMsg { return ui.TextKey(s) }
 
 // TestWildsClaimRelease drives the build-mode claim/release wiring: e over a
 // settlement building deeds it; x over your own plot releases it.

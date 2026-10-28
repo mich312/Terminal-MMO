@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/durst-group/durstworld/internal/ui"
 
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/world"
@@ -65,7 +65,7 @@ func TestMenuEntriesShape(t *testing.T) {
 // and the chat commands.
 func TestQuestionKeyOpensHelp(t *testing.T) {
 	m := playingModel(t)
-	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m.handleKey(ui.TextKey("?"))
 	if !m.showInfo || m.infoTitle != "Help" {
 		t.Fatalf("? should open the Help overlay; showInfo=%v title=%q", m.showInfo, m.infoTitle)
 	}

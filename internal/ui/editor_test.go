@@ -4,15 +4,15 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
-func runes(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func runes(s string) tea.KeyPressMsg { return TextKey(s) }
 
 func TestEditorTypeAndNewline(t *testing.T) {
 	e := NewEditor("")
 	e.HandleKey(runes("ab"))
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	e.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	e.HandleKey(runes("cd"))
 	if got := e.Value(); got != "ab\ncd" {
 		t.Fatalf("Value = %q, want %q", got, "ab\\ncd")
@@ -21,8 +21,8 @@ func TestEditorTypeAndNewline(t *testing.T) {
 
 func TestEditorBackspaceJoinsLines(t *testing.T) {
 	e := NewEditor("ab\ncd")
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyHome}) // start of "cd"
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	e.HandleKey(tea.KeyPressMsg{Code: tea.KeyHome}) // start of "cd"
+	e.HandleKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if got := e.Value(); got != "abcd" {
 		t.Fatalf("Value = %q, want abcd", got)
 	}
@@ -30,7 +30,7 @@ func TestEditorBackspaceJoinsLines(t *testing.T) {
 
 func TestEditorPasteMultiline(t *testing.T) {
 	e := NewEditor("")
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("# Title\n\n- one\n- two"), Paste: true})
+	e.Paste("# Title\n\n- one\n- two")
 	want := "# Title\n\n- one\n- two"
 	if got := e.Value(); got != want {
 		t.Fatalf("paste Value = %q, want %q", got, want)
@@ -65,9 +65,9 @@ func stripANSI(s string) string {
 
 func TestEditorInsertMidLine(t *testing.T) {
 	e := NewEditor("hello")
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyHome})
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
-	e.HandleKey(tea.KeyMsg{Type: tea.KeyRight}) // after "he"
+	e.HandleKey(tea.KeyPressMsg{Code: tea.KeyHome})
+	e.HandleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	e.HandleKey(tea.KeyPressMsg{Code: tea.KeyRight}) // after "he"
 	e.HandleKey(runes("XYZ"))
 	if got := e.Value(); got != "heXYZllo" {
 		t.Fatalf("Value = %q, want heXYZllo", got)

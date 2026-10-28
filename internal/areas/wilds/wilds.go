@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -1462,7 +1462,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		}
 		return a, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		ks := msg.String()
 
 		// Build mode toggle (works from anywhere).

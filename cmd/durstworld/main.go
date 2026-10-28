@@ -16,12 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
-	"github.com/charmbracelet/wish/activeterm"
-	bm "github.com/charmbracelet/wish/bubbletea"
-	"github.com/charmbracelet/wish/logging"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/ssh"
+	"charm.land/wish/v2"
+	"charm.land/wish/v2/activeterm"
+	bm "charm.land/wish/v2/bubbletea"
+	"charm.land/wish/v2/logging"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
@@ -248,15 +248,18 @@ func teaHandler(w *world.World, st store.Store) bm.Handler {
 			World: w,
 			Store: st,
 			Name:  name,
-			// per-session renderer: auto-detects the client's terminal and
-			// downsamples truecolor → 256 → 16 as needed.
-			Theme:      ui.NewTheme(bm.MakeRenderer(s)),
+			// Styles render truecolor; Bubble Tea v2 detects this session's
+			// color profile (PTY + client env, wired by the wish middleware)
+			// and downsamples truecolor → 256 → 16 as it writes each frame.
+			Theme:      ui.Default,
 			Inventory:  st.LoadInventory(name),
 			Hats:       st.LoadHats(name),
 			Compendium: st.LoadCompendium(name),
 			FixedGates: st.LoadPersonalGates(name),
 		}
 		m := game.NewModel(ctx, events, visit)
-		return m, []tea.ProgramOption{tea.WithAltScreen()}
+		// No options: the wish middleware appends the session I/O itself, and
+		// the alternate screen is declared by Model.View in Bubble Tea v2.
+		return m, nil
 	}
 }

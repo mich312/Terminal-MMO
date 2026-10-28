@@ -7,8 +7,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/durst-group/durstworld/internal/pixel"
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -1594,11 +1592,11 @@ func DrawChat(img *image.RGBA, lines []HDLine, active bool, input string) {
 	}
 }
 
-func lipToRGBA(c lipgloss.Color) color.RGBA { return colorfulToRGBA(playerColor(c)) }
+func lipToRGBA(c ui.Color) color.RGBA { return colorfulToRGBA(playerColor(c)) }
 
 // drawAvatarInto rasterizes a front-facing avatar (style + accessory + color)
 // into the frame at (x,y), each sprite pixel scaled by scale.
-func drawAvatarInto(img *image.RGBA, x, y, scale, style, accessory int, col lipgloss.Color) {
+func drawAvatarInto(img *image.RGBA, x, y, scale, style, accessory int, col ui.Color) {
 	body := playerColor(col)
 	accMain, accShade := accessoryColors(accessory)
 	bmp := AvatarBitmap(style, accessory, "", world.DirS, 0)

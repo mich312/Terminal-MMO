@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -59,7 +59,7 @@ func isTransition(a Area) bool { _, ok := a.(Transition); return ok }
 // A key no longer moves anybody by itself — it only steers — so a test that
 // wants to walk somewhere has to supply the time as well. The clock is injected
 // rather than real so this costs no wall-clock seconds.
-func holdKey(a Area, w *Walker, k tea.KeyMsg, d time.Duration) Area {
+func holdKey(a Area, w *Walker, k tea.KeyPressMsg, d time.Duration) Area {
 	const slice = 30 * time.Millisecond
 	base := time.Now()
 	w.lastTick = base

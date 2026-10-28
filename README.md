@@ -362,12 +362,12 @@ counts, guestbook, event log). Chat is deliberately ephemeral.
 
 ### Rendering
 
-Color is truecolor-first. Each SSH session gets its own `*lipgloss.Renderer`
-(`bubbletea.MakeRenderer`) wrapped in a `ui.Theme`, threaded through
-`game.Ctx`; the renderer auto-detects the client's terminal and downsamples
-24-bit hex to 256- or 16-color as needed. `ui.Default` serves code with no
-session (tests, init globals), and the old `ui.WallStyle`-style globals are
-thin aliases to it.
+Color is truecolor-first. Styles live in a `ui.Theme` threaded through
+`game.Ctx` and always render 24-bit hex; Bubble Tea v2 detects each SSH
+session's color profile (from its PTY and the client's environment) and
+downsamples every frame to 256- or 16-color as it writes it. Lip Gloss v2
+styles carry no per-terminal state, so every session shares `ui.Default`, and
+the old `ui.WallStyle`-style globals are thin aliases to it.
 
 Maps render through a camera (`game.CameraOn` + `RenderViewport`), so a map
 may be larger than the screen. Tiles can animate (`TileAnim`), carry their own

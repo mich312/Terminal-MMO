@@ -3,7 +3,7 @@ package game
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -11,7 +11,7 @@ import (
 )
 
 // key makes a rune keypress for the modal trade handler.
-func tradeKey(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func tradeKey(s string) tea.KeyPressMsg { return ui.TextKey(s) }
 
 // pump feeds every queued world event into a model, as the real event loop does.
 func pump(m *Model, ch <-chan world.Event) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -85,7 +85,7 @@ func TestBeginPlayGeometry(t *testing.T) {
 	if m.phase != phasePlay {
 		t.Fatalf("phase = %v, want phasePlay", m.phase)
 	}
-	if got := len(strings.Split(m.View(), "\n")); got != m.height {
+	if got := len(strings.Split(m.frame(), "\n")); got != m.height {
 		t.Fatalf("play view: got %d lines, want %d", got, m.height)
 	}
 }
