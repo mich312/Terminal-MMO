@@ -4,7 +4,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/durst-group/durstworld/internal/ui"
 )
 
 // The trade panel draws straight onto an RGBA frame; it must lay out without
@@ -21,9 +21,9 @@ func TestTradePanelRenders(t *testing.T) {
 		{"empty", TradeView{}, true},
 		{"full", TradeView{
 			You: TradeParty{Name: "ada", Accessory: mustAccTest("shroom"),
-				Color: lipgloss.Color("#7DF0FF"), Ready: true,
+				Color: ui.Color("#7DF0FF"), Ready: true,
 				Offer: []TradeRow{{it("crystal"), 2}, {it("mushroom"), 1}}},
-			Them: TradeParty{Name: "brix", Color: lipgloss.Color("#FFC861"),
+			Them: TradeParty{Name: "brix", Color: ui.Color("#FFC861"),
 				// more rows than maxTradeRows, to exercise the cap
 				Offer: []TradeRow{{it("nugget"), 3}, {it("wood"), 5}, {it("amber"), 1}, {it("berry"), 9}, {it("grain"), 2}}},
 			Pack: []TradeRow{{it("berry"), 8}, {it("crystal"), 4}, {it("grain"), 9}},

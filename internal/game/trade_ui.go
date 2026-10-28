@@ -5,9 +5,8 @@ import (
 	"image"
 	"image/color"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/durst-group/durstworld/internal/pixel"
+	"github.com/durst-group/durstworld/internal/ui"
 )
 
 // Trade UI (HD). A trade is a face-to-face swap between two nearby players: each
@@ -27,7 +26,7 @@ type TradeParty struct {
 	Name      string
 	Style     int
 	Accessory int
-	Color     lipgloss.Color
+	Color     ui.Color
 	Offer     []TradeRow
 	Ready     bool
 }

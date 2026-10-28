@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/durst-group/durstworld/internal/ui"
 
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -34,8 +36,8 @@ func newWalker(t *testing.T, m *TileMap) *Walker {
 	return &Walker{Ctx: &Ctx{World: wd, Name: name}, Map: m, AreaID: "test"}
 }
 
-func keyMsg(s string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+func keyMsg(s string) tea.KeyPressMsg {
+	return ui.TextKey(s)
 }
 
 // A movement key no longer takes a step: it points the body, and the body walks

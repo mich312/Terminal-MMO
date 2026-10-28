@@ -2,20 +2,18 @@ package ui
 
 import (
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Transparent is the sentinel pixel color: it renders as a blank cell so a
 // pixel buffer can sit over other content without a hard background box.
-const Transparent = lipgloss.Color("")
+const Transparent = Color("")
 
 // HalfBlock renders a pixel buffer as half-height blocks, doubling vertical
 // resolution: each output row consumes two pixel rows, drawn with the upper-
 // half block '▀' whose foreground is the top pixel and background the bottom.
 // Buffers should be an even number of rows; a trailing odd row is dropped.
 // Transparent pixels render as spaces (top) / no background.
-func (t *Theme) HalfBlock(pix [][]lipgloss.Color) string {
+func (t *Theme) HalfBlock(pix [][]Color) string {
 	var b strings.Builder
 	for y := 0; y+1 < len(pix); y += 2 {
 		top, bot := pix[y], pix[y+1]
@@ -35,11 +33,11 @@ func (t *Theme) HalfBlock(pix [][]lipgloss.Color) string {
 			case tc == Transparent && bc == Transparent:
 				b.WriteByte(' ')
 			case bc == Transparent:
-				b.WriteString(t.r.NewStyle().Foreground(tc).Render("▀"))
+				b.WriteString(t.Fg(tc).Render("▀"))
 			case tc == Transparent:
-				b.WriteString(t.r.NewStyle().Foreground(bc).Render("▄"))
+				b.WriteString(t.Fg(bc).Render("▄"))
 			default:
-				b.WriteString(t.r.NewStyle().Foreground(tc).Background(bc).Render("▀"))
+				b.WriteString(t.FgBg(tc, bc).Render("▀"))
 			}
 		}
 		if y+3 < len(pix) {
@@ -73,7 +71,7 @@ func (t *Theme) Shimmer(lines []string, a, b string, phase float64) string {
 			if tri > 0.5 {
 				tri = 1 - tri
 			}
-			out.WriteString(t.r.NewStyle().Foreground(Blend(a, b, tri*2)).Bold(true).Render(string(r)))
+			out.WriteString(t.Fg(Blend(a, b, tri*2)).Bold(true).Render(string(r)))
 		}
 	}
 	return out.String()
@@ -92,7 +90,7 @@ func (t *Theme) VGradient(lines []string, top, bot string) string {
 		if n > 1 {
 			f = float64(i) / float64(n-1)
 		}
-		out.WriteString(t.r.NewStyle().Foreground(Blend(top, bot, f)).Bold(true).Render(line))
+		out.WriteString(t.Fg(Blend(top, bot, f)).Bold(true).Render(line))
 	}
 	return out.String()
 }

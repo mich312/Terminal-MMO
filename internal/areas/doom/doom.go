@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -106,7 +106,7 @@ func (a *area) wall(x, y int) bool {
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return a, nil
 	}
@@ -362,7 +362,7 @@ func (a *area) View(width, height int) string {
 	if a.toast != "" && time.Now().Before(a.toastUnt) {
 		rows = append(rows, "", th.Accent.Render(a.toast))
 	}
-	panel := th.Panel.Width(26).Render(strings.Join(rows, "\n"))
+	panel := th.PanelWidth(26).Render(strings.Join(rows, "\n"))
 
 	const gap = 3
 	viewW := width - lipgloss.Width(panel) - gap

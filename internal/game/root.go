@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -203,8 +203,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return shimmerTickMsg{} })
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+
+	case tea.PasteMsg:
+		// Bubble Tea v2 delivers a bracketed paste as its own message (v1 sent a
+		// key flagged Paste). Text fields take it; elsewhere it is ignored, as a
+		// pasted run of characters never matched a command key before either.
+		if m.phase == phasePlay && m.chatInput.Focused() {
+			m.chatInput.Insert(msg.Content)
+			return m, nil
+		}
+		if cap, ok := m.area.(InputCapturer); ok && m.phase == phasePlay && cap.CapturesInput() {
+			return m, m.updateArea(msg)
+		}
+		return m, nil
 	}
 
 	// anything else (area-internal ticks etc.) goes to the area
@@ -354,7 +367,7 @@ func (m *Model) showHelp() {
 
 // handleCharKey drives the interactive character panel: ↑↓ pick a field, ←→
 // change it live (persisting the avatar), esc/enter/q close.
-func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleCharKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc", "enter", "q":
 		m.showChar = false
@@ -372,7 +385,7 @@ func (m *Model) handleCharKey(msg tea.KeyMsg) tea.Cmd {
 
 // handleCraftKey drives the interactive crafting panel: ↑↓ pick a recipe, e (or
 // enter) crafts the selection, esc/q close.
-func (m *Model) handleCraftKey(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleCraftKey(msg tea.KeyPressMsg) tea.Cmd {
 	n := len(Recipes)
 	switch msg.String() {
 	case "esc", "q":
@@ -447,7 +460,7 @@ func (m *Model) craftPanel() string {
 
 // handleMachineKey drives the machine panel: e collects the output buffer into
 // your pack, f refuels from your pack, esc/q close.
-func (m *Model) handleMachineKey(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleMachineKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc", "q":
 		m.showMachine = false
@@ -531,7 +544,7 @@ func (m *Model) closePanels() {
 // owner can f collect the till, x remove an offer, and n compose a new one
 // in-panel (the UI twin of /sell); esc/q close. While composing, ↑↓ pick a term,
 // ←→ change it, e posts, esc/q backs out to the list.
-func (m *Model) handleStallKey(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleStallKey(msg tea.KeyPressMsg) tea.Cmd {
 	st, ok := StallSnapshot(m.ctx, m.stallXY[0], m.stallXY[1])
 	if !ok {
 		m.showStall, m.stallNew = false, false
@@ -742,9 +755,9 @@ func (m *Model) finishTransition() tea.Cmd {
 	return tea.Batch(m.area.Init(&self), m.scheduleTick())
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+C always works, with the same confirm as q.
-	if msg.Type == tea.KeyCtrlC {
+	if msg.String() == "ctrl+c" {
 		if m.quitArmed {
 			return m, tea.Quit
 		}
@@ -762,14 +775,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// chat input has priority
 	if m.chatInput.Focused() {
-		switch msg.Type {
-		case tea.KeyEnter:
+		switch msg.String() {
+		case "enter":
 			text := strings.TrimSpace(m.chatInput.Value)
 			m.chatInput.Blur()
 			if text != "" {
 				return m, m.runChatLine(text)
 			}
-		case tea.KeyEsc:
+		case "esc":
 			m.chatInput.Blur()
 		default:
 			m.chatInput.HandleKey(msg)
@@ -796,7 +809,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.infoScroll++
 		case "pgup", "b":
 			m.infoScroll -= m.infoViewport()
-		case "pgdown", " ", "f":
+		case "pgdown", "space", "f":
 			m.infoScroll += m.infoViewport()
 		case "home", "g":
 			m.infoScroll = 0
@@ -833,7 +846,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.showPlayers {
 		m.showPlayers = false
-		if msg.Type == tea.KeyTab {
+		if msg.String() == "tab" {
 			return m, nil
 		}
 		// fall through: any other key both closes the overlay and acts
@@ -886,7 +899,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // ─── View ────────────────────────────────────────────────────────────────
 
-func (m *Model) View() string {
+// View wraps the rendered frame in a tea.View. The alternate screen is declared
+// here in Bubble Tea v2 (it was the tea.WithAltScreen program option in v1).
+func (m *Model) View() tea.View {
+	v := tea.NewView(m.frame())
+	v.AltScreen = true
+	return v
+}
+
+// frame renders the whole screen as a string.
+func (m *Model) frame() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
@@ -950,9 +972,9 @@ func (m *Model) titleScreen() string {
 // small showcase of the sub-character pixel layer.
 func buildWave(th *ui.Theme, width, step int) string {
 	const rows = 4 // 4 pixels tall → 2 text rows
-	pix := make([][]lipgloss.Color, rows)
+	pix := make([][]ui.Color, rows)
 	for r := range pix {
-		pix[r] = make([]lipgloss.Color, width)
+		pix[r] = make([]ui.Color, width)
 		for x := range pix[r] {
 			pix[r][x] = ui.Transparent
 		}

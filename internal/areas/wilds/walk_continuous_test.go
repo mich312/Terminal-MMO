@@ -4,8 +4,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -51,7 +49,7 @@ func TestWildsKeySteersAndClockWalks(t *testing.T) {
 	a := newWalkArea(t)
 	startX, startFX := a.wx, a.body.FX
 
-	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	a.Update(ui.TextKey("d"))
 	if a.wx != startX || a.body.FX != startFX {
 		t.Errorf("the key alone moved the body from %.2f to %.2f", startFX, a.body.FX)
 	}

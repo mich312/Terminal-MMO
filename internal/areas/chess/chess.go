@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -407,7 +407,7 @@ func abs(n int) int {
 // ── Play ────────────────────────────────────────────────────────────────────
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return a, nil
 	}
@@ -417,7 +417,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	case "r":
 		a.reset()
 		return a, nil
-	case "e", " ":
+	case "e", "space":
 		if !a.over && a.turn == white {
 			a.click()
 		}
@@ -633,7 +633,7 @@ func (a *area) View(width, height int) string {
 		th.Dim.Render("r              new game"),
 		th.Dim.Render("x              leave"),
 	}
-	panel := th.Panel.Width(30).Render(strings.Join(rows, "\n"))
+	panel := th.PanelWidth(30).Render(strings.Join(rows, "\n"))
 
 	const gap = 3
 	mapW := width - lipgloss.Width(panel) - gap

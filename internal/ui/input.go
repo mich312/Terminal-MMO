@@ -1,8 +1,8 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // TextInput is a deliberately tiny single-line input — enough for chat and
@@ -24,31 +24,35 @@ func (t *TextInput) Blur()  { t.focused = false }
 func (t *TextInput) Focused() bool { return t.focused }
 
 // HandleKey consumes a key press. Returns true if the key was used.
-func (t *TextInput) HandleKey(msg tea.KeyMsg) bool {
+func (t *TextInput) HandleKey(msg tea.KeyPressMsg) bool {
 	if !t.focused {
 		return false
 	}
-	switch msg.Type {
-	case tea.KeyBackspace:
+	if msg.String() == "backspace" {
 		if len(t.Value) > 0 {
 			r := []rune(t.Value)
 			t.Value = string(r[:len(r)-1])
 		}
 		return true
-	case tea.KeySpace:
-		if len([]rune(t.Value)) < t.Max {
-			t.Value += " "
-		}
-		return true
-	case tea.KeyRunes:
-		for _, r := range msg.Runes {
-			if len([]rune(t.Value)) < t.Max {
-				t.Value += string(r)
-			}
-		}
-		return true
 	}
-	return false
+	if msg.Text == "" { // a named key (arrows, ctrl+…) — not text
+		return false
+	}
+	t.Insert(msg.Text)
+	return true
+}
+
+// Insert appends text up to Max runes — typed characters, or a bracketed paste
+// (its own tea.PasteMsg in Bubble Tea v2, a flagged key in v1).
+func (t *TextInput) Insert(text string) {
+	if !t.focused {
+		return
+	}
+	for _, r := range text {
+		if len([]rune(t.Value)) < t.Max {
+			t.Value += string(r)
+		}
+	}
 }
 
 func (t *TextInput) View() string {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/durst-group/durstworld/internal/ui"
 )
 
 // waitFor drains ch (past periodic ticks) until an event of the given type
@@ -61,7 +61,7 @@ func TestSetColor(t *testing.T) {
 	w := New()
 	defer w.Close()
 	_, _ = w.Join("alice")
-	want := lipgloss.Color("#123456")
+	want := ui.Color("#123456")
 	if !w.SetColor("alice", want) {
 		t.Fatal("SetColor on present player should succeed")
 	}

@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/ui"
@@ -204,18 +204,24 @@ func (a *area) CapturesInput() bool { return a.mode != modeWalk }
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	switch a.mode {
 	case modeTitle:
-		if key, ok := msg.(tea.KeyMsg); ok {
+		if key, ok := msg.(tea.KeyPressMsg); ok {
 			a.titleKey(key)
+		}
+		if p, ok := msg.(tea.PasteMsg); ok {
+			a.title.Insert(p.Content)
 		}
 		return a, nil
 	case modeEdit:
-		if key, ok := msg.(tea.KeyMsg); ok {
+		if key, ok := msg.(tea.KeyPressMsg); ok {
 			a.editKey(key)
+		}
+		if p, ok := msg.(tea.PasteMsg); ok {
+			a.editor.Paste(p.Content)
 		}
 		return a, nil
 	}
 
-	if key, ok := msg.(tea.KeyMsg); ok {
+	if key, ok := msg.(tea.KeyPressMsg); ok {
 		if key.String() != "x" { // any other key cancels a pending retire
 			a.retireArmed = false
 		}
@@ -280,9 +286,9 @@ func (a *area) openEditor(d world.Deck) {
 	a.mode = modeEdit
 }
 
-func (a *area) titleKey(key tea.KeyMsg) {
-	switch key.Type {
-	case tea.KeyEnter:
+func (a *area) titleKey(key tea.KeyPressMsg) {
+	switch key.String() {
+	case "enter":
 		t := strings.TrimSpace(a.title.Value)
 		if t == "" {
 			return
@@ -292,7 +298,7 @@ func (a *area) titleKey(key tea.KeyMsg) {
 		a.editor.Focus()
 		a.title.Blur()
 		a.mode = modeEdit
-	case tea.KeyEsc:
+	case "esc":
 		a.title.Blur()
 		a.mode = modeWalk
 	default:
@@ -300,9 +306,9 @@ func (a *area) titleKey(key tea.KeyMsg) {
 	}
 }
 
-func (a *area) editKey(key tea.KeyMsg) {
-	switch key.Type {
-	case tea.KeyCtrlS:
+func (a *area) editKey(key tea.KeyPressMsg) {
+	switch key.String() {
+	case "ctrl+s":
 		src := a.editor.Value()
 		if a.editID == "" {
 			if a.Ctx.World.CreateDeck(a.Ctx.Name, a.pendingTitle, src) == "" {
@@ -314,7 +320,7 @@ func (a *area) editKey(key tea.KeyMsg) {
 		a.editor.Blur()
 		a.mode = modeWalk
 		a.rebuildSafe()
-	case tea.KeyEsc:
+	case "esc":
 		a.editor.Blur()
 		a.mode = modeWalk
 	default:

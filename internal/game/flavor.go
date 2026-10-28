@@ -1,8 +1,8 @@
 package game
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -79,7 +79,7 @@ func (a *FlavorArea) View(width, height int) string {
 	if th == nil {
 		th = ui.Default
 	}
-	panel := th.Panel.Width(a.panelWidth).Render(
+	panel := th.PanelWidth(a.panelWidth).Render(
 		th.PanelTitle.Render(a.title) + "\n\n" + th.ChatText.Render(a.body))
 
 	// Camera-follow the player through a viewport in the space the panel leaves,

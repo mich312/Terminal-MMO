@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -142,7 +142,7 @@ func (w *Walker) HandleCommon(msg tea.Msg) (portal string, handled bool) {
 		w.Body.SetIntent(msg.DX, msg.DY, msg.Run, w.now())
 		return "", true
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		dx, dy, steps, ok := MoveKey(msg.String())
 		if !ok {
 			return "", false

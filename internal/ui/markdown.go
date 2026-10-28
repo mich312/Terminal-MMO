@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/markdown"
 )
@@ -18,8 +18,8 @@ func (t *Theme) RenderSlide(src string, width, height int) string {
 		s := t.styleLine(ln)
 		if ln.IsCode() {
 			// fill the whole line with the code background + a left accent bar
-			bar := t.r.NewStyle().Background(lipgloss.Color(HexAccent)).Render(" ")
-			body := t.r.NewStyle().Background(lipgloss.Color(HexCodeBg)).Width(width - 1).Render(s)
+			bar := lipgloss.NewStyle().Background(lipgloss.Color(HexAccent)).Render(" ")
+			body := lipgloss.NewStyle().Background(lipgloss.Color(HexCodeBg)).Width(width - 1).Render(s)
 			s = bar + body
 		} else {
 			s = lipgloss.PlaceHorizontal(width, lipgloss.Left, s)
@@ -48,7 +48,7 @@ func (t *Theme) RenderSlide(src string, width, height int) string {
 func (t *Theme) styleLine(ln markdown.Line) string {
 	var b strings.Builder
 	for _, sp := range ln {
-		st := t.r.NewStyle()
+		st := lipgloss.NewStyle()
 		if sp.Color != "" {
 			st = st.Foreground(lipgloss.Color(sp.Color))
 		} else {

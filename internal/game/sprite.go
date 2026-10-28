@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/durst-group/durstworld/internal/ui"
@@ -28,10 +28,10 @@ var (
 
 // playerColor resolves a player's avatar color to RGB. Avatar colors are hex
 // strings, so we parse them directly with colorful.Hex — unlike
-// colorful.MakeColor(lipgloss.Color), which relies on the ambient lipgloss
+// colorful.MakeColor(ui.Color), which relies on the ambient lipgloss
 // color profile and returns black when none is detected (e.g. headless, or the
 // HD renderer's server-side process). Falls back for non-hex colors.
-func playerColor(c lipgloss.Color) colorful.Color {
+func playerColor(c ui.Color) colorful.Color {
 	if hc, err := colorful.Hex(string(c)); err == nil {
 		return hc
 	}
@@ -167,9 +167,9 @@ func spritePixel(code rune, body, accMain, accShade colorful.Color, isSelf bool)
 
 // AvatarPreview renders a front-facing avatar (style + accessory + color) as
 // half-block lines for the character panel: full 12-px width, two pixels per
-// cell tall. Drawn through the theme's renderer so it downsamples like the live
+// cell tall. Drawn with the theme's styles so it downsamples like the live
 // avatar. Transparent pixels show the panel background.
-func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []string {
+func AvatarPreview(th *ui.Theme, style, accessory int, color ui.Color) []string {
 	if th == nil {
 		th = ui.Default
 	}
@@ -177,7 +177,7 @@ func AvatarPreview(th *ui.Theme, style, accessory int, color lipgloss.Color) []s
 	accMain, accShade := accessoryColors(accessory)
 	bmp := AvatarBitmap(style, accessory, "", world.DirS, 0)
 	bg := lipgloss.Color(ui.HexPanelBg)
-	toLip := func(c colorful.Color) lipgloss.Color { return lipgloss.Color(c.Clamped().Hex()) }
+	toLip := func(c colorful.Color) ui.Color { return ui.Color(c.Clamped().Hex()) }
 
 	lines := make([]string, 0, len(bmp)/2)
 	for row := 0; row+1 < len(bmp); row += 2 {

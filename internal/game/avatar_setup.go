@@ -3,8 +3,6 @@ package game
 import (
 	"math/rand"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/durst-group/durstworld/internal/store"
 	"github.com/durst-group/durstworld/internal/ui"
 	"github.com/durst-group/durstworld/internal/world"
@@ -21,7 +19,7 @@ import (
 func SetupAvatar(w *world.World, st store.Store, name string) {
 	if color, style, accessory, ok := st.LoadAvatar(name); ok {
 		if color != "" {
-			w.SetColor(name, lipgloss.Color(color))
+			w.SetColor(name, ui.Color(color))
 		}
 		w.SetAvatar(name, style, accessory)
 		// Grandfather a hat the player is already wearing into their owned set,

@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/durst-group/durstworld/internal/areas/wilds"
@@ -134,9 +134,9 @@ func (a *area) wornPowerHint() string {
 }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
+	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
-		case "e", " ":
+		case "e", "space":
 			if pos, item, ok := a.nodeNear(); ok {
 				a.gather(pos, item)
 			}

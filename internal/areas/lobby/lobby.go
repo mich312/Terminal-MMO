@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/game"
 	"github.com/durst-group/durstworld/internal/store"
@@ -102,12 +102,12 @@ func (a *area) CapturesInput() bool { return a.bookOpen }
 
 func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 	if a.bookOpen {
-		if key, ok := msg.(tea.KeyMsg); ok {
-			switch key.Type {
-			case tea.KeyEsc:
+		if key, ok := msg.(tea.KeyPressMsg); ok {
+			switch key.String() {
+			case "esc":
 				a.bookOpen = false
 				a.input.Blur()
-			case tea.KeyEnter:
+			case "enter":
 				text := strings.TrimSpace(a.input.Value)
 				if text != "" {
 					if err := a.Ctx.Store.SignGuestbook(a.Ctx.Name, text); err == nil {
@@ -121,6 +121,10 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 			}
 			return a, nil
 		}
+		if p, ok := msg.(tea.PasteMsg); ok {
+			a.input.Insert(p.Content)
+			return a, nil
+		}
 	}
 
 	if portal, handled := a.HandleCommon(msg); handled {
@@ -130,7 +134,7 @@ func (a *area) Update(msg tea.Msg) (game.Area, tea.Cmd) {
 		return a, nil
 	}
 
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "e" {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "e" {
 		if a.Map.NearObject(a.X, a.Y, "guestbook") {
 			a.bookOpen = true
 			a.signed = false

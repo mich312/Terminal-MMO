@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/durst-group/durstworld/internal/world"
 )
@@ -97,7 +97,7 @@ func (m *Model) handleTradeEvent(ev world.Event) {
 }
 
 // handleTradeKey drives the modal trade table.
-func (m *Model) handleTradeKey(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleTradeKey(msg tea.KeyPressMsg) tea.Cmd {
 	pack := packRows(m.ctx.Inventory)
 	switch msg.String() {
 	case "esc", "q":
